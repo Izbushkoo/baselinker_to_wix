@@ -12,7 +12,7 @@ class WixImportFileModel(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True
     )
-    handleId: str = Field(default=generate_handle_id())
+    handleId: str
     fieldType: str = Field(default="Product")
     name: str
     description: str

@@ -6,6 +6,7 @@ from celery import Celery, chord, group, chain
 from app.services import baselinker as BL
 from app.services.process_funcs import transform_product
 from app.schemas.wix_models import WixImportFileModel
+from app.schemas.wix_models import generate_handle_id
 from loggers import ToLog
 
 import logging
@@ -84,7 +85,7 @@ def process_product_chunk(self, baselinker_api_key, inventory_id, products_chunk
 def write_csv(results, chat_id):
     # Flatten: объединяем списки из всех чанков в один список
     all_products = [
-        WixImportFileModel(**item).model_dump() for chunk in results for item in chunk]
+        WixImportFileModel(handleId=generate_handle_id(), **item).model_dump() for chunk in results for item in chunk]
     ToLog.write_basic(f"{all_products}")
     if all_products:
         with open(f'/app/logs/{chat_id}.csv', "w", newline="", encoding="utf-8") as csvfile:
