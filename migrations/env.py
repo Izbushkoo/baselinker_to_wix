@@ -28,6 +28,7 @@ sys.path.append(BASE_DIR)
 
 from sqlmodel import SQLModel
 from app.models.user import User
+from app.models.allegro_token import AllegroToken
 
 target_metadata = SQLModel.metadata
 
@@ -42,7 +43,7 @@ def get_url():
     user = os.getenv("POSTGRES_USER", "izbushko")
     password = os.getenv("POSTGRES_PASSWORD", "postgres")
     server = os.getenv(
-        "POSTGRES_SERVER", "baselinker_to_wix"
+        "POSTGRES_SERVER", "localhost"
     ) + ":" + os.getenv("POSTGRES_PORT_TO_LOCAL_HOST", "5432")
     db = os.getenv("POSTGRES_DB", "postgres")
     return f"postgresql://{user}:{password}@{server}/{db}"
