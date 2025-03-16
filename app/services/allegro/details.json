@@ -1,0 +1,166 @@
+{
+  "id": "4d576d60-f759-11ef-a8d3-1154fd9153a6",
+  "messageToSeller": null,
+  "buyer": {
+    "id": "647761",
+    "email": "878qq7e6e6+2553eeab2@allegromail.pl",
+    "login": "olszan15",
+    "firstName": "Tomasz",
+    "lastName": "Olszański",
+    "companyName": null,
+    "guest": false,
+    "personalIdentity": null,
+    "phoneNumber": "+48 500 152 272",
+    "preferences": {
+      "language": "pl-PL"
+    },
+    "address": {
+      "street": "ul. Władysława Konopczyńskiego 16/21",
+      "city": "Kraków",
+      "postCode": "30-383",
+      "countryCode": "PL"
+    }
+  },
+  "payment": {
+    "id": "4d9a6a06-f759-11ef-8bbb-6bd5d5465b2a",
+    "type": "ONLINE",
+    "provider": "PAYU",
+    "finishedAt": "2025-03-02T11:28:24.680Z",
+    "paidAmount": {
+      "amount": "157.73",
+      "currency": "PLN"
+    },
+    "reconciliation": null,
+    "features": []
+  },
+  "status": "READY_FOR_PROCESSING",
+  "fulfillment": {
+    "status": "SENT",
+    "shipmentSummary": {
+      "lineItemsSent": "SOME"
+    }
+  },
+  "delivery": {
+    "address": {
+      "firstName": "Tomasz",
+      "lastName": "Olszański",
+      "street": "Konopczyńskiego 16/21",
+      "city": "Kraków",
+      "zipCode": "30-383",
+      "countryCode": "PL",
+      "companyName": null,
+      "phoneNumber": "+48500152272",
+      "modifiedAt": null
+    },
+    "method": {
+      "id": "0b9bed2c-0bc1-4e1f-9694-29bb39ebb483",
+      "name": "Allegro One Box, One Kurier"
+    },
+    "pickupPoint": {
+      "id": "AL035KR1",
+      "name": "Allegro One Box, zielony automat",
+      "description": "Za budynkiem Europejskiego Centrum Handlowego, na terenie parkingu",
+      "address": {
+        "street": "Bobrzyńskiego 37",
+        "zipCode": "30-348",
+        "city": "Kraków",
+        "countryCode": "PL"
+      }
+    },
+    "cost": {
+      "amount": "0.00",
+      "currency": "PLN"
+    },
+    "smart": true,
+    "time": {
+      "from": "2025-03-03T23:00:00Z",
+      "to": "2025-03-04T22:59:59.999Z",
+      "guaranteed": null,
+      "dispatch": {
+        "from": "2025-03-02T23:00:00Z",
+        "to": "2025-03-03T22:59:59.999Z"
+      }
+    },
+    "calculatedNumberOfPackages": 1
+  },
+  "invoice": {
+    "required": false,
+    "address": null,
+    "dueDate": null,
+    "features": null
+  },
+  "lineItems": [
+    {
+      "id": "4d523d40-f759-11ef-a8d3-1154fd9153a6",
+      "offer": {
+        "id": "15226795111",
+        "name": "Fingerbike BMX TAILWHIP Metalowy Mini Rower na Palce Pro Wersja + Akcesoria",
+        "external": {
+          "id": "11-24-BMX-Multi"
+        },
+        "productSet": null
+      },
+      "quantity": 1,
+      "originalPrice": {
+        "amount": "71.94",
+        "currency": "PLN"
+      },
+      "price": {
+        "amount": "71.94",
+        "currency": "PLN"
+      },
+      "reconciliation": null,
+      "selectedAdditionalServices": [],
+      "vouchers": [],
+      "tax": {
+        "rate": "23.00",
+        "subject": null,
+        "exemption": null
+      },
+      "boughtAt": "2025-03-02T11:28:21.052Z"
+    },
+    {
+      "id": "4d523d41-f759-11ef-a8d3-1154fd9153a6",
+      "offer": {
+        "id": "17024934004",
+        "name": "Fingerscooter TAILWHIP Metalowy, Hulajnoga na Palce, Szeroki Pro Deck, purp",
+        "external": {
+          "id": "ScootTWBarspin180_224"
+        },
+        "productSet": null
+      },
+      "quantity": 1,
+      "originalPrice": {
+        "amount": "85.79",
+        "currency": "PLN"
+      },
+      "price": {
+        "amount": "85.79",
+        "currency": "PLN"
+      },
+      "reconciliation": null,
+      "selectedAdditionalServices": [],
+      "vouchers": [],
+      "tax": {
+        "rate": "23.00",
+        "subject": null,
+        "exemption": null
+      },
+      "boughtAt": "2025-03-02T11:28:21.052Z"
+    }
+  ],
+  "surcharges": [],
+  "discounts": [],
+  "note": null,
+  "marketplace": {
+    "id": "allegro-pl"
+  },
+  "summary": {
+    "totalToPay": {
+      "amount": "157.73",
+      "currency": "PLN"
+    }
+  },
+  "updatedAt": "2025-03-02T11:28:24.680Z",
+  "revision": "c6d6e60f"
+}
