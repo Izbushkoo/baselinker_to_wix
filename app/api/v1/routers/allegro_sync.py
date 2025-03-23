@@ -18,6 +18,7 @@ from app.api import deps
 from app.services.allegro.allegro_api_service import AsyncAllegroApiService
 from app.data_access.allegro_order_repository import AllegroOrderRepository
 from app.services.allegro.tokens import check_token
+from app.utils.logging_config import logger
 
 router = APIRouter()
 
@@ -265,19 +266,23 @@ async def delete_all_orders(
     """
     try:
         # Удаляем в правильном порядке с учетом зависимостей
+        # 1. Сначала удаляем связи в таблице order_line_items
         results = db.exec(select(OrderLineItem).where(True)).all()
         for result in results:
             db.delete(result)
-
-        results = db.exec(select(AllegroLineItem).where(True)).all()
-        for result in results:
-            db.delete(result)
-
-        results = db.exec(select(AllegroBuyer).where(True)).all()
+        
+        # 2. Затем удаляем заказы
+        results = db.exec(select(AllegroOrder).where(True)).all()
         for result in results:
             db.delete(result)
         
-        results = db.exec(select(AllegroOrder).where(True)).all()
+        # 3. Удаляем товарные позиции
+        results = db.exec(select(AllegroLineItem).where(True)).all()
+        for result in results:
+            db.delete(result)
+        
+        # 4. В последнюю очередь удаляем покупателей
+        results = db.exec(select(AllegroBuyer).where(True)).all()
         for result in results:
             db.delete(result)
         

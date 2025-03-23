@@ -4,9 +4,10 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.api.v1.api import api_router as api_router_v1
 from app.core.config import settings
-from loggers import setup_loggers
+from app.utils.logging_config import setup_project_logging
 
-setup_loggers()
+# Настраиваем логирование при запуске приложения
+setup_project_logging()
 
 app = FastAPI(title=settings.PROJECT_NAME,
               openapi_url=f"{settings.API_V1_STR}/openapi.json",

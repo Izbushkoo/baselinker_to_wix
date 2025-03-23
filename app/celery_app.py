@@ -13,8 +13,7 @@ from app.services import baselinker as BL
 from app.services.process_funcs import transform_product
 from app.schemas.wix_models import WixImportFileModel
 from app.schemas.wix_models import generate_handle_id
-from loggers import ToLog
-from app.utils.logging_config import setup_logging
+from app.utils.logging_config import logger
 
 import logging
 import os
@@ -28,8 +27,6 @@ from app.services.allegro.tokens import check_token_sync
 from app.services.allegro.data_access import get_token_by_id_sync
 from app.utils.date_utils import parse_date
 
-# Настраиваем логирование
-logger = setup_logging('celery_worker', 'celery_worker.log')
 
 # Настройки брокера (Redis)
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
@@ -76,10 +73,10 @@ def process_product_chunk(self, baselinker_api_key, inventory_id, products_chunk
     result = api_client.send_request_sync(BL.BaseLinkerMethod.get_inventory_product_data,
                                           BL.GetInventoryProductsData(inventory_id=inventory_id,
                                                                       products=products_chunk))
-    logging.info(f"{result}")
+    logger.info(f"{result}")
 
     if result["status"] == "SUCCESS":
-    # Обработка данных (ваша логика)
+        # Обработка данных (ваша логика)
         products = result.get("products", {})
         processed_data = [transform_product(products.get(product_id)).model_dump() for product_id in products_chunk]
         return processed_data
@@ -92,7 +89,7 @@ def write_csv(results, chat_id):
     # Flatten: объединяем списки из всех чанков в один список
     all_products = [
         WixImportFileModel(handleId=generate_handle_id(), **item).model_dump() for chunk in results for item in chunk]
-    ToLog.write_basic(f"{all_products}")
+    logger.info(f"{all_products}")
     if all_products:
         with open(f'/app/logs/{chat_id}.csv', "w", newline="", encoding="utf-8") as csvfile:
             # Инициализируем DictWriter, передавая ключи словаря как заголовки столбцов.
@@ -102,7 +99,6 @@ def write_csv(results, chat_id):
             writer.writeheader()
 
             # Записываем строку с данными
-
             for row in all_products:
                 writer.writerow(row)
         return 'CSV успешно записан'
@@ -252,9 +248,9 @@ def sync_allegro_orders(token_id: str, from_date: str = None) -> Dict[str, Any]:
                     order["id"]: order["updateTime"] 
                     for order in orders_info
                 }
-                logging.info(f"Загружено {len(existing_orders)} существующих заказов")
+                logger.info(f"Загружено {len(existing_orders)} существующих заказов")
             else:
-                logging.info("Нет существующих заказов, будет выполнена полная синхронизация")
+                logger.info("Нет существующих заказов, будет выполнена полная синхронизация")
             
             while True:
                 # Проверяем rate limit перед запросом
@@ -528,9 +524,9 @@ def sync_allegro_orders_immediate(token_id: str, from_date: str = None) -> Dict[
                     order["id"]: order["updateTime"] 
                     for order in orders_info
                 }
-                logging.info(f"Загружено {len(existing_orders)} существующих заказов")
+                logger.info(f"Загружено {len(existing_orders)} существующих заказов")
             else:
-                logging.info("Нет существующих заказов, будет выполнена полная синхронизация")
+                logger.info("Нет существующих заказов, будет выполнена полная синхронизация")
             
             while True:
                 # Проверяем rate limit перед запросом

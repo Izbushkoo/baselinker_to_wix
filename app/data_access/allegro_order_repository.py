@@ -2,7 +2,7 @@ from typing import Optional, Dict, Any
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
 from datetime import datetime
-import logging
+from app.utils.logging_config import logger
 
 from app.models.allegro_order import (
     AllegroOrder,
@@ -64,6 +64,9 @@ class AllegroOrderRepository:
         Returns:
             AllegroOrder: Созданный заказ
         """
+
+        logger.info(f"Добавление заказа: {order_data}")
+
         # Создаем покупателя
         buyer_data = self._safe_get(order_data, "buyer", default={})
         buyer = AllegroBuyer(
@@ -91,9 +94,12 @@ class AllegroOrderRepository:
         self.session.add(order)
         
         # Создаем товарные позиции
-        line_items = self._safe_get(order_data, "delivery", "lineItems", default=[])
+        delivery = self._safe_get(order_data, "delivery", default={})
+        line_items = self._safe_get(delivery, "lineItems", default=[])
+        # line_items = self._safe_get(order_data,"delivery", "lineItems", default=[])
         for item_data in line_items:
             item_id = self._safe_get(item_data, "id", default="")
+            quantity = self._safe_get(item_data, "quantity", default=1)
             if not item_id:
                 continue
                 
@@ -104,11 +110,12 @@ class AllegroOrderRepository:
             
             if existing_item:
                 # Если позиция существует, создаем связь с заказом
-                order_item = OrderLineItem(
-                    order_id=order.id,
-                    line_item_id=existing_item.id
-                )
-                self.session.add(order_item)
+                for _ in range(quantity):
+                    order_item = OrderLineItem(
+                        order_id=order.id,
+                        line_item_id=existing_item.id
+                    )
+                    self.session.add(order_item)
             else:
                 # Если позиция не существует, создаем новую
                 offer_data = self._safe_get(item_data, "offer", default={})
@@ -123,11 +130,12 @@ class AllegroOrderRepository:
                 self.session.add(line_item)
                 
                 # Создаем связь с заказом
-                order_item = OrderLineItem(
-                    order_id=order.id,
-                    line_item_id=line_item.id
-                )
-                self.session.add(order_item)
+                for _ in range(quantity):
+                    order_item = OrderLineItem(
+                        order_id=order.id,
+                        line_item_id=line_item.id
+                    )
+                    self.session.add(order_item)
         
         try:
             self.session.commit()
@@ -217,6 +225,7 @@ class AllegroOrderRepository:
                 # Добавляем новые связи
                 for item_data in line_items:
                     item_id = self._safe_get(item_data, "id", default="")
+                    quantity = self._safe_get(item_data, "quantity", default=1)
                     if not item_id:
                         continue
                         
@@ -227,11 +236,12 @@ class AllegroOrderRepository:
                     
                     if existing_item:
                         # Если позиция существует, создаем связь с заказом
-                        order_item = OrderLineItem(
-                            order_id=order.id,
-                            line_item_id=existing_item.id
-                        )
-                        self.session.add(order_item)
+                        for _ in range(quantity):
+                            order_item = OrderLineItem(
+                                order_id=order.id,
+                                line_item_id=existing_item.id
+                            )
+                            self.session.add(order_item)
                     else:
                         # Если позиция не существует, создаем новую
                         offer_data = self._safe_get(item_data, "offer", default={})
@@ -246,11 +256,12 @@ class AllegroOrderRepository:
                         self.session.add(line_item)
                         
                         # Создаем связь с заказом
-                        order_item = OrderLineItem(
-                            order_id=order.id,
-                            line_item_id=line_item.id
-                        )
-                        self.session.add(order_item)
+                        for _ in range(quantity):
+                            order_item = OrderLineItem(
+                                order_id=order.id,
+                                line_item_id=line_item.id
+                            )
+                            self.session.add(order_item)
 
             self.session.commit()
             return order
@@ -268,12 +279,12 @@ class AllegroOrderRepository:
             result = self.session.exec(statement).all()
             orders = [{"id": order.id, "updateTime": order.updated_at} for order in result]
             if not orders:
-                logging.info("В базе данных нет заказов")
+                logger.info("В базе данных нет заказов")
             else:
-                logging.info(f"Найдено {len(orders)} заказов в базе данных")
+                logger.info(f"Найдено {len(orders)} заказов в базе данных")
             return orders
         except Exception as e:
-            logging.error(f"Ошибка при получении списка заказов: {str(e)}")
+            logger.error(f"Ошибка при получении списка заказов: {str(e)}")
             raise ValueError(f"Ошибка при получении списка заказов: {str(e)}")
 
     def add_order_with_existing_buyer(self, token_id: str, order_data: dict) -> AllegroOrder:
@@ -315,9 +326,11 @@ class AllegroOrderRepository:
             self.session.add(order)
             
             # Создаем товарные позиции
-            line_items = self._safe_get(order_data, "delivery", "lineItems", default=[])
+            delivery = self._safe_get(order_data, "delivery", default={})
+            line_items = self._safe_get(delivery, "lineItems", default=[])
             for item_data in line_items:
                 item_id = self._safe_get(item_data, "id", default="")
+                quantity = self._safe_get(item_data, "quantity", default=1)
                 if not item_id:
                     continue
                     
@@ -328,11 +341,12 @@ class AllegroOrderRepository:
                 
                 if existing_item:
                     # Если позиция существует, создаем связь с заказом
-                    order_item = OrderLineItem(
-                        order_id=order.id,
-                        line_item_id=existing_item.id
-                    )
-                    self.session.add(order_item)
+                    for _ in range(quantity):
+                        order_item = OrderLineItem(
+                            order_id=order.id,
+                            line_item_id=existing_item.id
+                        )
+                        self.session.add(order_item)
                 else:
                     # Если позиция не существует, создаем новую
                     offer_data = self._safe_get(item_data, "offer", default={})
@@ -347,11 +361,12 @@ class AllegroOrderRepository:
                     self.session.add(line_item)
                     
                     # Создаем связь с заказом
-                    order_item = OrderLineItem(
-                        order_id=order.id,
-                        line_item_id=line_item.id
-                    )
-                    self.session.add(order_item)
+                    for _ in range(quantity):
+                        order_item = OrderLineItem(
+                            order_id=order.id,
+                            line_item_id=line_item.id
+                        )
+                        self.session.add(order_item)
             
             self.session.commit()
             return order
