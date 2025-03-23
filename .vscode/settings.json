@@ -1,0 +1,27 @@
+{
+    "code-runner.executorMap": {
+        "python": "/home/izbushko/.cache/pypoetry/virtualenvs/baselinker-to-wix-qjzYMC_r-py3.12/bin/python -u"
+    },
+    "code-runner.defaultLanguage": "python",
+    "code-runner.runInTerminal": true,
+    "workbench.colorCustomizations": {
+        "terminal.foreground": "#A8FF60",
+        "terminal.background": "#1E1E1E",
+        "terminal.ansiBlack": "#1E1E1E",
+        "terminal.ansiBlue": "#6699CC",
+        "terminal.ansiBrightBlack": "#666666",
+        "terminal.ansiBrightBlue": "#66CCFF",
+        "terminal.ansiBrightCyan": "#66FFCC",
+        "terminal.ansiBrightGreen": "#A8FF60",
+        "terminal.ansiBrightMagenta": "#FF99CC",
+        "terminal.ansiBrightRed": "#FF6666",
+        "terminal.ansiBrightWhite": "#FFFFFF",
+        "terminal.ansiBrightYellow": "#FFFF60",
+        "terminal.ansiCyan": "#66CCCC",
+        "terminal.ansiGreen": "#66FF66",
+        "terminal.ansiMagenta": "#CC66CC",
+        "terminal.ansiRed": "#CC6666",
+        "terminal.ansiWhite": "#CCCCCC",
+        "terminal.ansiYellow": "#FFCC66"
+    }
+} 

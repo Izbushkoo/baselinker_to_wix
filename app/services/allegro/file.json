@@ -1,0 +1,484 @@
+{
+  "events": [
+    {
+      "id": "1736954049091825",
+      "order": {
+        "seller": {
+          "id": "102758280"
+        },
+        "buyer": {
+          "id": "50999343",
+          "email": "yggq4jk13x+7b6918d24@allegromail.pl",
+          "guest": false,
+          "login": "Client:50999343",
+          "preferences": {
+            "language": "pl-PL"
+          }
+        },
+        "lineItems": [
+          {
+            "offer": {
+              "id": "17024934004",
+              "name": "Fingerscooter TAILWHIP Metalowy, Hulajnoga na Palce, Szeroki Pro Deck, purp",
+              "external": {
+                "id": "ScootTWBarspin180_224"
+              }
+            },
+            "price": {
+              "amount": "88.45",
+              "currency": "PLN"
+            },
+            "id": "0ef8d6f0-d353-11ef-b0f2-edd4f55a52c5",
+            "quantity": 1,
+            "originalPrice": {
+              "amount": "88.45",
+              "currency": "PLN"
+            },
+            "boughtAt": "2025-01-15T15:13:53.796Z"
+          }
+        ],
+        "checkoutForm": {
+          "id": "0efef170-d353-11ef-b0f2-edd4f55a52c5",
+          "revision": "7f3bb240"
+        },
+        "marketplace": {
+          "id": "allegro-pl"
+        }
+      },
+      "type": "BOUGHT",
+      "occurredAt": "2025-01-15T15:13:53.796Z"
+    },
+    {
+      "id": "1736954049739770",
+      "order": {
+        "seller": {
+          "id": "102758280"
+        },
+        "buyer": {
+          "id": "50999343",
+          "email": "yggq4jk13x+7b6918d24@allegromail.pl",
+          "guest": false,
+          "login": "Client:50999343",
+          "preferences": {
+            "language": "pl-PL"
+          }
+        },
+        "lineItems": [
+          {
+            "offer": {
+              "id": "17024934004",
+              "name": "Fingerscooter TAILWHIP Metalowy, Hulajnoga na Palce, Szeroki Pro Deck, purp",
+              "external": {
+                "id": "ScootTWBarspin180_224"
+              }
+            },
+            "price": {
+              "amount": "88.45",
+              "currency": "PLN"
+            },
+            "id": "0ef8d6f0-d353-11ef-b0f2-edd4f55a52c5",
+            "quantity": 1,
+            "originalPrice": {
+              "amount": "88.45",
+              "currency": "PLN"
+            },
+            "boughtAt": "2025-01-15T15:13:53.796Z"
+          }
+        ],
+        "checkoutForm": {
+          "id": "0efef170-d353-11ef-b0f2-edd4f55a52c5",
+          "revision": "6e33dbc5"
+        },
+        "marketplace": {
+          "id": "allegro-pl"
+        }
+      },
+      "type": "FILLED_IN",
+      "occurredAt": "2025-01-15T15:13:55.475Z"
+    },
+    {
+      "id": "1736954072379693",
+      "order": {
+        "seller": {
+          "id": "102758280"
+        },
+        "buyer": {
+          "id": "50999343",
+          "email": "yggq4jk13x+7b6918d24@allegromail.pl",
+          "guest": false,
+          "login": "Client:50999343",
+          "preferences": {
+            "language": "pl-PL"
+          }
+        },
+        "lineItems": [
+          {
+            "offer": {
+              "id": "17024934004",
+              "name": "Fingerscooter TAILWHIP Metalowy, Hulajnoga na Palce, Szeroki Pro Deck, purp",
+              "external": {
+                "id": "ScootTWBarspin180_224"
+              }
+            },
+            "price": {
+              "amount": "88.45",
+              "currency": "PLN"
+            },
+            "id": "0ef8d6f0-d353-11ef-b0f2-edd4f55a52c5",
+            "quantity": 1,
+            "originalPrice": {
+              "amount": "88.45",
+              "currency": "PLN"
+            },
+            "boughtAt": "2025-01-15T15:13:53.796Z"
+          }
+        ],
+        "checkoutForm": {
+          "id": "0efef170-d353-11ef-b0f2-edd4f55a52c5",
+          "revision": "3294a91d"
+        },
+        "marketplace": {
+          "id": "allegro-pl"
+        }
+      },
+      "type": "READY_FOR_PROCESSING",
+      "occurredAt": "2025-01-15T15:14:11.617Z"
+    },
+    {
+      "id": "1736963851584105",
+      "order": {
+        "seller": {
+          "id": "102758280"
+        },
+        "buyer": {
+          "id": "9556381",
+          "email": "femo6y7idl+ad8a7984@allegromail.pl",
+          "guest": false,
+          "login": "paczulek1",
+          "preferences": {
+            "language": "pl-PL"
+          }
+        },
+        "lineItems": [
+          {
+            "offer": {
+              "id": "17024934004",
+              "name": "Fingerscooter TAILWHIP Metalowy, Hulajnoga na Palce, Szeroki Pro Deck, purp",
+              "external": {
+                "id": "ScootTWBarspin180_224"
+              }
+            },
+            "price": {
+              "amount": "88.45",
+              "currency": "PLN"
+            },
+            "id": "978e0ab0-d369-11ef-967e-d300f4b7ed99",
+            "quantity": 1,
+            "originalPrice": {
+              "amount": "88.45",
+              "currency": "PLN"
+            },
+            "boughtAt": "2025-01-15T17:57:17.185Z"
+          }
+        ],
+        "checkoutForm": {
+          "id": "97947350-d369-11ef-967e-d300f4b7ed99",
+          "revision": "6e33dbc5"
+        },
+        "marketplace": {
+          "id": "allegro-pl"
+        }
+      },
+      "type": "FILLED_IN",
+      "occurredAt": "2025-01-15T17:57:17.243Z"
+    },
+    {
+      "id": "1736963851944138",
+      "order": {
+        "seller": {
+          "id": "102758280"
+        },
+        "buyer": {
+          "id": "9556381",
+          "email": "femo6y7idl+ad8a7984@allegromail.pl",
+          "guest": false,
+          "login": "paczulek1",
+          "preferences": {
+            "language": "pl-PL"
+          }
+        },
+        "lineItems": [
+          {
+            "offer": {
+              "id": "17024934004",
+              "name": "Fingerscooter TAILWHIP Metalowy, Hulajnoga na Palce, Szeroki Pro Deck, purp",
+              "external": {
+                "id": "ScootTWBarspin180_224"
+              }
+            },
+            "price": {
+              "amount": "88.45",
+              "currency": "PLN"
+            },
+            "id": "978e0ab0-d369-11ef-967e-d300f4b7ed99",
+            "quantity": 1,
+            "originalPrice": {
+              "amount": "88.45",
+              "currency": "PLN"
+            },
+            "boughtAt": "2025-01-15T17:57:17.185Z"
+          }
+        ],
+        "checkoutForm": {
+          "id": "97947350-d369-11ef-967e-d300f4b7ed99",
+          "revision": "6e33dbc5"
+        },
+        "marketplace": {
+          "id": "allegro-pl"
+        }
+      },
+      "type": "BOUGHT",
+      "occurredAt": "2025-01-15T17:57:17.243Z"
+    },
+    {
+      "id": "1736963968525746",
+      "order": {
+        "seller": {
+          "id": "102758280"
+        },
+        "buyer": {
+          "id": "9556381",
+          "email": "femo6y7idl+ad8a7984@allegromail.pl",
+          "guest": false,
+          "login": "paczulek1",
+          "preferences": {
+            "language": "pl-PL"
+          }
+        },
+        "lineItems": [
+          {
+            "offer": {
+              "id": "17024934004",
+              "name": "Fingerscooter TAILWHIP Metalowy, Hulajnoga na Palce, Szeroki Pro Deck, purp",
+              "external": {
+                "id": "ScootTWBarspin180_224"
+              }
+            },
+            "price": {
+              "amount": "88.45",
+              "currency": "PLN"
+            },
+            "id": "978e0ab0-d369-11ef-967e-d300f4b7ed99",
+            "quantity": 1,
+            "originalPrice": {
+              "amount": "88.45",
+              "currency": "PLN"
+            },
+            "boughtAt": "2025-01-15T17:57:17.185Z"
+          }
+        ],
+        "checkoutForm": {
+          "id": "97947350-d369-11ef-967e-d300f4b7ed99",
+          "revision": "3294a91d"
+        },
+        "marketplace": {
+          "id": "allegro-pl"
+        }
+      },
+      "type": "READY_FOR_PROCESSING",
+      "occurredAt": "2025-01-15T17:59:08.116Z"
+    },
+    {
+      "id": "1736983058672678",
+      "order": {
+        "seller": {
+          "id": "102758280"
+        },
+        "buyer": {
+          "id": "125463883",
+          "email": "jo0fk6c0k5+58137c734@allegromail.pl",
+          "guest": false,
+          "login": "Client:125463883",
+          "preferences": {
+            "language": "sk-SK"
+          }
+        },
+        "lineItems": [
+          {
+            "offer": {
+              "id": "17024934004",
+              "name": "Fingerscooter TAILWHIP Metalowy, Hulajnoga na Palce, Szeroki Pro Deck, purp",
+              "external": {
+                "id": "ScootTWBarspin180_224"
+              }
+            },
+            "price": {
+              "amount": "22.76",
+              "currency": "EUR"
+            },
+            "id": "9fd8dec0-d396-11ef-8194-ff278c57e17e",
+            "quantity": 1,
+            "originalPrice": {
+              "amount": "22.76",
+              "currency": "EUR"
+            },
+            "boughtAt": "2025-01-15T23:17:23.907Z"
+          }
+        ],
+        "checkoutForm": {
+          "id": "9fde5d00-d396-11ef-8194-ff278c57e17e",
+          "revision": "6e33dbc5"
+        },
+        "marketplace": {
+          "id": "allegro-sk"
+        }
+      },
+      "type": "FILLED_IN",
+      "occurredAt": "2025-01-15T23:17:23.947Z"
+    },
+    {
+      "id": "1736983058838103",
+      "order": {
+        "seller": {
+          "id": "102758280"
+        },
+        "buyer": {
+          "id": "125463883",
+          "email": "jo0fk6c0k5+58137c734@allegromail.pl",
+          "guest": false,
+          "login": "Client:125463883",
+          "preferences": {
+            "language": "sk-SK"
+          }
+        },
+        "lineItems": [
+          {
+            "offer": {
+              "id": "17024934004",
+              "name": "Fingerscooter TAILWHIP Metalowy, Hulajnoga na Palce, Szeroki Pro Deck, purp",
+              "external": {
+                "id": "ScootTWBarspin180_224"
+              }
+            },
+            "price": {
+              "amount": "22.76",
+              "currency": "EUR"
+            },
+            "id": "9fd8dec0-d396-11ef-8194-ff278c57e17e",
+            "quantity": 1,
+            "originalPrice": {
+              "amount": "22.76",
+              "currency": "EUR"
+            },
+            "boughtAt": "2025-01-15T23:17:23.907Z"
+          }
+        ],
+        "checkoutForm": {
+          "id": "9fde5d00-d396-11ef-8194-ff278c57e17e",
+          "revision": "6e33dbc5"
+        },
+        "marketplace": {
+          "id": "allegro-sk"
+        }
+      },
+      "type": "BOUGHT",
+      "occurredAt": "2025-01-15T23:17:23.947Z"
+    },
+    {
+      "id": "1736983069455669",
+      "order": {
+        "seller": {
+          "id": "102758280"
+        },
+        "buyer": {
+          "id": "125463883",
+          "email": "jo0fk6c0k5+58137c734@allegromail.pl",
+          "guest": false,
+          "login": "Client:125463883",
+          "preferences": {
+            "language": "sk-SK"
+          }
+        },
+        "lineItems": [
+          {
+            "offer": {
+              "id": "17024934004",
+              "name": "Fingerscooter TAILWHIP Metalowy, Hulajnoga na Palce, Szeroki Pro Deck, purp",
+              "external": {
+                "id": "ScootTWBarspin180_224"
+              }
+            },
+            "price": {
+              "amount": "22.76",
+              "currency": "EUR"
+            },
+            "id": "9fd8dec0-d396-11ef-8194-ff278c57e17e",
+            "quantity": 1,
+            "originalPrice": {
+              "amount": "22.76",
+              "currency": "EUR"
+            },
+            "boughtAt": "2025-01-15T23:17:23.907Z"
+          }
+        ],
+        "checkoutForm": {
+          "id": "9fde5d00-d396-11ef-8194-ff278c57e17e",
+          "revision": "1ab823c2"
+        },
+        "marketplace": {
+          "id": "allegro-sk"
+        }
+      },
+      "type": "READY_FOR_PROCESSING",
+      "occurredAt": "2025-01-15T23:17:29.663Z"
+    },
+    {
+      "id": "1737009703746737",
+      "order": {
+        "seller": {
+          "id": "102758280"
+        },
+        "buyer": {
+          "id": "6379681",
+          "email": "pfnwv6ugdt+10881b261@allegromail.pl",
+          "guest": false,
+          "login": "remus74",
+          "preferences": {
+            "language": "pl-PL"
+          }
+        },
+        "lineItems": [
+          {
+            "offer": {
+              "id": "17024934004",
+              "name": "Fingerscooter TAILWHIP Metalowy, Hulajnoga na Palce, Szeroki Pro Deck, purp",
+              "external": {
+                "id": "ScootTWBarspin180_224"
+              }
+            },
+            "price": {
+              "amount": "88.45",
+              "currency": "PLN"
+            },
+            "id": "e6872a00-d3d4-11ef-8ecf-312b29a5d997",
+            "quantity": 1,
+            "originalPrice": {
+              "amount": "88.45",
+              "currency": "PLN"
+            },
+            "boughtAt": "2025-01-16T06:41:28.988Z"
+          }
+        ],
+        "checkoutForm": {
+          "id": "e68d1d70-d3d4-11ef-8ecf-312b29a5d997",
+          "revision": "6e33dbc5"
+        },
+        "marketplace": {
+          "id": "allegro-pl"
+        }
+      },
+      "type": "BOUGHT",
+      "occurredAt": "2025-01-16T06:41:29.745Z"
+    }
+  ]
+}
