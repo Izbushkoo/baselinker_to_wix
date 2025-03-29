@@ -8,4 +8,4 @@ source "$VENV_PATH/bin/activate"
 export PATH="$VENV_PATH/bin:$PATH"
 
 # Запускаем основной сервис
-exec uvicorn app.main:app --host 0.0.0.0 --port 8787 --reload 
+exec uvicorn app.main:app --host 0.0.0.0 --port 8787 

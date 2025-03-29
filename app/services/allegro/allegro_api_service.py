@@ -75,6 +75,7 @@ class SyncAllegroApiService(BaseAllegroApiService):
         offset: int = 0,
         limit: int = 100,
         updated_at_gte: datetime = None,
+        updated_at_lte: datetime = None,
         sort: str = None
     ) -> Dict[str, Any]:
         """
@@ -86,6 +87,7 @@ class SyncAllegroApiService(BaseAllegroApiService):
             offset: Смещение для пагинации
             limit: Количество заказов на странице
             updated_at_gte: Минимальная дата обновления
+            updated_at_lte: Максимальная дата обновления
             sort: Параметр сортировки
             
         Returns:
@@ -107,6 +109,8 @@ class SyncAllegroApiService(BaseAllegroApiService):
             if updated_at_gte:
                 # Форматируем дату в ISO 8601 с Z в конце
                 params['updatedAt.gte'] = updated_at_gte.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+            if updated_at_lte:
+                params['updatedAt.lte'] = updated_at_lte.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
             if sort:
                 params['sort'] = sort
                 

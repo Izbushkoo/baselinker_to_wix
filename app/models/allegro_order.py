@@ -52,7 +52,7 @@ class AllegroOrder(SQLModel, table=True):
     
     id: str = Field(primary_key=True)  # allegro_id из API
     status: str
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field()
     belongs_to: str = Field(nullable=False, default="1")
     
     # Связь с токеном

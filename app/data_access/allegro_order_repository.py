@@ -1,5 +1,5 @@
 from typing import Optional, Dict, Any
-from sqlmodel import Session, select
+from sqlmodel import Session, select, delete
 from sqlalchemy.orm import selectinload
 from datetime import datetime
 from app.utils.logging_config import logger
@@ -65,20 +65,31 @@ class AllegroOrderRepository:
             AllegroOrder: Созданный заказ
         """
 
-        logger.info(f"Добавление заказа: {order_data}")
+        # logger.info(f"Добавление заказа: {order_data}")
 
         # Создаем покупателя
         buyer_data = self._safe_get(order_data, "buyer", default={})
-        buyer = AllegroBuyer(
-            id=self._safe_get(buyer_data, "id", default=""),
-            email=self._safe_get(buyer_data, "email", default=""),
-            login=self._safe_get(buyer_data, "login", default=""),
-            first_name=self._safe_get(buyer_data, "firstName", default=""),
-            last_name=self._safe_get(buyer_data, "lastName", default=""),
-            company_name=self._safe_get(buyer_data, "companyName"),
-            phone_number=self._safe_get(buyer_data, "phoneNumber", default=""),
-            address=self._safe_get(buyer_data, "address", default={})
-        )
+        # Проверяем существование покупателя в базе
+        buyer_id = self._safe_get(buyer_data, "id", default="")
+
+        existing_buyer = self.session.exec(
+            select(AllegroBuyer).where(AllegroBuyer.id == buyer_id)
+        ).first()
+
+        if existing_buyer:
+            logger.info(f"Найден существующий покупатель с ID {buyer_id}, используем его")
+            buyer = existing_buyer
+        else:
+            buyer = AllegroBuyer(
+                id=self._safe_get(buyer_data, "id", default=""),
+                email=self._safe_get(buyer_data, "email", default=""),
+                login=self._safe_get(buyer_data, "login", default=""),
+                first_name=self._safe_get(buyer_data, "firstName", default=""),
+                last_name=self._safe_get(buyer_data, "lastName", default=""),
+                company_name=self._safe_get(buyer_data, "companyName"),
+                phone_number=self._safe_get(buyer_data, "phoneNumber", default=""),
+                address=self._safe_get(buyer_data, "address", default={})
+            )
         self.session.add(buyer)
         
         # Создаем заказ
@@ -89,17 +100,17 @@ class AllegroOrderRepository:
             buyer=buyer,
             payment=self._safe_get(order_data, "payment", default={}),
             fulfillment=self._safe_get(order_data, "fulfillment", default={}),
-            delivery=self._safe_get(order_data, "delivery", default={})
+            delivery=self._safe_get(order_data, "delivery", default={}),
+            updated_at=self._safe_datetime(self._safe_get(order_data, "updatedAt"))  # Преобразует "2011-12-03T10:15:30.133Z" в datetime
         )
         self.session.add(order)
         
         # Создаем товарные позиции
-        delivery = self._safe_get(order_data, "delivery", default={})
-        line_items = self._safe_get(delivery, "lineItems", default=[])
-        # line_items = self._safe_get(order_data,"delivery", "lineItems", default=[])
+        line_items = self._safe_get(order_data, "lineItems", default=[])
+        logger.info(f"line_items: {line_items}")
         for item_data in line_items:
             item_id = self._safe_get(item_data, "id", default="")
-            quantity = self._safe_get(item_data, "quantity", default=1)
+            quantity = item_data["quantity"]
             if not item_id:
                 continue
                 
@@ -215,17 +226,18 @@ class AllegroOrderRepository:
             order.delivery = self._safe_get(order_data, "delivery", default=order.delivery)
 
             # Обновляем товарные позиции
-            line_items = self._safe_get(order_data, "delivery", "lineItems")
-            if line_items is not None:
+            line_items = self._safe_get(order_data, "lineItems")
+
+            logger.info(f"line_items: {line_items}")
+            if line_items:
                 # Удаляем старые связи
-                self.session.exec(
-                    select(OrderLineItem).where(OrderLineItem.order_id == order_id)
-                ).delete()
-                
+                statement = delete(OrderLineItem).where(OrderLineItem.order_id == order_id)
+                self.session.exec(statement)
+
                 # Добавляем новые связи
                 for item_data in line_items:
                     item_id = self._safe_get(item_data, "id", default="")
-                    quantity = self._safe_get(item_data, "quantity", default=1)
+                    quantity = item_data["quantity"]
                     if not item_id:
                         continue
                         
@@ -321,16 +333,17 @@ class AllegroOrderRepository:
                 buyer=buyer,
                 payment=self._safe_get(order_data, "payment", default={}),
                 fulfillment=self._safe_get(order_data, "fulfillment", default={}),
-                delivery=self._safe_get(order_data, "delivery", default={})
+                delivery=self._safe_get(order_data, "delivery", default={}),
+                updated_at=self._safe_datetime(self._safe_get(order_data, "updatedAt"))
             )
             self.session.add(order)
             
             # Создаем товарные позиции
-            delivery = self._safe_get(order_data, "delivery", default={})
-            line_items = self._safe_get(delivery, "lineItems", default=[])
+            line_items = self._safe_get(order_data, "lineItems", default=[])
+
             for item_data in line_items:
                 item_id = self._safe_get(item_data, "id", default="")
-                quantity = self._safe_get(item_data, "quantity", default=1)
+                quantity = item_data["quantity"] 
                 if not item_id:
                     continue
                     

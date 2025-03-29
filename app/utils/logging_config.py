@@ -40,7 +40,11 @@ def setup_project_logging():
     logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
     logging.getLogger("celery").setLevel(logging.INFO)
     
-    return root_logger
+    # Настраиваем логгер для нашего приложения
+    app_logger = logging.getLogger("app")
+    app_logger.setLevel(logging.DEBUG)
+    
+    return app_logger
 
 # Создаем глобальный логгер
 logger = setup_project_logging() 

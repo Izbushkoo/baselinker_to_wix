@@ -18,6 +18,7 @@ from app.utils.logging_config import logger
 import logging
 import os
 
+
 from app.services.allegro.order_service import SyncAllegroOrderService
 from app.database import engine
 
@@ -26,7 +27,86 @@ from app.models.allegro_token import AllegroToken
 from app.services.allegro.tokens import check_token_sync
 from app.services.allegro.data_access import get_token_by_id_sync
 from app.utils.date_utils import parse_date
+import redis
+from celery.beat import PersistentScheduler, ScheduleEntry
+import json
+from collections import UserDict
 
+
+def get_redis_client():
+    redis_url = os.getenv("CELERY_REDIS_URL", "redis://redis:6379/0")
+    return redis.Redis.from_url(redis_url)
+
+class DummyStore(UserDict):
+    def sync(self):
+        # Для совместимости; здесь ничего не нужно делать
+        pass
+
+    def close(self):
+        # Для совместимости; ничего не делаем
+        pass
+
+class RedisScheduler(PersistentScheduler):
+    def __init__(self, *args, **kwargs):
+        super(RedisScheduler, self).__init__(*args, **kwargs)
+        # Получаем URL Redis из переменной окружения (по умолчанию: redis://redis:6379/0)
+        redis_url = os.getenv("CELERY_REDIS_URL", "redis://redis:6379/0")
+        self.redis_client = redis.Redis.from_url(redis_url)
+        self.schedule_key = "celery_beat_schedule"
+        self.last_schedule = None
+        self.reload_schedule_from_redis()
+
+    def reload_schedule_from_redis(self):
+        schedule_data = self.redis_client.get(self.schedule_key)
+        if schedule_data:
+            try:
+                new_schedule = json.loads(schedule_data.decode("utf-8"))
+                if new_schedule != self.last_schedule:
+                    self.merge_inplace(new_schedule)
+                    # Оборачиваем обновлённое расписание в DummyStore с ключом 'entries'
+                    self._store = DummyStore({'entries': self.app.conf.beat_schedule})
+                    self.last_schedule = new_schedule
+                    logger.info("RedisScheduler: Schedule reloaded from Redis: %s", new_schedule)
+            except Exception as e:
+                logger.error("RedisScheduler: Error loading schedule from Redis: %s", e)
+        else:
+            logger.info("RedisScheduler: No schedule found in Redis.")
+
+    def tick(self):
+        # При каждом тике проверяем изменения в расписании и обновляем их
+        self.reload_schedule_from_redis()
+        return super(RedisScheduler, self).tick()
+
+    def merge_inplace(self, schedule):
+        """
+        Преобразует каждую запись нового расписания в ScheduleEntry
+        и обновляет self.app.conf.beat_schedule.
+        Ожидается, что каждая запись может быть либо словарём, либо ScheduleEntry.
+        """
+        for name, config in schedule.items():
+            if isinstance(config, dict):
+                # Получаем значение интервала. Если значение не число, пытаемся привести к float.
+                seconds_val = config.get("schedule", 300)
+                try:
+                    seconds = float(seconds_val)
+                except (ValueError, TypeError):
+                    # Если приведение не удалось, используем значение по умолчанию.
+                    seconds = 300
+                run_every = timedelta(seconds=seconds)
+                entry = ScheduleEntry(
+                    name=name,
+                    task=config.get("task"),
+                    schedule=run_every,
+                    args=tuple(config.get("args", [])),
+                    kwargs=config.get("kwargs", {}),
+                    options=config.get("options", {}),
+                    last_run_at=None,
+                )
+                self.app.conf.beat_schedule[name] = entry
+            else:
+                # Если config уже является ScheduleEntry, можно оставить его без изменений
+                self.app.conf.beat_schedule[name] = config
+        return self.app.conf.beat_schedule
 
 # Настройки брокера (Redis)
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
@@ -48,11 +128,14 @@ celery.conf.update(
     enable_utc=True,
     worker_hijack_root_logger=False,  # Отключаем перехват root логгера
     worker_log_format='[%(asctime)s: %(levelname)s/%(processName)s] %(message)s',
-    worker_task_log_format='[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s'
+    worker_task_log_format='[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s',
+    broker_connection_retry_on_startup=True  # Добавляем эту настройку для устранения предупреждения
 )
 
+celery.conf.beat_scheduler = "app.celery_app.RedisScheduler"
 # Настройка периодических задач
-celery.conf.beat_schedule = {}
+celery.conf.beat_schedule = {
+}
 
 def chunks(lst, n):
     """Возвращает генератор чанков размера n из списка lst."""
@@ -199,7 +282,7 @@ def get_allegro_token(session: Session, token_id: str) -> AllegroToken:
         
     return token
 
-@celery.task(name='tasks.sync_allegro_orders')
+@celery.task(name='app.celery_app.sync_allegro_orders')
 def sync_allegro_orders(token_id: str, from_date: str = None) -> Dict[str, Any]:
     """
     Синхронизирует заказы для указанного токена.
@@ -208,32 +291,40 @@ def sync_allegro_orders(token_id: str, from_date: str = None) -> Dict[str, Any]:
         token_id: ID токена
         from_date: Дата в формате DD-MM-YYYY (например, "20-03-2025"), с которой начать синхронизацию.
                   Если указана, синхронизация начнется с 00:00:00 указанного дня.
-                  Если не указана, будет использовано время последней синхронизации или 30 дней назад.
+                  Если не указана, будет использовано время 30 дней назад.
     """
     try:
-        # Парсим дату только если она передана как строка
-        parsed_date = parse_date(from_date) if isinstance(from_date, str) else from_date
+        redis_client = get_redis_client()
         
-        # Получаем время последней синхронизации
-        last_sync_time = celery.backend.get(f"last_sync_time_{token_id}")
-        if parsed_date:
-            last_sync_time = parsed_date.isoformat()
-            logger.info(f"Синхронизация начнется с {parsed_date} (00:00:00)")
-        elif last_sync_time:
-            # Декодируем байты в строку и парсим в datetime
-            last_sync_time = datetime.fromisoformat(last_sync_time.decode('utf-8'))
-            logger.info(f"Синхронизация начнется с последней синхронизации: {last_sync_time}")
+        # Определяем время начала синхронизации
+        if from_date:
+            # Если передана дата, преобразуем её в datetime с временем 00:00:00
+            last_sync_time = parse_date(from_date)
+            if not last_sync_time:
+                raise ValueError(f"Неверный формат даты: {from_date}")
+            logger.info(f"Синхронизация начнется с {last_sync_time.isoformat()}")
         else:
-            last_sync_time = datetime.now() - timedelta(days=30)
-            logger.info(f"Синхронизация начнется с 30 дней назад: {last_sync_time}")
-            
+            # Получаем время последней синхронизации из Redis
+            last_sync_raw = redis_client.get(f"last_sync_time_{token_id}")
+            if last_sync_raw:
+                try:
+                    last_sync_time = datetime.fromisoformat(last_sync_raw.decode('utf-8'))
+                    logger.info(f"Синхронизация начнется с последней синхронизации: {last_sync_time.isoformat()}")
+                except ValueError:
+                    # Если не удалось распарсить дату из Redis, используем 30 дней назад
+                    last_sync_time = datetime.utcnow() - timedelta(days=30)
+                    logger.warning(f"Не удалось распарсить дату из Redis, используем: {last_sync_time.isoformat()}")
+            else:
+                # Если нет сохраненного времени, используем 30 дней назад
+                last_sync_time = datetime.utcnow() - timedelta(days=30)
+                logger.info(f"Синхронизация начнется с 30 дней назад: {last_sync_time.isoformat()}")
+
+        logger.info(f"last_sync_time_{token_id}: {last_sync_time.isoformat()}")    
         logger.info("Начинаем полную синхронизацию заказов Allegro")
         
         session = SessionLocal()
         try:
             service = SyncAllegroOrderService(session)
-            
-            # Получаем и проверяем токен из базы данных
             token = get_allegro_token(session, token_id)
             
             offset = 0
@@ -256,10 +347,8 @@ def sync_allegro_orders(token_id: str, from_date: str = None) -> Dict[str, Any]:
                 # Проверяем rate limit перед запросом
                 allegro_rate_limiter.wait_if_needed()
                 
-                # Получаем страницу заказов
                 orders_data = service.api_service.get_orders(
                     token=token.access_token,
-                    status="READY_FOR_PROCESSING",
                     offset=offset,
                     limit=limit,
                     updated_at_gte=last_sync_time if last_sync_time else None,
@@ -273,16 +362,20 @@ def sync_allegro_orders(token_id: str, from_date: str = None) -> Dict[str, Any]:
                 # Собираем ID заказов, которые нужно обновить
                 orders_to_update = []
                 for order_data in checkout_forms:
+                    update_time = datetime.fromisoformat(order_data.get("updatedAt").replace('Z', '+00:00'))
+
                     order_id = order_data["id"]
-                    update_time = order_data.get("updateTime")
                     
                     # Проверяем, нужно ли обновлять заказ
-                    if order_id not in existing_orders or existing_orders[order_id] != update_time:
+                    if order_id not in existing_orders:
                         orders_to_update.append(order_id)
+                    else:
+                        existing_update_time = existing_orders[order_id]
+                        if update_time > existing_update_time:
+                            orders_to_update.append(order_id)
                 
                 # Получаем детали только для заказов, которые нужно обновить
                 for order_id in orders_to_update:
-                    # Проверяем rate limit перед каждым запросом деталей
                     allegro_rate_limiter.wait_if_needed()
                     
                     order_details = service.api_service.get_order_details(
@@ -290,12 +383,21 @@ def sync_allegro_orders(token_id: str, from_date: str = None) -> Dict[str, Any]:
                         order_id=order_id
                     )
                     
-                    if order_id in existing_orders:
-                        service.repository.update_order(order_id, order_details)
-                    else:
-                        service.repository.add_order(order_details)
-                    
-                    total_synced += 1
+                    try:
+                        if order_id in existing_orders:
+                            service.repository.update_order(token_id, order_id, order_details)
+                        else:
+                            service.repository.add_order(token_id, order_details)
+                        total_synced += 1
+                    except Exception as e:
+                        if "duplicate key value violates unique constraint" in str(e):
+                            # Если это дублирование покупателя, получаем существующего и пробуем снова
+                            logger.info(f"Найден существующий покупатель для заказа {order_id}, используем его")
+                            # Получаем существующего покупателя и пробуем добавить заказ снова
+                            service.repository.add_order_with_existing_buyer(token_id, order_details)
+                            total_synced += 1
+                        else:
+                            raise
                 
                 # Если получили меньше заказов чем limit, значит это последняя страница
                 if len(checkout_forms) < limit:
@@ -303,17 +405,7 @@ def sync_allegro_orders(token_id: str, from_date: str = None) -> Dict[str, Any]:
                     
                 offset += limit
             
-            # Сохраняем время последней синхронизации
-            if checkout_forms:
-                last_order_time = checkout_forms[0].get("updateTime")
-                if last_order_time:
-                    # Если last_order_time это строка, преобразуем её в datetime
-                    if isinstance(last_order_time, str):
-                        last_order_time = datetime.fromisoformat(last_order_time)
-                    celery.backend.set(f"last_sync_time_{token_id}", last_order_time.isoformat())
-            else:
-                # Если заказов нет, сохраняем текущее время
-                celery.backend.set(f"last_sync_time_{token_id}", datetime.utcnow().isoformat())
+            redis_client.set(f"last_sync_time_{token_id}", (datetime.utcnow() - timedelta(seconds=5)).isoformat())
             
             logger.info(f"Успешно синхронизировано {total_synced} заказов")
             return {
@@ -337,7 +429,7 @@ def sync_allegro_orders(token_id: str, from_date: str = None) -> Dict[str, Any]:
             "message": f"Ошибка при синхронизации: {str(e)}"
         }
 
-@celery.task(name='tasks.check_recent_orders')
+@celery.task(name='app.celery_app.check_recent_orders')
 def check_recent_orders(token_id: str):
     """
     Задача для проверки обновлений заказов за последние 3 дня.
@@ -356,26 +448,18 @@ def check_recent_orders(token_id: str):
             now = datetime.utcnow()
             three_days_ago = now - timedelta(days=3)
             
-            # Получаем время последней проверки из Redis
-            last_check_time = celery.backend.get('last_check_time')
-            if last_check_time:
-                # Декодируем байты в строку и парсим в datetime
-                last_check_time = datetime.fromisoformat(last_check_time.decode('utf-8'))
-                # Используем более раннее время для надежности
-                from_time = min(three_days_ago, last_check_time)
-            else:
-                from_time = three_days_ago
-            
             offset = 0
             limit = 100
             total_checked = 0
             updated_orders = 0
             
             # Получаем все существующие заказы из базы одним запросом
-            existing_orders = {
-                order["id"]: order["updateTime"] 
-                for order in service.repository.get_all_orders_basic_info()
-            }
+            existing_orders = {}
+            orders_info = service.repository.get_all_orders_basic_info()
+            if orders_info:
+                existing_orders = {
+                    order["id"]: order["updateTime"] for order in orders_info
+                }
             
             while True:
                 # Проверяем rate limit перед запросом
@@ -384,10 +468,10 @@ def check_recent_orders(token_id: str):
                 # Получаем страницу заказов
                 orders_data = service.api_service.get_orders(
                     token=token.access_token,
-                    status="READY_FOR_PROCESSING",
+                    # status="READY_FOR_PROCESSING",
                     offset=offset,
                     limit=limit,
-                    updated_at_gte=from_time,
+                    updated_at_gte=three_days_ago,
                     updated_at_lte=now,
                     sort="-updatedAt"  # Сортируем по времени обновления
                 )
@@ -400,11 +484,15 @@ def check_recent_orders(token_id: str):
                 orders_to_update = []
                 for order_data in checkout_forms:
                     order_id = order_data["id"]
-                    update_time = order_data.get("updateTime")
+                    try:
+                        update_time = datetime.fromisoformat(order_data.get("updatedAt").replace('Z', '+00:00'))
+                    except Exception as e:
+                        logger.error(f"Ошибка при парсинге даты для заказа {order_id}: {str(e)} {order_data.get('updatedAt')}")
+                        continue
                     total_checked += 1
-                    
+                    logger.info(f"update_time: {update_time}    existing_orders[order_id]: {existing_orders[order_id]}")
                     # Проверяем, нужно ли обновлять заказ
-                    if order_id not in existing_orders or existing_orders[order_id] != update_time:
+                    if order_id not in existing_orders or update_time.replace(tzinfo=None) !=  existing_orders[order_id].replace(tzinfo=None):
                         orders_to_update.append(order_id)
                 
                 # Получаем детали только для заказов, которые нужно обновить
@@ -417,12 +505,20 @@ def check_recent_orders(token_id: str):
                         order_id=order_id
                     )
                     
-                    if order_id in existing_orders:
-                        service.repository.update_order(order_id, order_details)
-                    else:
-                        service.repository.add_order(order_details)
-                    
-                    updated_orders += 1
+                    try:
+                        if order_id in existing_orders:
+                            service.repository.update_order(token_id, order_id, order_details)
+                        else:
+                            service.repository.add_order(token_id, order_details)
+                        updated_orders += 1
+                    except Exception as e:
+                        if "duplicate key value violates unique constraint" in str(e):
+                            # Если это дублирование покупателя, получаем существующего и пробуем снова
+                            logger.info(f"Найден существующий покупатель для заказа {order_id}, используем его")
+                            service.repository.add_order_with_existing_buyer(token_id, order_details)
+                            updated_orders += 1
+                        else:
+                            raise
                 
                 # Если получили меньше заказов чем limit, значит это последняя страница
                 if len(checkout_forms) < limit:
@@ -430,51 +526,23 @@ def check_recent_orders(token_id: str):
                     
                 offset += limit
             
-            # Сохраняем время проверки
-            celery.backend.set('last_check_time', now.isoformat())
-            
-            logger.info(f"Проверено {total_checked} заказов, обновлено {updated_orders}")
+            logger.info(f"Проверено {total_checked} заказов, обновлено {updated_orders}\n Срок проверки: {three_days_ago.isoformat()} - {now.isoformat()}")
             return {
                 "status": "success",
                 "total_checked": total_checked,
                 "updated_orders": updated_orders,
                 "period": {
-                    "from": from_time.isoformat(),
+                    "from": three_days_ago.isoformat(),
                     "to": now.isoformat()
                 }
             }
             
     except Exception as e:
         logger.error(f"Ошибка при проверке заказов: {str(e)}")
-        raise
+        return {"status": "error", "message": str(e)}
 
-@celery.task(name='tasks.sync_all_tokens')
-def sync_all_tokens():
-    """
-    Задача для синхронизации заказов всех токенов.
-    Запускается каждый час.
-    """
-    logger.info("Начинаем синхронизацию заказов для всех токенов")
-    
-    try:
-        with Session(engine) as session:
-            # Получаем все активные токены
-            tokens = session.query(AllegroToken).all()
-            
-            for token in tokens:
-                try:
-                    # Запускаем проверку новых заказов для каждого токена
-                    check_recent_orders.delay(token.id_)
-                except Exception as e:
-                    logger.error(f"Ошибка при синхронизации токена {token.id_}: {str(e)}")
-                    continue
-                    
-        logger.info("Синхронизация всех токенов завершена")
-    except Exception as e:
-        logger.error(f"Ошибка при синхронизации токенов: {str(e)}")
-        raise
 
-@celery.task(name='tasks.sync_allegro_orders_immediate')
+@celery.task(name='app.celery_app.sync_allegro_orders_immediate')
 def sync_allegro_orders_immediate(token_id: str, from_date: str = None) -> Dict[str, Any]:
     """
     Немедленно синхронизирует заказы для указанного токена.
@@ -487,21 +555,23 @@ def sync_allegro_orders_immediate(token_id: str, from_date: str = None) -> Dict[
         # Парсим дату только если она передана как строка
         parsed_date = parse_date(from_date) if isinstance(from_date, str) else from_date
         
-        # Получаем время последней синхронизации
-        last_sync_time = celery.backend.get(f"last_sync_time_{token_id}")
-        if last_sync_time:
-            last_sync_time = last_sync_time.decode('utf-8')
+        # Получаем время последней синхронизации из Redis
+        redis_client = get_redis_client()
+        last_sync_raw = redis_client.get(f"last_sync_time_{token_id}")
+        if last_sync_raw:
+            try:
+                last_sync_time = datetime.fromisoformat(last_sync_raw.decode('utf-8'))
+                logger.info(f"Синхронизация начнется с последней синхронизации: {last_sync_time.isoformat()}")
+            except ValueError:
+                last_sync_time = datetime.utcnow() - timedelta(days=30)
+                logger.warning(f"Не удалось распарсить дату из Redis, используем: {last_sync_time.isoformat()}")
+        else:
+            last_sync_time = datetime.utcnow() - timedelta(days=30)
+            logger.info(f"Синхронизация начнется с 30 дней назад: {last_sync_time.isoformat()}")
+
         if parsed_date:
             last_sync_time = parsed_date
-            logger.info(f"Синхронизация начнется с {parsed_date} (00:00:00)")
-        elif last_sync_time:
-            # Если last_sync_time это строка, преобразуем её в datetime
-            if isinstance(last_sync_time, str):
-                last_sync_time = datetime.fromisoformat(last_sync_time)
-            logger.info(f"Синхронизация начнется с последней синхронизации: {last_sync_time}")
-        else:
-            last_sync_time = datetime.now() - timedelta(days=30)
-            logger.info(f"Синхронизация начнется с 30 дней назад: {last_sync_time}")
+            logger.info(f"Синхронизация начнется с {parsed_date.isoformat()} (00:00:00)")
             
         logger.info("Начинаем немедленную синхронизацию заказов Allegro")
         
@@ -535,7 +605,7 @@ def sync_allegro_orders_immediate(token_id: str, from_date: str = None) -> Dict[
                 # Получаем страницу заказов
                 orders_data = service.api_service.get_orders(
                     token=token.access_token,
-                    status="READY_FOR_PROCESSING",
+                    # status=["BOUGHT"],
                     offset=offset,
                     limit=limit,
                     updated_at_gte=last_sync_time if last_sync_time else None,
@@ -549,12 +619,16 @@ def sync_allegro_orders_immediate(token_id: str, from_date: str = None) -> Dict[
                 # Собираем ID заказов, которые нужно обновить
                 orders_to_update = []
                 for order_data in checkout_forms:
+                    update_time = datetime.fromisoformat(order_data.get("updatedAt").replace('Z', '+00:00'))
                     order_id = order_data["id"]
-                    update_time = order_data.get("updateTime")
                     
                     # Проверяем, нужно ли обновлять заказ
-                    if order_id not in existing_orders or existing_orders[order_id] != update_time:
+                    if order_id not in existing_orders:
                         orders_to_update.append(order_id)
+                    else:
+                        existing_update_time = existing_orders[order_id]
+                        if update_time > existing_update_time:
+                            orders_to_update.append(order_id)
                 
                 # Получаем детали только для заказов, которые нужно обновить
                 for order_id in orders_to_update:
@@ -571,7 +645,6 @@ def sync_allegro_orders_immediate(token_id: str, from_date: str = None) -> Dict[
                             service.repository.update_order(token_id, order_id, order_details)
                         else:
                             service.repository.add_order(token_id, order_details)
-                        
                         total_synced += 1
                     except Exception as e:
                         if "duplicate key value violates unique constraint" in str(e):
@@ -590,21 +663,13 @@ def sync_allegro_orders_immediate(token_id: str, from_date: str = None) -> Dict[
                 offset += limit
             
             # Сохраняем время последней синхронизации
-            if checkout_forms:
-                last_order_time = checkout_forms[0].get("updateTime")
-                if last_order_time:
-                    # Если last_order_time это строка, преобразуем её в datetime
-                    if isinstance(last_order_time, str):
-                        last_order_time = datetime.fromisoformat(last_order_time)
-                    celery.backend.set(f"last_sync_time_{token_id}", last_order_time.isoformat())
-            else:
-                # Если заказов нет, сохраняем текущее время
-                celery.backend.set(f"last_sync_time_{token_id}", datetime.utcnow().isoformat())
-            
+            redis_client.set(f"last_sync_time_{token_id}", (datetime.utcnow() - timedelta(seconds=5)).isoformat())
+
             logger.info(f"Успешно синхронизировано {total_synced} заказов")
             return {
                 "status": "success",
                 "message": "Немедленная синхронизация завершена",
+                "total_synced": total_synced,
                 "from_date": from_date
             }
         finally:
