@@ -405,7 +405,7 @@ def sync_allegro_orders(token_id: str, from_date: str = None) -> Dict[str, Any]:
                     
                 offset += limit
             
-            redis_client.set(f"last_sync_time_{token_id}", (datetime.utcnow() - timedelta(seconds=5)).isoformat())
+            redis_client.set(f"last_sync_time_{token_id}", (datetime.utcnow() - timedelta(days=10)).isoformat())
             
             logger.info(f"Успешно синхронизировано {total_synced} заказов")
             return {
