@@ -52,12 +52,6 @@ def start_sync_tasks(token_id: str, db: Session = Depends(get_db)) -> Dict[str, 
             "schedule": 3600,  # 3600 секунд = 1 час
             "args": [token_id]
         }
-        
-        # check_entry = {
-        #     "task": "app.celery_app.check_recent_orders", 
-        #     "schedule": 600,  # 600 секунд = 10 минут
-        #     "args": [token_id]
-        # }
 
         client = get_redis_client()
         schedule_raw = client.get("celery_beat_schedule")
@@ -68,7 +62,6 @@ def start_sync_tasks(token_id: str, db: Session = Depends(get_db)) -> Dict[str, 
 
         # Обновляем расписание для обеих задач
         schedule[f"sync-allegro-orders-{token_id}"] = sync_entry
-        # schedule[f"check-recent-orders-{token_id}"] = check_entry
 
         client.set("celery_beat_schedule", json.dumps(schedule))
         
@@ -78,13 +71,7 @@ def start_sync_tasks(token_id: str, db: Session = Depends(get_db)) -> Dict[str, 
             args=[token_id]
         )
         
-        # Запускаем первую проверку недавних заказов немедленно
-        # check_task = celery.send_task(
-        #     'app.celery_app.check_recent_orders',
-        #     args=[token_id]
-        # )
-        
-        logger.info(f"Запущены задачи синхронизации для токена {token_id}, sync_task_id: {sync_task.id}, check_task_id: {check_entry.id}")
+        logger.info(f"Запущены задачи синхронизации для токена {token_id}, sync_task_id: {sync_task.id}")
         
         return {
             "status": "success",
@@ -97,15 +84,7 @@ def start_sync_tasks(token_id: str, db: Session = Depends(get_db)) -> Dict[str, 
                         "interval": "каждый час",
                         "next_run": (datetime.now() + timedelta(hours=1)).isoformat()
                     }
-                },
-                # "check": {
-                #     "task_id": check_entry.id,
-                #     "schedule": {
-                #         "name": "check_recent_orders",
-                #         "interval": "каждые 10 минут",
-                #         "next_run": (datetime.now() + timedelta(minutes=10)).isoformat()
-                #     }
-                # }
+                }
             }
         }
     except Exception as e:
@@ -134,11 +113,8 @@ def stop_sync_tasks(token_id: str, db: Session = Depends(get_db)) -> Dict[str, A
             schedule = {}
 
         sync_key = f"sync-allegro-orders-{token_id}"
-        check_key = f"check-recent-orders-{token_id}"
         if sync_key in schedule:
             del schedule[sync_key]
-        if check_key in schedule:
-            del schedule[check_key]
 
         client.set("celery_beat_schedule", json.dumps(schedule))
         return {
@@ -168,19 +144,14 @@ def get_sync_status(token_id: str, db: Session = Depends(get_db)) -> Dict[str, A
         schedule = {}
 
     sync_task = f"sync-allegro-orders-{token_id}" in schedule
-    check_task = f"check-recent-orders-{token_id}" in schedule
 
     return {
-        "status": "active" if sync_task or check_task else "inactive",
+        "status": "active" if sync_task else "inactive",
         "tasks": {
             "sync_allegro_orders": {
                 "active": sync_task,
                 "schedule": "каждые 12 часов" if sync_task else None
-            },
-            # "check_recent_orders": {
-            #     "active": check_task,
-            #     "schedule": "каждый час" if check_task else None
-            # }
+            }
         }
     }
 
@@ -240,15 +211,9 @@ def list_all_active_tasks(db: Session = Depends(get_db)) -> Dict[str, Any]:
     for token in tokens:
         token_tasks = {}
         sync_key = f"sync-allegro-orders-{token.id_}"
-        check_key = f"check-recent-orders-{token.id_}"
 
         if sync_key in schedule:
             token_tasks["sync_allegro_orders"] = { "schedule": "каждые 12 часов",
-                "last_run": None
-            }
-        if check_key in schedule:
-            token_tasks["check_recent_orders"] = {
-                "schedule": "каждый час",
                 "last_run": None
             }
         if token_tasks:
@@ -260,54 +225,6 @@ def list_all_active_tasks(db: Session = Depends(get_db)) -> Dict[str, Any]:
         "active_tasks_count": len(active_tasks),
         "tasks": active_tasks
     }
-
-# @router.get("/tasks/{token_id}/active")
-# def list_token_active_tasks(token_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
-#     """
-#     Получает список активных задач для конкретного токена.
-#     """
-#     token = get_token_by_id_sync(db, token_id)
-#     if not token:
-#         raise HTTPException(status_code=404, detail="Токен не найден")
-
-#     active_tasks = []
-#     client = get_redis_client()
-#     schedule_raw = client.get("celery_beat_schedule")
-#     if schedule_raw:
-#         schedule = json.loads(schedule_raw.decode("utf-8"))
-#     else:
-#         schedule = {}
-
-#     task_configs = {
-#         f"sync-allegro-orders-{token_id}": {
-#             "name": "sync_allegro_orders",
-#             "description": "Полная синхронизация заказов",
-#             "schedule": "каждые 12 часов"
-#         },
-#         f"check-recent-orders-{token_id}": {
-#             "name": "check_recent_orders",
-#             "description": "Проверка новых заказов",
-#             "schedule": "каждый час"
-#         }
-#     }
-
-#     for task_name, config in task_configs.items():
-#         if task_name in schedule:
-#             task_info = schedule[task_name]
-#             active_tasks.append({
-#                 "name": config["name"],
-#                 "description": config["description"],
-#                 "schedule": config["schedule"],
-#                 "task": task_info["task"],
-#                 "args": task_info["args"]
-#             })
-
-#     return {
-#         "token_id": token_id,
-#         "account_name": token.account_name,
-#         "active_tasks_count": len(active_tasks),
-#         "tasks": active_tasks
-#     }
 
 
 @router.post("/sync-immediate/{token_id}")
@@ -461,6 +378,7 @@ async def get_all_orders(
     except Exception as e:
         logger.error(f"Ошибка при получении заказов: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.delete("/orders/{token_id}")
 async def delete_all_orders(
