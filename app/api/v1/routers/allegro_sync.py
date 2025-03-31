@@ -53,11 +53,11 @@ def start_sync_tasks(token_id: str, db: Session = Depends(get_db)) -> Dict[str, 
             "args": [token_id]
         }
         
-        check_entry = {
-            "task": "app.celery_app.check_recent_orders", 
-            "schedule": 600,  # 600 секунд = 10 минут
-            "args": [token_id]
-        }
+        # check_entry = {
+        #     "task": "app.celery_app.check_recent_orders", 
+        #     "schedule": 600,  # 600 секунд = 10 минут
+        #     "args": [token_id]
+        # }
 
         client = get_redis_client()
         schedule_raw = client.get("celery_beat_schedule")
@@ -68,7 +68,7 @@ def start_sync_tasks(token_id: str, db: Session = Depends(get_db)) -> Dict[str, 
 
         # Обновляем расписание для обеих задач
         schedule[f"sync-allegro-orders-{token_id}"] = sync_entry
-        schedule[f"check-recent-orders-{token_id}"] = check_entry
+        # schedule[f"check-recent-orders-{token_id}"] = check_entry
 
         client.set("celery_beat_schedule", json.dumps(schedule))
         
@@ -79,12 +79,12 @@ def start_sync_tasks(token_id: str, db: Session = Depends(get_db)) -> Dict[str, 
         )
         
         # Запускаем первую проверку недавних заказов немедленно
-        check_task = celery.send_task(
-            'app.celery_app.check_recent_orders',
-            args=[token_id]
-        )
+        # check_task = celery.send_task(
+        #     'app.celery_app.check_recent_orders',
+        #     args=[token_id]
+        # )
         
-        logger.info(f"Запущены задачи синхронизации для токена {token_id}, sync_task_id: {sync_task.id}, check_task_id: {check_task.id}")
+        logger.info(f"Запущены задачи синхронизации для токена {token_id}, sync_task_id: {sync_task.id}, check_task_id: {check_entry.id}")
         
         return {
             "status": "success",
@@ -98,14 +98,14 @@ def start_sync_tasks(token_id: str, db: Session = Depends(get_db)) -> Dict[str, 
                         "next_run": (datetime.now() + timedelta(hours=1)).isoformat()
                     }
                 },
-                "check": {
-                    "task_id": check_task.id,
-                    "schedule": {
-                        "name": "check_recent_orders",
-                        "interval": "каждые 10 минут",
-                        "next_run": (datetime.now() + timedelta(minutes=10)).isoformat()
-                    }
-                }
+                # "check": {
+                #     "task_id": check_entry.id,
+                #     "schedule": {
+                #         "name": "check_recent_orders",
+                #         "interval": "каждые 10 минут",
+                #         "next_run": (datetime.now() + timedelta(minutes=10)).isoformat()
+                #     }
+                # }
             }
         }
     except Exception as e:
@@ -177,10 +177,10 @@ def get_sync_status(token_id: str, db: Session = Depends(get_db)) -> Dict[str, A
                 "active": sync_task,
                 "schedule": "каждые 12 часов" if sync_task else None
             },
-            "check_recent_orders": {
-                "active": check_task,
-                "schedule": "каждый час" if check_task else None
-            }
+            # "check_recent_orders": {
+            #     "active": check_task,
+            #     "schedule": "каждый час" if check_task else None
+            # }
         }
     }
 
@@ -243,8 +243,7 @@ def list_all_active_tasks(db: Session = Depends(get_db)) -> Dict[str, Any]:
         check_key = f"check-recent-orders-{token.id_}"
 
         if sync_key in schedule:
-            token_tasks["sync_allegro_orders"] = {
-                "schedule": "каждые 12 часов",
+            token_tasks["sync_allegro_orders"] = { "schedule": "каждые 12 часов",
                 "last_run": None
             }
         if check_key in schedule:
