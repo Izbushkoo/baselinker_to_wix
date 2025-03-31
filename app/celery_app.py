@@ -371,7 +371,7 @@ def sync_allegro_orders(token_id: str, from_date: str = None) -> Dict[str, Any]:
                         orders_to_update.append(order_id)
                     else:
                         existing_update_time = existing_orders[order_id]
-                        if update_time > existing_update_time:
+                        if update_time.replace(tzinfo=None) > existing_update_time.replace(tzinfo=None):
                             orders_to_update.append(order_id)
                 
                 # Получаем детали только для заказов, которые нужно обновить
