@@ -10,9 +10,11 @@ from app.services.allegro.allegro_api_service import (
 )
 from app.data_access.allegro_order_repository import AllegroOrderRepository
 
+
 class BaseAllegroOrderService:
     def __init__(self, repository: AllegroOrderRepository):
         self.repository = repository
+
 
 class SyncAllegroOrderService(BaseAllegroOrderService):
     def __init__(
@@ -90,6 +92,7 @@ class SyncAllegroOrderService(BaseAllegroOrderService):
         # Обновляем заказ в базе данных
         return self.repository.update_order(order_id, order_details)
 
+
 class AsyncAllegroOrderService(BaseAllegroOrderService):
     def __init__(
         self,
@@ -166,61 +169,3 @@ class AsyncAllegroOrderService(BaseAllegroOrderService):
         # Обновляем заказ в базе данных
         return await self.repository.update_order(order_id, order_details)
 
-# Примеры использования:
-"""
-# Синхронное использование
-def sync_example():
-    with Session(engine) as session:
-        service = SyncAllegroOrderService(session)
-        
-        # Синхронизация заказов за последние 24 часа
-        from datetime import datetime, timedelta
-        
-        now = datetime.utcnow()
-        yesterday = now - timedelta(days=1)
-        
-        synced_orders = service.sync_orders(
-            token="your_token",
-            status="READY_FOR_PROCESSING",
-            from_date=yesterday,
-            to_date=now
-        )
-        
-        # Получение деталей заказа
-        order = service.get_order_with_details("example-order-id")
-        
-        # Обновление статуса заказа
-        updated_order = service.update_order_status(
-            "example-order-id",
-            "your_token",
-            "PROCESSING"
-        )
-
-# Асинхронное использование
-async def async_example():
-    async with AsyncSession(engine) as session:
-        service = AsyncAllegroOrderService(session)
-        
-        # Синхронизация заказов за последние 24 часа
-        from datetime import datetime, timedelta
-        
-        now = datetime.utcnow()
-        yesterday = now - timedelta(days=1)
-        
-        synced_orders = await service.sync_orders(
-            token="your_token",
-            status="READY_FOR_PROCESSING",
-            from_date=yesterday,
-            to_date=now
-        )
-        
-        # Получение деталей заказа
-        order = await service.get_order_with_details("example-order-id")
-        
-        # Обновление статуса заказа
-        updated_order = await service.update_order_status(
-            "example-order-id",
-            "your_token",
-            "PROCESSING"
-        )
-""" 

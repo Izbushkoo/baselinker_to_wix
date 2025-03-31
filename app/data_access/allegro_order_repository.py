@@ -107,7 +107,6 @@ class AllegroOrderRepository:
         
         # Создаем товарные позиции
         line_items = self._safe_get(order_data, "lineItems", default=[])
-        logger.info(f"line_items: {line_items}")
         for item_data in line_items:
             item_id = self._safe_get(item_data, "id", default="")
             quantity = item_data["quantity"]
@@ -228,7 +227,6 @@ class AllegroOrderRepository:
             # Обновляем товарные позиции
             line_items = self._safe_get(order_data, "lineItems")
 
-            logger.info(f"line_items: {line_items}")
             if line_items:
                 # Удаляем старые связи
                 statement = delete(OrderLineItem).where(OrderLineItem.order_id == order_id)
