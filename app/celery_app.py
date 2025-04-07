@@ -98,7 +98,7 @@ class RedisScheduler(PersistentScheduler):
             raw_sched = config.get("schedule")
 
             # 3) Обрабатываем разные типы raw_sched
-            if isinstance(raw_sched, (CelerySchedule, CeleryCrontab)):
+            if isinstance(raw_sched, (schedule, crontab)):
                 entry_schedule = raw_sched
 
             else:
