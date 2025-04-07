@@ -142,7 +142,8 @@ celery.conf.beat_schedule = {
 }
 
 celery.conf.timezone = 'UTC'
-
+celery.conf.worker_pool = 'threads'
+celery.conf.worker_concurrency = 4
 
 def chunks(lst, n):
     """Возвращает генератор чанков размера n из списка lst."""

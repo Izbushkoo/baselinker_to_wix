@@ -150,7 +150,7 @@ def get_sync_status(token_id: str, db: Session = Depends(get_db)) -> Dict[str, A
         "tasks": {
             "sync_allegro_orders": {
                 "active": sync_task,
-                "schedule": "каждые 12 часов" if sync_task else None
+                "schedule": "Каждый час" if sync_task else None
             }
         }
     }
