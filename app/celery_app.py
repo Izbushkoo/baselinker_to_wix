@@ -138,8 +138,7 @@ celery.conf.beat_schedule = {
     # каждый день в 2:30 ночи делаем бэкап
     'backup-base-daily': {
         'task': 'app.backup_base',
-        # 'schedule': crontab(hour="12", minute="52"),
-        'schedule': 300,
+        'schedule': crontab(hour="3", minute="10"),
     },
 }
 
