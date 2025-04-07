@@ -7,7 +7,21 @@ from googleapiclient.discovery import build
 
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
-SERVICE_ACCOUNT_FILE = 'drive-api.json'
+SERVICE_ACCOUNT_FILE = '../drive-api.json'
+
+DELEGATED_USER = "info@tailwhip.store"
+
+
+def imperson_auth():
+    creds = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE,
+        scopes=SCOPES,
+        subject="info@tailwhip.store"
+    )
+
+    service = build('drive', 'v3', credentials=creds)
+    return service
+
 
 def authenticate_service_account():
     creds = service_account.Credentials.from_service_account_file(

@@ -25,7 +25,7 @@ from app.models.allegro_token import AllegroToken
 from app.services.allegro.tokens import check_token_sync
 from app.services.allegro.data_access import get_token_by_id_sync
 from app.utils.date_utils import parse_date
-from app.drive import authenticate_service_account
+from app.drive import authenticate_service_account, imperson_auth
 from app.utils.dump_utils import dump_and_upload_to_drive
 import redis
 from celery.beat import PersistentScheduler, ScheduleEntry
@@ -569,18 +569,12 @@ def check_recent_orders(token_id: str):
 
 @celery.task(name="app.backup_base")
 def backup_base():
-    permission = {
-        'type': 'user',
-        'role': 'writer',
-        'emailAddress': 'info@tailwhip.store'
-    }
 
-    service = authenticate_service_account()
+    service = imperson_auth()
 
     return dump_and_upload_to_drive(
         service=service,
         database_url=settings.SQLALCHEMY_DATABASE_URI.unicode_string(),
-        permission=permission
     )
 
 

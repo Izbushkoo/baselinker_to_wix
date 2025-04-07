@@ -72,14 +72,12 @@ def dump_and_upload_to_drive(
     service,
     database_url: str,
     backup_folder_name: str = "backup",
-    permission: dict = None
 ) -> str:
     """
     1) Убеждаемся, что в Drive есть папка backup (создаём, если нет).
     2) Очищаем её от всех файлов (permanent delete).
     3) Делаем pg_dump в custom-формате во временный файл.
     4) Загружаем этот файл в папку backup.
-    5) Назначаем permission (если передан).
     Возвращает ID созданного файла в Drive.
     """
     # --- Шаг 1: найти или создать папку backup ---
@@ -162,14 +160,6 @@ def dump_and_upload_to_drive(
 
     # удаляем временный файл
     os.remove(tmp_path)
-
-    # --- Шаг 5: назначить permission ---
-    if permission:
-        service.permissions().create(
-            fileId=file_id,
-            body=permission,
-            fields="id"
-        ).execute()
 
     print(f"Dump uploaded as {file_name} in folder '{backup_folder_name}', Drive file ID: {file_id}")
     return file_id
