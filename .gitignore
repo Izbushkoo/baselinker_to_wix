@@ -329,3 +329,5 @@ baselinker_to_wix/media/
 .env.docker
 
 docker-compose.yml
+application_default_credentials.json
+drive-api.json

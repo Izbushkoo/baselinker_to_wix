@@ -1,13 +1,13 @@
 import requests
 import csv
-import os
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
-from sqlmodel import Session, SQLModel
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlmodel import Session
 from sqlalchemy.orm import sessionmaker
+from app.core.config import settings
 
 from celery import Celery, chord, group, chain
+from celery.schedules import crontab
 
 from app.services import baselinker as BL
 from app.services.process_funcs import transform_product
@@ -15,9 +15,7 @@ from app.schemas.wix_models import WixImportFileModel
 from app.schemas.wix_models import generate_handle_id
 from app.utils.logging_config import logger
 
-import logging
 import os
-
 
 from app.services.allegro.order_service import SyncAllegroOrderService
 from app.database import engine
@@ -27,6 +25,8 @@ from app.models.allegro_token import AllegroToken
 from app.services.allegro.tokens import check_token_sync
 from app.services.allegro.data_access import get_token_by_id_sync
 from app.utils.date_utils import parse_date
+from app.drive import authenticate_service_account
+from app.utils.dump_utils import dump_and_upload_to_drive
 import redis
 from celery.beat import PersistentScheduler, ScheduleEntry
 import json
@@ -135,7 +135,16 @@ celery.conf.update(
 celery.conf.beat_scheduler = "app.celery_app.RedisScheduler"
 # Настройка периодических задач
 celery.conf.beat_schedule = {
+    # каждый день в 2:30 ночи делаем бэкап
+    'backup-base-daily': {
+        'task': 'app.backup_base',
+        # 'schedule': crontab(hour="12", minute="52"),
+        'schedule': 300,
+    },
 }
+
+celery.conf.timezone = 'UTC'
+
 
 def chunks(lst, n):
     """Возвращает генератор чанков размера n из списка lst."""
@@ -542,6 +551,23 @@ def check_recent_orders(token_id: str):
         return {"status": "error", "message": str(e)}
 
 
+@celery.task(name="app.backup_base")
+def backup_base():
+    permission = {
+        'type': 'user',
+        'role': 'writer',
+        'emailAddress': 'info@tailwhip.store'
+    }
+
+    service = authenticate_service_account()
+
+    return dump_and_upload_to_drive(
+        service=service,
+        database_url=settings.SQLALCHEMY_DATABASE_URI.unicode_string(),
+        permission=permission
+    )
+
+
 @celery.task(name='app.celery_app.sync_allegro_orders_immediate')
 def sync_allegro_orders_immediate(token_id: str, from_date: str = None) -> Dict[str, Any]:
     """
@@ -687,5 +713,8 @@ def sync_allegro_orders_immediate(token_id: str, from_date: str = None) -> Dict[
             "status": "error",
             "message": f"Ошибка при синхронизации: {str(e)}"
         }
+
+
+
 
 

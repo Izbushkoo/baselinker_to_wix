@@ -444,3 +444,7 @@ async def delete_all_orders(
         logger.error(f"Ошибка при удалении заказов: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/backup")
+async def backup():
+    celery.send_task("app.backup_base")
+

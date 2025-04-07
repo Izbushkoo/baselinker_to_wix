@@ -1,7 +1,12 @@
-FROM python:3.10-buster
+FROM python:3.10-bookworm
 LABEL authors="Izbushko"
 
-# Установка Poetry
+# Установка системных утилит (включая pg_dump)
+# Устанавливаем pg_dump (PostgreSQL 15) из штатного репозитория Bookworm
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends postgresql-client \
+ && rm -rf /var/lib/apt/lists/*# Установка Poetry
+
 RUN pip install poetry==1.6.1
 
 # Настройка переменных окружения Poetry
