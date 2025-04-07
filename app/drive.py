@@ -7,7 +7,7 @@ from googleapiclient.discovery import build
 
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
-SERVICE_ACCOUNT_FILE = '../drive-api.json'
+SERVICE_ACCOUNT_FILE = 'drive-api.json'
 
 DELEGATED_USER = "info@tailwhip.store"
 
