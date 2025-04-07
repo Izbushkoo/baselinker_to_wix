@@ -78,44 +78,53 @@ class RedisScheduler(PersistentScheduler):
         return super(RedisScheduler, self).tick()
 
     def merge_inplace(self, schedule_dict):
+        """
+        Переводим каждую запись schedule_dict в ScheduleEntry и обновляем
+        self.app.conf.beat_schedule.
+        """
+        new_schedule = {}
+
         for name, config in schedule_dict.items():
-            sched = config.get("schedule")
-
+            # 1) Если это уже ScheduleEntry — оставляем «как есть»
             if isinstance(config, ScheduleEntry):
-                # если это уже Entry — оставляем как есть
-                entry = config
+                new_schedule[name] = config
+                continue
 
-            elif isinstance(sched, (schedule, crontab)):
-                # если это crontab или другой schedule — используем его напрямую
-                entry = ScheduleEntry(
-                    name=name,
-                    task=config["task"],
-                    schedule=sched,
-                    args=tuple(config.get("args", [])),
-                    kwargs=config.get("kwargs", {}),
-                    options=config.get("options", {}),
-                    last_run_at=None,
-                )
+            # 2) Иначе config — dict, вытаскиваем параметры
+            task = config.get("task")
+            args = tuple(config.get("args", []))
+            kwargs = config.get("kwargs", {})
+            options = config.get("options", {})
+            raw_sched = config.get("schedule")
+
+            # 3) Обрабатываем разные типы raw_sched
+            if isinstance(raw_sched, (CelerySchedule, CeleryCrontab)):
+                entry_schedule = raw_sched
 
             else:
-                # иначе пытаемся трактовать как число секунд
+                # Пытаемся привести к числу секунд
                 try:
-                    seconds = float(sched)
-                except (ValueError, TypeError):
-                    seconds = 300
-                entry = ScheduleEntry(
-                    name=name,
-                    task=config["task"],
-                    schedule=timedelta(seconds=seconds),
-                    args=tuple(config.get("args", [])),
-                    kwargs=config.get("kwargs", {}),
-                    options=config.get("options", {}),
-                    last_run_at=None,
-                )
+                    seconds = float(raw_sched)
+                except (TypeError, ValueError):
+                    seconds = 300  # fallback
+                entry_schedule = timedelta(seconds=seconds)
 
-            self.app.conf.beat_schedule[name] = entry
+            # 4) Создаём новый ScheduleEntry
+            entry = ScheduleEntry(
+                name=name,
+                task=task,
+                schedule=entry_schedule,
+                args=args,
+                kwargs=kwargs,
+                options=options,
+                last_run_at=None,
+            )
+            new_schedule[name] = entry
 
+        # 5) Заменяем beat_schedule целиком
+        self.app.conf.beat_schedule = new_schedule
         return self.app.conf.beat_schedule
+
 # Настройки брокера (Redis)
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
 
