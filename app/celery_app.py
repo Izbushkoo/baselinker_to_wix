@@ -135,7 +135,6 @@ celery.conf.update(
 celery.conf.beat_scheduler = "app.celery_app.RedisScheduler"
 # Настройка периодических задач
 celery.conf.beat_schedule = {
-    # каждый день в 2:30 ночи делаем бэкап
     'backup-base-daily': {
         'task': 'app.backup_base',
         'schedule': crontab(hour="3", minute="10"),
