@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+
+{% block title %}Инвентарь - Werehouse{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h1>Управление инвентарем</h1>
+            <div class="btn-group">
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#importModal">
+                    <i class="fas fa-file-import"></i> Импорт
+                </button>
+                <button type="button" class="btn btn-success" id="exportBtn">
+                    <i class="fas fa-file-export"></i> Экспорт
+                </button>
+                <div class="btn-group">
+                    <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                        Действия
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="#" id="exportNoImages">Экспорт без изображений</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item text-danger" href="#" data-bs-toggle="modal" data-bs-target="#clearDataModal">Очистить все данные</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно импорта -->
+<div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Импорт товаров</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="importForm">
+                    <div class="mb-3">
+                        <label for="importFile" class="form-label">Выберите файл Excel</label>
+                        <input type="file" class="form-control" id="importFile" accept=".xls,.xlsx" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="warehouseSelect" class="form-label">Выберите склад</label>
+                        <select class="form-select" id="warehouseSelect" required>
+                            <option value="A">Склад A</option>
+                            <option value="B">Склад B</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Настройки колонок</label>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <input type="text" class="form-control" id="skuCol" placeholder="SKU (sku)" value="sku">
+                            </div>
+                            <div class="col-6">
+                                <input type="text" class="form-control" id="qtyCol" placeholder="Количество (кол-во)" value="кол-во">
+                            </div>
+                            <div class="col-6">
+                                <input type="text" class="form-control" id="eanCol" placeholder="EAN (EAN/UPC)" value="EAN/UPC">
+                            </div>
+                            <div class="col-6">
+                                <input type="text" class="form-control" id="nameCol" placeholder="Название (Name)" value="Name">
+                            </div>
+                            <div class="col-12">
+                                <input type="text" class="form-control" id="imageCol" placeholder="Изображение (Foto)" value="Foto">
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" id="importSubmit">Импортировать</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно подтверждения очистки -->
+<div class="modal fade" id="clearDataModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Подтверждение очистки</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-danger">Вы уверены, что хотите удалить все данные? Это действие нельзя отменить.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-danger" id="clearDataConfirm">Удалить все данные</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Таблица инвентаря -->
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>SKU</th>
+                        <th>Название</th>
+                        <th>EAN</th>
+                        <th>Склад A</th>
+                        <th>Склад B</th>
+                        <th>Всего</th>
+                        <th>Изображение</th>
+                    </tr>
+                </thead>
+                <tbody id="inventoryTable">
+                    <tr>
+                        <td colspan="7" class="text-center">Загрузка данных...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Добавляем Font Awesome для иконок -->
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Обработка импорта
+    const importForm = document.getElementById('importForm');
+    const importSubmit = document.getElementById('importSubmit');
+    
+    importSubmit.addEventListener('click', async () => {
+        const formData = new FormData();
+        const file = document.getElementById('importFile').files[0];
+        if (!file) {
+            showAlert('danger', 'Выберите файл для импорта');
+            return;
+        }
+        
+        formData.append('file', file);
+        formData.append('warehouse', document.getElementById('warehouseSelect').value);
+        formData.append('sku_col', document.getElementById('skuCol').value);
+        formData.append('qty_col', document.getElementById('qtyCol').value);
+        formData.append('ean_col', document.getElementById('eanCol').value);
+        formData.append('name_col', document.getElementById('nameCol').value);
+        formData.append('image_col', document.getElementById('imageCol').value);
+        
+        try {
+            const response = await fetch('/api/werehouse/incoming/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
+            
+            const data = await response.json();
+            if (response.ok) {
+                showAlert('success', 'Импорт успешно выполнен');
+                bootstrap.Modal.getInstance(document.getElementById('importModal')).hide();
+                loadInventory();
+            } else {
+                showAlert('danger', data.detail || 'Ошибка при импорте');
+            }
+        } catch (error) {
+            showAlert('danger', 'Ошибка сервера');
+        }
+    });
+    
+    // Экспорт
+    document.getElementById('exportBtn').addEventListener('click', async () => {
+        try {
+            const response = await fetch('/api/werehouse/export/stock/', {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `stock_report_${new Date().toISOString().split('T')[0]}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+            } else {
+                const data = await response.json();
+                showAlert('danger', data.detail || 'Ошибка при экспорте');
+            }
+        } catch (error) {
+            showAlert('danger', 'Ошибка сервера');
+        }
+    });
+    
+    // Экспорт без изображений
+    document.getElementById('exportNoImages').addEventListener('click', async () => {
+        try {
+            const response = await fetch('/api/werehouse/export/stock/no-images/', {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `stock_report_no_images_${new Date().toISOString().split('T')[0]}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+            } else {
+                const data = await response.json();
+                showAlert('danger', data.detail || 'Ошибка при экспорте');
+            }
+        } catch (error) {
+            showAlert('danger', 'Ошибка сервера');
+        }
+    });
+    
+    // Очистка данных
+    document.getElementById('clearDataConfirm').addEventListener('click', async () => {
+        try {
+            const response = await fetch('/api/werehouse/clear-all/', {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
+            
+            if (response.ok) {
+                showAlert('success', 'Все данные успешно удалены');
+                bootstrap.Modal.getInstance(document.getElementById('clearDataModal')).hide();
+                loadInventory();
+            } else {
+                const data = await response.json();
+                showAlert('danger', data.detail || 'Ошибка при удалении данных');
+            }
+        } catch (error) {
+            showAlert('danger', 'Ошибка сервера');
+        }
+    });
+    
+    // Загрузка инвентаря
+    async function loadInventory() {
+        try {
+            const response = await fetch('/api/werehouse/export/stock/no-images/', {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                const tbody = document.getElementById('inventoryTable');
+                tbody.innerHTML = '';
+                
+                data.forEach(item => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${item.sku}</td>
+                        <td>${item.name}</td>
+                        <td>${item.eans.join(', ')}</td>
+                        <td>${item.warehouse_A || 0}</td>
+                        <td>${item.warehouse_B || 0}</td>
+                        <td>${item.total}</td>
+                        <td>${item.image ? '<img src="data:image/jpeg;base64,' + item.image + '" height="50">' : ''}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } else {
+                showAlert('danger', 'Ошибка при загрузке данных');
+            }
+        } catch (error) {
+            showAlert('danger', 'Ошибка сервера');
+        }
+    }
+    
+    // Загружаем инвентарь при загрузке страницы
+    loadInventory();
+});
+</script>
+{% endblock %} 

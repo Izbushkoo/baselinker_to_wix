@@ -16,6 +16,11 @@ def setup_project_logging():
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     
+    # Очищаем все существующие хендлеры
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
     # Хендлер для вывода в консоль (stdout)
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
@@ -30,19 +35,24 @@ def setup_project_logging():
     file_handler.setFormatter(formatter)
     
     # Настраиваем корневой логгер
-    root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
     root_logger.addHandler(console_handler)
     root_logger.addHandler(file_handler)
     
-    # Отключаем логи от сторонних библиотек
-    logging.getLogger("uvicorn").setLevel(logging.WARNING)
-    logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
-    logging.getLogger("celery").setLevel(logging.INFO)
+    # Отключаем пропагацию логов для некоторых модулей
+    for logger_name in ["uvicorn", "sqlalchemy", "celery"]:
+        module_logger = logging.getLogger(logger_name)
+        module_logger.propagate = False
+        module_logger.setLevel(logging.WARNING)
     
     # Настраиваем логгер для нашего приложения
     app_logger = logging.getLogger("app")
     app_logger.setLevel(logging.DEBUG)
+    app_logger.propagate = False  # Отключаем пропагацию для app логгера
+    
+    # Добавляем хендлеры для app логгера
+    app_logger.addHandler(console_handler)
+    app_logger.addHandler(file_handler)
     
     return app_logger
 

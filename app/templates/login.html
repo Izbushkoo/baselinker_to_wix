@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Вход - Werehouse{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title text-center mb-4">Вход в систему</h3>
+                <form id="loginForm" method="POST" action="{{ url_for('login') }}">
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="email" name="email" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Пароль</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">Войти</button>
+                        <a href="{{ url_for('register') }}" class="btn btn-link">Нет аккаунта? Зарегистрируйтесь</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    const data = new URLSearchParams();
+    data.append('username', formData.get('email'));
+    data.append('password', formData.get('password'));
+
+    try {
+        const res = await fetch('/api/auth/login/access-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            credentials: 'include',
+            body: data
+        });
+
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.detail || 'Ошибка входа');
+        }
+
+        // После успешного входа перенаправляем на главную страницу
+        window.location.href = '/';
+    } catch (error) {
+        showError(error.message);
+    }
+});
+</script>
+{% endblock %} 

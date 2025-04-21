@@ -331,3 +331,4 @@ baselinker_to_wix/media/
 docker-compose.yml
 application_default_credentials.json
 drive-api.json
+.aider*

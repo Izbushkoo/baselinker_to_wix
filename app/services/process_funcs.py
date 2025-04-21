@@ -70,7 +70,7 @@ def transform_product(server_product: dict, lang_code: str = "en") -> DetailedPr
     processed_description, extracted_image_links = process_description(description_html)
     description = processed_description
     features = text_fields.get(f"features|{lang_code}")
-
+    
     name = text_fields.get(f"name|{lang_code}", text_fields.get("name", ""))
     weight = server_product.get("weight", "")
     if weight == 0:

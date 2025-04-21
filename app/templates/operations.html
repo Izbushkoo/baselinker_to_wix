@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}Операции - Werehouse{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 mb-8">Операции</h1>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Импорт прихода -->
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Импорт прихода на склад</h2>
+                <form id="incomingForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Файл Excel</label>
+                        <input type="file" 
+                               name="file" 
+                               accept=".xls,.xlsx" 
+                               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Склад</label>
+                        <select name="warehouse" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md">
+                            {% for warehouse in warehouses %}
+                            <option value="{{ warehouse }}">Склад {{ warehouse }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="pt-2">
+                        <button type="submit" class="inline-flex justify-center items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            Импортировать приход
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Импорт перемещения -->
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Перемещение между складами</h2>
+                <form id="transferForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Файл Excel</label>
+                        <input type="file" 
+                               name="file" 
+                               accept=".xls,.xlsx" 
+                               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Со склада</label>
+                            <select name="from_warehouse" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md">
+                                {% for warehouse in warehouses %}
+                                <option value="{{ warehouse }}">Склад {{ warehouse }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">На склад</label>
+                            <select name="to_warehouse" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md">
+                                {% for warehouse in warehouses %}
+                                <option value="{{ warehouse }}" {% if not loop.first %}selected{% endif %}>Склад {{ warehouse }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="pt-2">
+                        <button type="submit" class="inline-flex justify-center items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            Импортировать перемещение
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Экспорт остатков -->
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Экспорт остатков</h2>
+                <div class="space-y-4">
+                    <p class="text-sm text-gray-500">Выгрузка текущих остатков по всем складам в формате Excel</p>
+                    <div class="flex gap-4">
+                        <a href="/api/werehouse/export/stock/" class="inline-flex justify-center items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            Экспорт с изображениями
+                        </a>
+                        <a href="/api/werehouse/export/stock/no-images/" class="inline-flex justify-center items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                            Экспорт без изображений
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Отчет по продажам -->
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Отчет по продажам</h2>
+                <form id="salesReportForm" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Начальная дата</label>
+                            <input type="date" 
+                                   name="start_date" 
+                                   class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Конечная дата</label>
+                            <input type="date" 
+                                   name="end_date" 
+                                   class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">SKU (необязательно)</label>
+                        <input type="text" 
+                               name="sku" 
+                               placeholder="Введите SKU для фильтрации" 
+                               class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md">
+                    </div>
+                    <div class="pt-2">
+                        <button type="submit" class="inline-flex justify-center items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            Сформировать отчет
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Форма импорта прихода
+    const incomingForm = document.getElementById('incomingForm');
+    incomingForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(incomingForm);
+        
+        try {
+            const response = await fetch('/api/werehouse/incoming/', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Ошибка при импорте прихода');
+            }
+            
+            alert('Приход успешно импортирован');
+            incomingForm.reset();
+        } catch (error) {
+            showError(error.message);
+        }
+    });
+
+    // Форма импорта перемещения
+    const transferForm = document.getElementById('transferForm');
+    transferForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(transferForm);
+        
+        try {
+            const response = await fetch('/api/werehouse/transfer/', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Ошибка при импорте перемещения');
+            }
+            
+            alert('Перемещение успешно импортировано');
+            transferForm.reset();
+        } catch (error) {
+            showError(error.message);
+        }
+    });
+
+    // Форма отчета по продажам
+    const salesReportForm = document.getElementById('salesReportForm');
+    salesReportForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(salesReportForm);
+        const params = new URLSearchParams();
+        
+        formData.forEach((value, key) => {
+            if (value) params.append(key, value);
+        });
+        
+        window.location.href = `/api/werehouse/sales/report/?${params.toString()}`;
+    });
+});
+</script>
+{% endblock %} 

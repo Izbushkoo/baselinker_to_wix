@@ -33,6 +33,11 @@ google-cloud-storage = "^3.1.0"
 google-api-python-client = "^2.166.0"
 google-auth-httplib2 = "^0.2.0"
 google-auth-oauthlib = "^1.2.1"
+python-amazon-sp-api = "^1.9.24"
+openpyxl = "^3.1.5"
+pandas = "^2.2.3"
+pillow = "^11.2.1"
+jinja2 = "^3.1.6"
 
 
 [build-system]

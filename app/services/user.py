@@ -17,11 +17,16 @@ async def authenticate(db: AsyncSession, email: str, password: str) -> Optional[
     return user
 
 
-async def get_user_by_id(db: AsyncSession, user_id: int) -> user_schemas.User:
-    async with db as session:
-        statement = select(user_models.User).where(user_models.User.id == user_id)
-        res = await session.exec(statement=statement)
-        return res.first()
+async def get_user_by_id(db: AsyncSession, user_id: str) -> user_schemas.User:
+    """Get user by ID. Accepts string ID and converts it to int for database query."""
+    try:
+        user_id_int = int(user_id)
+        async with db as session:
+            statement = select(user_models.User).where(user_models.User.id == user_id_int)
+            res = await session.exec(statement=statement)
+            return res.first()
+    except ValueError:
+        return None
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> user_schemas.User:

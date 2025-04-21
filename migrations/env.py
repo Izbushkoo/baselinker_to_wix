@@ -30,6 +30,7 @@ from sqlmodel import SQLModel
 from app.models.user import User
 from app.models.allegro_token import AllegroToken
 from app.models.allegro_order import AllegroOrder, AllegroLineItem, AllegroBuyer, OrderLineItem
+from app.models.werehouse import Product, Stock, Sale
 
 target_metadata = SQLModel.metadata
 

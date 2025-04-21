@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Главная - Werehouse{% endblock %}
+
+{% block content %}
+{% if not user %}
+<div class="row justify-content-center">
+    <div class="col-md-8 text-center">
+        <h1 class="display-4 mb-4">Добро пожаловать в Werehouse</h1>
+        <p class="lead mb-4">Эффективное управление складом для вашего бизнеса</p>
+        <div class="d-grid gap-2 d-sm-flex justify-content-sm-center mb-5">
+            <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg px-4 gap-3">Зарегистрироваться</a>
+            <a href="{{ url_for('login') }}" class="btn btn-outline-secondary btn-lg px-4">Войти</a>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title mb-4">Статистика склада</h5>
+                <div class="row g-4">
+                    <div class="col-md-3">
+                        <div class="border rounded p-3">
+                            <h6 class="text-muted mb-2">Всего товаров</h6>
+                            <h3 class="mb-0">{{ stats.total_items }}</h3>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded p-3">
+                            <h6 class="text-muted mb-2">Ожидают обработки</h6>
+                            <h3 class="mb-0">{{ stats.pending_items }}</h3>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded p-3">
+                            <h6 class="text-muted mb-2">Заканчиваются</h6>
+                            <h3 class="mb-0">{{ stats.low_stock }}</h3>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded p-3">
+                            <h6 class="text-muted mb-2">Операций сегодня</h6>
+                            <h3 class="mb-0">{{ stats.today_operations }}</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <h5 class="card-title mt-5 mb-4">Последние операции</h5>
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Дата</th>
+                                <th>Тип</th>
+                                <th>Товар</th>
+                                <th>Количество</th>
+                                <th>Склад</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for operation in recent_operations %}
+                            <tr>
+                                <td>{{ operation.date }}</td>
+                                <td>{{ operation.type }}</td>
+                                <td>{{ operation.product }}</td>
+                                <td>{{ operation.quantity }}</td>
+                                <td>{{ operation.warehouse }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% endblock %} 
