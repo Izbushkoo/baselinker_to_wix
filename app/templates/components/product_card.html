@@ -70,15 +70,357 @@
         </div>
 
         <!-- Дополнительная информация -->
-        <div class="mt-2 grid grid-cols-2 gap-4 text-sm text-gray-500">
-            <div>
-                <span class="font-medium text-gray-900">Склад:</span> {{ product['warehouse'] }}
+        <div class="mt-2 space-y-4 text-sm">
+            <!-- Остатки по складам -->
+            <div class="bg-gray-50 rounded-lg p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h4 class="text-sm font-medium text-gray-900">Остатки по складам</h4>
+                    <button 
+                        type="button"
+                        onclick="openTransferModal(this)"
+                        data-product-sku="{{ product['sku'] }}"
+                        data-product-name="{{ product['name'] }}"
+                        class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+                    >
+                        Переместить
+                    </button>
+                </div>
+                <div class="grid grid-cols-1 gap-2">
+                    {% for warehouse, quantity in product['stocks'].items() %}
+                    <div class="flex items-center justify-between p-2 bg-white rounded border border-gray-200">
+                        <div class="flex items-center space-x-2">
+                            <span class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full {% if quantity > 0 %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+                                {{ warehouse }}
+                            </span>
+                            <span class="text-gray-900 font-medium">Склад {{ warehouse }}</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium {% if quantity > 0 %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+                                {{ quantity }} шт.
+                            </span>
+                            <div class="flex items-center space-x-2">
+                                <input type="number" 
+                                       min="1" 
+                                       value="1"
+                                       class="w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       data-warehouse="{{ warehouse }}"
+                                       data-sku="{{ product['sku'] }}"
+                                       data-current-quantity="{{ quantity }}"
+                                >
+                                <button 
+                                    type="button"
+                                    onclick="removeFromStock(this)"
+                                    class="px-3 py-1 text-sm text-white bg-red-500 hover:bg-red-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                                    {% if quantity == 0 %}disabled{% endif %}
+                                    data-warehouse="{{ warehouse }}"
+                                    data-sku="{{ product['sku'] }}"
+                                >
+                                    Списать
+                                </button>
+                                <button 
+                                    type="button"
+                                    onclick="addToStock(this)"
+                                    class="px-3 py-1 text-sm text-white bg-green-500 hover:bg-green-600 rounded"
+                                    data-warehouse="{{ warehouse }}"
+                                    data-sku="{{ product['sku'] }}"
+                                >
+                                    Пополнить
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
             </div>
             {% if product['category'] %}
-            <div>
-                <span class="font-medium text-gray-900">Категория:</span> {{ product['category'] }}
+            <div class="flex items-center space-x-2">
+                <span class="font-medium text-gray-900">Категория:</span>
+                <span class="text-gray-600">{{ product['category'] }}</span>
             </div>
             {% endif %}
         </div>
     </div>
-</div> 
+</div>
+
+<!-- Модальное окно для перемещения -->
+<div id="transferModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden">
+    <div class="relative top-40 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">Перемещение товара</h3>
+            <p id="productName" class="text-sm text-gray-500 mb-4"></p>
+            
+            <form id="transferForm" onsubmit="handleTransfer(event)">
+                <input type="hidden" id="transferSku" name="sku">
+                
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="fromWarehouse">
+                        Со склада
+                    </label>
+                    <select name="from_warehouse" id="fromWarehouse" class="shadow border rounded w-full py-2 px-3" required>
+                        <option value="">Выберите склад</option>
+                        {% for warehouse in warehouses %}
+                        <option value="{{ warehouse.id }}">{{ warehouse.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="toWarehouse">
+                        На склад
+                    </label>
+                    <select name="to_warehouse" id="toWarehouse" class="shadow border rounded w-full py-2 px-3" required>
+                        <option value="">Выберите склад</option>
+                        {% for warehouse in warehouses %}
+                        <option value="{{ warehouse.id }}">{{ warehouse.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="quantity">
+                        Количество
+                    </label>
+                    <input type="number" name="quantity" id="quantity" min="1" required
+                           class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                </div>
+                
+                <div class="flex justify-end">
+                    <button type="button" onclick="closeTransferModal()"
+                            class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded mr-2">
+                        Отмена
+                    </button>
+                    <button type="submit"
+                            class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                        Переместить
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Error Modal -->
+<div id="errorModalWrapper"
+     class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center z-50">
+  <div id="errorModalContent"
+       class="bg-white rounded-lg shadow-lg max-w-sm w-full p-6 relative"
+       onclick="event.stopPropagation()">
+    <h3 class="text-lg font-semibold text-red-600 mb-4">Ошибка</h3>
+    <p id="errorModalMessage" class="text-sm text-gray-700 mb-6"></p>
+    <div class="text-right">
+      <button id="errorModalCloseBtn"
+              class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded">
+        Закрыть
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- В конец файла добавим JavaScript для обработки списания -->
+<script>
+// Ждём, пока страница загрузится
+document.addEventListener('DOMContentLoaded', () => {
+  const wrapper   = document.getElementById('errorModalWrapper');
+  const msgEl     = document.getElementById('errorModalMessage');
+  const closeBtn  = document.getElementById('errorModalCloseBtn');
+
+  // Открыть модалку с текстом
+  window.showErrorModal = (message) => {
+    msgEl.textContent = message;
+    wrapper.classList.remove('hidden');
+  };
+
+  // Закрыть модалку
+  const closeModal = () => {
+    wrapper.classList.add('hidden');
+  };
+
+  // События закрытия
+  closeBtn.addEventListener('click', closeModal);
+  // Клик по затемнённому фону
+  wrapper.addEventListener('click', (e) => {
+    if (e.target === wrapper) {
+      closeModal();
+    }
+  });
+  // Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeModal();
+    }
+  });
+});
+
+function removeFromStock(button) {
+    const input = button.parentElement.querySelector('input');
+    const quantity = parseInt(input.value);
+    const warehouse = button.dataset.warehouse;
+    const sku = button.dataset.sku;
+    const currentQuantity = parseInt(input.dataset.currentQuantity);
+
+    if (isNaN(quantity) || quantity < 1) {
+        showErrorModal('Пожалуйста, введите корректное количество');
+        return;
+    }
+
+    // Проверяем, не превышает ли запрошенное количество текущий остаток
+    if (quantity > currentQuantity) {
+        showErrorModal(`Невозможно списать ${quantity} единиц товара. На складе ${warehouse} доступно только ${currentQuantity} шт.`);
+        return;
+    }
+
+    // Отключаем кнопку на время запроса
+    button.disabled = true;
+
+    fetch('/api/werehouse/remove/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            sku: sku,
+            warehouse: warehouse,
+            quantity: quantity
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Ошибка при списании');
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Обновляем только необходимые элементы на странице
+        const productCard = button.closest('.flex.items-start.gap-6');
+        
+        // Обновляем количество на складе
+        const warehouseRow = button.closest('.flex.items-center.justify-between');
+        const warehouseQuantityElement = warehouseRow.querySelector('.inline-flex.items-center.rounded-full');
+        const newQuantity = currentQuantity - quantity;
+        warehouseQuantityElement.textContent = `${newQuantity} шт.`;
+        input.dataset.currentQuantity = newQuantity;
+        
+        // Если на складе не осталось товаров, отключаем кнопку списания
+        if (newQuantity === 0) {
+            button.disabled = true;
+        }
+        
+        // Обновляем общее количество
+        const totalStockElement = productCard.querySelector('.mt-1.text-lg.font-bold.text-gray-900');
+        const currentTotal = parseInt(totalStockElement.textContent);
+        const newTotalStock = currentTotal - quantity;
+        totalStockElement.textContent = `${newTotalStock} шт.`;
+        
+        // Обновляем статус наличия
+        const stockStatusElement = productCard.querySelector('.flex.items-center .inline-flex.items-center.rounded-full');
+        
+        if (newTotalStock === 0) {
+            stockStatusElement.className = 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-red-50 text-red-700';
+            stockStatusElement.textContent = 'Нет в наличии';
+        } else if (newTotalStock <= 5) {
+            stockStatusElement.className = 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-yellow-50 text-yellow-700';
+            stockStatusElement.textContent = 'Заканчивается';
+        }
+        
+        // Сбрасываем значение input в 1
+        input.value = 1;
+    })
+    .catch(error => {
+        showErrorModal('Ошибка при списании товара: ' + error.message);
+    })
+    .finally(() => {
+        if (parseInt(input.dataset.currentQuantity) > 0) {
+            button.disabled = false;
+        }
+    });
+}
+
+function addToStock(button) {
+    const input = button.parentElement.querySelector('input');
+    const quantity = parseInt(input.value);
+    const warehouse = button.dataset.warehouse;
+    const sku = button.dataset.sku;
+
+    if (isNaN(quantity) || quantity < 1) {
+        showErrorModal('Пожалуйста, введите корректное количество');
+        return;
+    }
+
+    // Отключаем кнопку на время запроса
+    button.disabled = true;
+
+    fetch('/api/werehouse/add/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            sku: sku,
+            warehouse: warehouse,
+            quantity: quantity
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Ошибка при пополнении');
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Обновляем только необходимые элементы на странице
+        const productCard = button.closest('.flex.items-start.gap-6');
+        
+        // Обновляем количество на складе
+        const warehouseRow = button.closest('.flex.items-center.justify-between');
+        const warehouseQuantityElement = warehouseRow.querySelector('.inline-flex.items-center.rounded-full');
+        const newQuantity = parseInt(input.dataset.currentQuantity) + quantity;
+        warehouseQuantityElement.textContent = `${newQuantity} шт.`;
+        input.dataset.currentQuantity = newQuantity;
+        
+        // Обновляем общее количество
+        const totalStockElement = productCard.querySelector('.mt-1.text-lg.font-bold.text-gray-900');
+        const currentTotal = parseInt(totalStockElement.textContent);
+        const newTotalStock = currentTotal + quantity;
+        totalStockElement.textContent = `${newTotalStock} шт.`;
+        
+        // Обновляем статус наличия
+        const stockStatusElement = productCard.querySelector('.flex.items-center .inline-flex.items-center.rounded-full');
+        
+        if (newTotalStock > 5) {
+            stockStatusElement.className = 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-50 text-green-700';
+            stockStatusElement.textContent = 'В наличии';
+        } else if (newTotalStock > 0) {
+            stockStatusElement.className = 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-yellow-50 text-yellow-700';
+            stockStatusElement.textContent = 'Заканчивается';
+        }
+        
+        // Активируем кнопку "Списать" если она была неактивна
+        const removeButton = warehouseRow.querySelector('[onclick="removeFromStock(this)"]');
+        if (removeButton.disabled) {
+            removeButton.disabled = false;
+        }
+        
+        // Сбрасываем значение input в 1
+        input.value = 1;
+    })
+    .catch(error => {
+        showErrorModal('Ошибка при пополнении товара: ' + error.message);
+    })
+    .finally(() => {
+        button.disabled = false;
+    });
+}
+
+// Добавляем валидацию на ввод количества только для минимального значения
+document.addEventListener('DOMContentLoaded', function() {
+    const inputs = document.querySelectorAll('input[type="number"]');
+    inputs.forEach(input => {
+        input.addEventListener('input', function() {
+            const value = parseInt(this.value);
+            if (value < 1) {
+                this.value = 1;
+            }
+        });
+    });
+});
+</script> 

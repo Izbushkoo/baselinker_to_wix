@@ -109,8 +109,9 @@
                         <th>SKU</th>
                         <th>Название</th>
                         <th>EAN</th>
-                        <th>Склад A</th>
-                        <th>Склад B</th>
+                        {% for warehouse in warehouses %}
+                        <th>Склад {{ warehouse }}</th>
+                        {% endfor %}
                         <th>Всего</th>
                         <th>Изображение</th>
                     </tr>
@@ -131,6 +132,9 @@
 
 {% block extra_js %}
 <script>
+// Список доступных складов
+const warehouses = {{ warehouses|tojson|safe }};
+
 document.addEventListener('DOMContentLoaded', function() {
     // Обработка импорта
     const importForm = document.getElementById('importForm');
@@ -267,21 +271,28 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 data.forEach(item => {
                     const row = document.createElement('tr');
-                    row.innerHTML = `
+                    let html = `
                         <td>${item.sku}</td>
                         <td>${item.name}</td>
-                        <td>${item.eans.join(', ')}</td>
-                        <td>${item.warehouse_A || 0}</td>
-                        <td>${item.warehouse_B || 0}</td>
+                        <td>${item.eans}</td>`;
+                    
+                    // Добавляем колонки для каждого склада
+                    warehouses.forEach(wh => {
+                        html += `<td>${item[`warehouse_${wh}`] || 0}</td>`;
+                    });
+                    
+                    html += `
                         <td>${item.total}</td>
-                        <td>${item.image ? '<img src="data:image/jpeg;base64,' + item.image + '" height="50">' : ''}</td>
+                        <td>${item.image ? `<img src="data:image/jpeg;base64,${item.image}" height="50" alt="${item.name}">` : ''}</td>
                     `;
+                    row.innerHTML = html;
                     tbody.appendChild(row);
                 });
             } else {
                 showAlert('danger', 'Ошибка при загрузке данных');
             }
         } catch (error) {
+            console.error('Ошибка:', error);
             showAlert('danger', 'Ошибка сервера');
         }
     }

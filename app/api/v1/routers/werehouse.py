@@ -8,7 +8,8 @@ from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel.ext.asyncio.session import AsyncSession
 import openpyxl
-
+from openpyxl.utils import get_column_letter
+from openpyxl.drawing.image import Image as XLImage
 from app.api import deps
 from app.services.allegro import tokens as allegro_tokens
 from app.services.allegro.data_access import get_tokens_list, insert_token, delete_token, get_token_by_id
@@ -17,16 +18,34 @@ from app.services.allegro.pydantic_models import InitializeAuth
 from app.models.user import User as UserModel
 from app.services.werehouse import manager
 from app.services.werehouse.manager import Werehouses
+from pydantic import BaseModel
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
+# Добавляем модель для запроса перемещения
+class TransferItem(BaseModel):
+    sku: str
+    from_warehouse: str
+    to_warehouse: str
+    quantity: int
+
+class RemoveItem(BaseModel):
+    sku: str
+    warehouse: str
+    quantity: int
+
+class AddItem(BaseModel):
+    sku: str
+    warehouse: str
+    quantity: int
 
 @router.get("/inventory", response_class=HTMLResponse)
 async def inventory_page(request: Request, current_user: UserModel = Depends(deps.get_current_user)):
     return templates.TemplateResponse("inventory.html", {
         "request": request,
-        "user": current_user
+        "user": current_user,
+        "warehouses": [w.value for w in Werehouses]
     })
 
 @router.get("/operations", response_class=HTMLResponse)
@@ -84,99 +103,151 @@ async def upload_transfer(
         raise HTTPException(status_code=500, detail=str(e))
     return JSONResponse({'status': 'success', 'file': file.filename, 'from': from_wh.value, 'to': to_wh.value})
 
-@router.get('/export/stock/', summary='Экспорт остатков')
-async def export_stock(manager: manager.InventoryManager = Depends(manager.get_manager)):
-    '''Возвращает XLSX-файл с остатками по складам и общим, включая информацию о товаре и изображения.'''
-    df = manager.get_stock_report()
+@router.get(
+    "/export/stock/",
+    summary="Экспорт остатков",
+    response_class=StreamingResponse,
+)
+async def export_stock(
+    skus: Optional[List[str]] = Query(None, description="Список SKU для экспорта"),
+    manager: manager.InventoryManager = Depends(manager.get_manager),
+):
+    """Возвращает XLSX-файл с остатками и картинками 100×100px."""
+    # получаем DF без image и параллельный список bytes
+    df, images = manager.get_stock_report()
+
+    # фильтрация, если skus заданы
+    if skus:
+        mask = df["sku"].isin(skus)
+        df = df[mask].reset_index(drop=True)
+        images = [img for keep, img in zip(mask, images) if keep]
+
+    # переименования для читабельности
+    column_renames = {
+        "sku": "SKU",
+        "eans": "EAN коды",
+        "name": "Наименование",
+        "total": "Общий остаток"
+    }
+    # добавляем названия складов
+    for wh in Werehouses:
+        column_renames[f"warehouse_{wh.value}"] = f"Склад {wh.value}"
     
-    # Переупорядочиваем столбцы
-    column_order = ['sku', 'eans']
-    # Добавляем столбцы остатков по складам
-    stock_columns = [col for col in df.columns if col.startswith('warehouse_')]
-    column_order.extend(stock_columns)
-    # Добавляем общий остаток
-    column_order.append('total')
-    # Добавляем изображение и имя последними
-    column_order.extend(['image', 'name'])
-    
-    df = df[column_order]
-    
-    # Создаем Excel-файл
-    buffer = BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        # Сохраняем все данные, включая колонку изображений (но без самих изображений)
-        df.to_excel(writer, index=False, sheet_name='Stock')
-        
-        # Получаем рабочий лист
-        worksheet = writer.sheets['Stock']
-        
-        # Настраиваем автоподбор ширины столбцов
-        for column in worksheet.columns:
-            max_length = 0
-            for cell in column:
-                try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(cell.value)
-                except:
-                    pass
-            adjusted_width = (max_length + 2) * 1.2  # Увеличиваем ширину на 20%
-            worksheet.column_dimensions[column[0].column_letter].width = adjusted_width
-        
-        # Устанавливаем фиксированную ширину для колонки с изображениями
-        if 'image' in df.columns:
-            img_column = df.columns.get_loc('image') + 1  # +1 потому что Excel начинает с 1
-            worksheet.column_dimensions[openpyxl.utils.get_column_letter(img_column)].width = 25
-            
-            # Добавляем изображения
-            for idx, row in df.iterrows():
-                if row.get('image') is not None:
-                    try:
-                        img = openpyxl.drawing.image.Image(BytesIO(row['image']))
-                        img.width = 180
-                        img.height = 180
-                        
-                        # Устанавливаем высоту строки
-                        worksheet.row_dimensions[idx + 2].height = 135
-                        
-                        cell = worksheet.cell(row=idx + 2, column=img_column)
-                        worksheet.add_image(img, cell.coordinate)
-                    except Exception as e:
-                        logging.warning(f"Не удалось добавить изображение для строки {idx + 2}: {str(e)}")
-    
-    buffer.seek(0)
-    headers = {'Content-Disposition': f'attachment; filename="stock_report_{datetime.now().strftime("%Y-%m-%d_%H-%M")}.xlsx"'}
-    return StreamingResponse(buffer, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers=headers)
+    df = df.rename(columns=column_renames)
+
+    # вставляем пустую колонку-«держатель» под изображения
+    df.insert(1, "Изображение", "")
+
+    # порядок колонок
+    cols = ["SKU", "Изображение", "Наименование", "EAN коды"]
+    cols.extend([f"Склад {wh.value}" for wh in Werehouses])
+    cols.append("Общий остаток")
+    df = df[cols]
+
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        # пишем данные (картинки пока пустые)
+        df.to_excel(writer, index=False, sheet_name="Остатки")
+        ws = writer.sheets["Остатки"]
+
+        # находим букву колонки «Изображение»
+        img_col_idx    = df.columns.get_loc("Изображение") + 1
+        img_col_letter = get_column_letter(img_col_idx)
+
+        # 1) форматируем заголовки и ширину
+        for idx, col in enumerate(df.columns, start=1):
+            cell = ws.cell(row=1, column=idx)
+            cell.font = cell.font.copy(bold=True)
+            if col == "Изображение":
+                ws.column_dimensions[img_col_letter].width = 18  # ~100px
+            else:
+                max_len = max(df[col].astype(str).map(len).max(), len(col))
+                ws.column_dimensions[get_column_letter(idx)].width = min(max_len + 2, 50)
+
+        # 2) вставка картинок 100×100 и высота строк
+        for row_idx, img_bytes in enumerate(images, start=2):
+            if not img_bytes:
+                continue
+            try:
+                img = XLImage(BytesIO(img_bytes))
+                img.width  = 100
+                img.height = 100
+                ws.row_dimensions[row_idx].height = 75  # под ~100px
+
+                ws.add_image(img, f"{img_col_letter}{row_idx}")
+            except Exception as e:
+                logging.error(f"Не удалось вставить изображение в строке {row_idx}: {e}")
+
+    buf.seek(0)
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"stock_report_{ts}.xlsx"
+    headers = {
+        "Content-Disposition": (
+            f'attachment; filename="{filename}"; '
+            f"filename*=UTF-8''{filename}"
+        )
+    }
+    return StreamingResponse(
+        buf,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers=headers
+    )
 
 @router.get('/export/stock/no-images/', summary='Экспорт остатков без изображений') 
 async def export_stock_no_images(manager: manager.InventoryManager = Depends(manager.get_manager)):
     '''Возвращает XLSX-файл с остатками по складам и общим, без изображений.'''
-    df = manager.get_stock_report()
+    df, _ = manager.get_stock_report()  # Игнорируем список изображений
+    
+    # Русские названия столбцов
+    column_renames = {
+        "sku": "SKU",
+        "eans": "EAN коды",
+        "name": "Наименование",
+        "total": "Общий остаток"
+    }
+    # добавляем названия складов
+    for wh in Werehouses:
+        column_renames[f"warehouse_{wh.value}"] = f"Склад {wh.value}"
+    
+    df = df.rename(columns=column_renames)
+    
+    # порядок колонок
+    cols = ["SKU", "Наименование", "EAN коды"]
+    cols.extend([f"Склад {wh.value}" for wh in Werehouses])
+    cols.append("Общий остаток")
+    df = df[cols]
     
     # Создаем Excel-файл
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        # Сохраняем данные без колонки изображений
-        columns_to_export = [col for col in df.columns if col != 'image']
-        df[columns_to_export].to_excel(writer, index=False, sheet_name='Stock')
+        df.to_excel(writer, index=False, sheet_name='Остатки')
+        worksheet = writer.sheets['Остатки']
         
-        # Получаем рабочий лист
-        worksheet = writer.sheets['Stock']
-        
-        # Базовое форматирование
-        for column in worksheet.columns:
-            max_length = 0
-            for cell in column:
-                try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(cell.value)
-                except:
-                    pass
-            adjusted_width = (max_length + 2) * 1.2  # Увеличиваем ширину на 20%
-            worksheet.column_dimensions[column[0].column_letter].width = adjusted_width
+        # Форматируем заголовки и ширины
+        for idx, col in enumerate(df.columns, start=1):
+            cell = worksheet.cell(row=1, column=idx)
+            cell.font = cell.font.copy(bold=True)
+            
+            # Устанавливаем ширину колонок
+            max_len = max(
+                df[col].astype(str).map(len).max(),
+                len(col)
+            )
+            worksheet.column_dimensions[get_column_letter(idx)].width = min(max_len + 2, 50)
     
     buffer.seek(0)
-    headers = {'Content-Disposition': f'attachment; filename="stock_report_no_images_{datetime.now().strftime("%Y-%m-%d_%H-%M")}.xlsx"'}
-    return StreamingResponse(buffer, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers=headers)
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"stock_report_no_images_{ts}.xlsx"
+    headers = {
+        'Content-Disposition': f'attachment; filename="{filename}"; filename*=UTF-8\'\'{filename}'
+    }
+    return StreamingResponse(
+        buffer,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers=headers
+    )
 
 @router.get('/sales/report/', summary='Отчёт по продажам')
 async def sales_report(
@@ -211,3 +282,146 @@ async def clear_all_data(
     '''Удаляет все продукты, остатки и логи продаж из базы данных.'''
     manager.clear_all_data()
     return JSONResponse(content={"message": "Все данные успешно удалены"})
+
+@router.post('/transfer-item/', summary='Перемещение товара между складами')
+async def transfer_item(
+    transfer: TransferItem,
+    manager: manager.InventoryManager = Depends(manager.get_manager)
+):
+    '''Перемещает указанное количество товара с одного склада на другой.'''
+    try:
+        # Проверяем и конвертируем значения складов
+        from_wh = Werehouses(transfer.from_warehouse)
+        to_wh = Werehouses(transfer.to_warehouse)
+        
+        if from_wh == to_wh:
+            raise HTTPException(
+                status_code=400,
+                detail='Склады отправления и назначения должны быть разными'
+            )
+        
+        # Проверяем наличие достаточного количества товара на складе-источнике
+        stocks = manager.get_stock_by_sku(transfer.sku)
+        if not stocks or transfer.from_warehouse not in stocks:
+            raise HTTPException(
+                status_code=404,
+                detail='Товар не найден на складе-источнике'
+            )
+        
+        if stocks[transfer.from_warehouse] < transfer.quantity:
+            raise HTTPException(
+                status_code=400,
+                detail='Недостаточное количество товара на складе-источнике'
+            )
+        
+        # Выполняем перемещение
+        manager.transfer_stock(
+            transfer.sku,
+            from_wh.value,
+            to_wh.value,
+            transfer.quantity
+        )
+        
+        return JSONResponse({
+            'status': 'success',
+            'message': f'Успешно перемещено {transfer.quantity} шт. со склада {from_wh.value} на склад {to_wh.value}'
+        })
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail='Неверное значение склада')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get('/product/{sku}/sales/', summary='История продаж товара')
+async def get_product_sales_history(
+    sku: str,
+    manager: manager.InventoryManager = Depends(manager.get_manager)
+):
+    '''Возвращает историю продаж конкретного товара.'''
+    try:
+        sales = manager.get_product_sales_history(sku)
+        return JSONResponse(content=sales)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post('/remove/', summary='Списание товара со склада')
+async def remove_from_stock(
+    item: RemoveItem,
+    manager: manager.InventoryManager = Depends(manager.get_manager)
+):
+    '''Списывает указанное количество товара с определенного склада.'''
+    try:
+        # Проверяем корректность склада
+        try:
+            warehouse = Werehouses(item.warehouse)
+        except ValueError:
+            raise HTTPException(status_code=400, detail='Неверное значение склада')
+        
+        # Проверяем наличие достаточного количества товара
+        stocks = manager.get_stock_by_sku(item.sku)
+        if not stocks or item.warehouse not in stocks:
+            raise HTTPException(
+                status_code=404,
+                detail='Товар не найден на складе'
+            )
+        
+        if stocks[item.warehouse] < item.quantity:
+            raise HTTPException(
+                status_code=400,
+                detail='Недостаточное количество товара на складе'
+            )
+        
+        # Выполняем списание
+        manager.remove_from_warehouse(
+            item.sku,
+            warehouse.value,
+            item.quantity
+        )
+        
+        return JSONResponse({
+            'status': 'success',
+            'message': f'Успешно списано {item.quantity} шт. со склада {warehouse.value}'
+        })
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post('/add/', summary='Пополнение товара на складе')
+async def add_to_stock(
+    item: AddItem,
+    manager: manager.InventoryManager = Depends(manager.get_manager)
+):
+    '''Пополняет указанное количество товара на определенном складе.'''
+    try:
+        # Проверяем корректность склада
+        try:
+            warehouse = Werehouses(item.warehouse)
+        except ValueError:
+            raise HTTPException(status_code=400, detail='Неверное значение склада')
+        
+        # Проверяем существование товара
+        stocks = manager.get_stock_by_sku(item.sku)
+        if not stocks:
+            raise HTTPException(
+                status_code=404,
+                detail='Товар не найден'
+            )
+        
+        # Выполняем пополнение
+        manager.add_to_warehouse(
+            item.sku,
+            warehouse.value,
+            item.quantity
+        )
+        
+        return JSONResponse({
+            'status': 'success',
+            'message': f'Успешно добавлено {item.quantity} шт. на склад {warehouse.value}'
+        })
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

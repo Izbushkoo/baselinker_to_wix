@@ -1,8 +1,8 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query, HTTPException, Request
+from fastapi import APIRouter, Depends, Query, HTTPException, Request, File, UploadFile, Form
 from sqlmodel import select, func
 from sqlmodel.ext.asyncio.session import AsyncSession
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, HTMLResponse
 import io
 import pandas as pd
 import base64
@@ -11,12 +11,12 @@ from fastapi.templating import Jinja2Templates
 from app.api import deps
 from app.models.werehouse import Product, Stock
 from app.models.user import User
+from app.services.werehouse.manager import Werehouses
 
 router = APIRouter()
 web_router = APIRouter()
 
 templates = Jinja2Templates(directory="app/templates")
-
 
 @web_router.get("/catalog")
 async def catalog(
@@ -74,14 +74,13 @@ async def catalog(
             "ean": product.eans[0] if product.eans else None,
             "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
             "warehouse": next((s.warehouse for s in stocks if s.quantity > 0), None),
-            "total_stock": total_stock or 0
+            "total_stock": total_stock or 0,
+            "stocks": {stock.warehouse: stock.quantity for stock in stocks}  # Добавляем остатки по складам
         }
         products_with_stocks.append(product_data)
 
-    # Получаем список уникальных складов
-    warehouses_query = select(Stock.warehouse).distinct()
-    result = await db.exec(warehouses_query)
-    warehouses = [w[0] for w in result.all()]
+    # Используем список складов из перечисления
+    warehouses = [{"id": w.value, "name": f"Склад {w.value}"} for w in Werehouses]
 
     return templates.TemplateResponse(
         "catalog.html",
@@ -168,7 +167,8 @@ async def list_products(
             "ean": product.eans[0] if product.eans else None,
             "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
             "warehouse": next((s.warehouse for s in stocks if s.quantity > 0), None),
-            "total_stock": total_stock or 0
+            "total_stock": total_stock or 0,
+            "stocks": {stock.warehouse: stock.quantity for stock in stocks}  # Добавляем остатки по складам
         }
         
         # Генерируем HTML для карточки товара
@@ -236,3 +236,91 @@ async def export_products(
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         headers={'Content-Disposition': 'attachment; filename=products_export.xlsx'}
     )
+
+@web_router.get("/products/add", response_class=HTMLResponse)
+async def add_product_form(
+    request: Request,
+    current_user: User = Depends(deps.get_current_user_from_cookie)
+):
+    """Отображает форму добавления нового товара."""
+    # Получаем список складов из перечисления
+    warehouses = [{"id": w.value, "name": f"Склад {w.value}"} for w in Werehouses]
+    
+    return templates.TemplateResponse(
+        "add_product.html",
+        {
+            "request": request,
+            "user": current_user,
+            "warehouses": warehouses
+        }
+    )
+
+@router.post("/products")
+async def create_product(
+    request: Request,
+    name: str = Form(...),
+    sku: str = Form(...),
+    ean: Optional[str] = Form(None),
+    warehouse: str = Form(...),
+    quantity: int = Form(...),
+    image: Optional[UploadFile] = File(None),
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_from_cookie)
+):
+    """Создает новый товар в базе данных."""
+    try:
+        # Проверяем, что выбран допустимый склад
+        if warehouse not in [w.value for w in Werehouses]:
+            raise HTTPException(
+                status_code=400,
+                detail="Выбран недопустимый склад"
+            )
+
+        # Читаем изображение, если оно было загружено
+        image_data = None
+        if image:
+            # Проверяем размер файла (1MB максимум)
+            MAX_FILE_SIZE = 1 * 1024 * 1024  # 1MB в байтах
+            file_size = 0
+            image_data = bytearray()
+            
+            while chunk := await image.read(8192):
+                file_size += len(chunk)
+                if file_size > MAX_FILE_SIZE:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Размер файла превышает 1MB"
+                    )
+                image_data.extend(chunk)
+            
+            if not file_size:
+                image_data = None
+
+        # Создаем новый товар
+        new_product = Product(
+            sku=sku,
+            name=name,
+            eans=[ean] if ean else [],
+            image=bytes(image_data) if image_data else None
+        )
+        
+        # Добавляем начальные остатки
+        if quantity:
+            stock = Stock(
+                sku=new_product.sku,
+                warehouse=warehouse,  # Используем выбранный склад
+                quantity=quantity
+            )
+            db.add(stock)
+        
+        db.add(new_product)
+        await db.commit()
+        await db.refresh(new_product)
+        
+        return {"success": True, "sku": new_product.sku}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Не удалось создать товар: {str(e)}"
+        )

@@ -49,7 +49,7 @@ def start_sync_tasks(token_id: str, db: Session = Depends(get_db)) -> Dict[str, 
         # Формируем новые расписания для задач
         sync_entry = {
             "task": "app.celery_app.sync_allegro_orders",
-            "schedule": 3600,  # 3600 секунд = 1 час
+            "schedule": 200,  # 3600 секунд = 1 час
             "args": [token_id]
         }
 

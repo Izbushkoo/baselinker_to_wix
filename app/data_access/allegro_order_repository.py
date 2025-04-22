@@ -280,12 +280,12 @@ class AllegroOrderRepository:
             self.session.rollback()
             raise ValueError(f"Ошибка при обновлении заказа: {str(e)}")
 
-    def get_all_orders_basic_info(self) -> list:
+    def get_all_orders_basic_info(self, token_id: str) -> list:
         """
         Получает базовую информацию о всех заказах.
         """
         try:
-            statement = select(AllegroOrder.id, AllegroOrder.updated_at)
+            statement = select(AllegroOrder.id, AllegroOrder.updated_at).where(AllegroOrder.token_id == token_id)
             result = self.session.exec(statement).all()
             orders = [{"id": order.id, "updateTime": order.updated_at} for order in result]
             if not orders:

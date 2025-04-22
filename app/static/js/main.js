@@ -164,4 +164,66 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         return headers;
     }
+
+    // Функции для работы с модальным окном перемещения товаров
+    const moveModal = document.getElementById('moveModal');
+    const moveForm = document.getElementById('moveForm');
+    
+    // Открытие модального окна
+    window.openMoveModal = function(productId) {
+        moveModal.classList.remove('hidden');
+        moveForm.dataset.productId = productId;
+    }
+
+    // Закрытие модального окна
+    window.closeMoveModal = function() {
+        moveModal.classList.add('hidden');
+        moveForm.reset();
+    }
+
+    // Обработка формы перемещения
+    if (moveForm) {
+        moveForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const productId = moveForm.dataset.productId;
+            const fromWarehouse = moveForm.querySelector('[name="from_warehouse"]').value;
+            const toWarehouse = moveForm.querySelector('[name="to_warehouse"]').value;
+            const quantity = moveForm.querySelector('[name="quantity"]').value;
+
+            try {
+                const response = await fetch('/api/products/move', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...addAuthHeader()
+                    },
+                    body: JSON.stringify({
+                        product_id: productId,
+                        from_warehouse: fromWarehouse,
+                        to_warehouse: toWarehouse,
+                        quantity: parseInt(quantity)
+                    })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    showAlert('success', 'Товар успешно перемещен');
+                    closeMoveModal();
+                    // Обновляем страницу для отображения новых остатков
+                    window.location.reload();
+                } else {
+                    showAlert('danger', data.detail || 'Ошибка при перемещении товара');
+                }
+            } catch (error) {
+                showAlert('danger', 'Ошибка сервера при перемещении товара');
+            }
+        });
+    }
+
+    // Закрытие модального окна при клике вне его
+    moveModal?.addEventListener('click', (e) => {
+        if (e.target === moveModal) {
+            closeMoveModal();
+        }
+    });
 }); 

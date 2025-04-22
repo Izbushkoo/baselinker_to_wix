@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Каталог - Werehouse{% endblock %}
+{% block title %}Склад - Werehouse{% endblock %}
 
 {% block content %}
 <div class="min-h-screen bg-gray-50">
@@ -9,22 +9,29 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
                 <div class="flex items-center gap-4">
-                    <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Каталог товаров</h1>
+                    <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Склад товаров</h1>
                     <div class="flex items-center gap-2">
                         <button id="selectAll" 
-                                class="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
-                            <svg class="w-4 h-4 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                class="inline-flex items-center justify-center px-2 py-1 rounded-lg bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                            <svg class="w-3 h-3 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                             </svg>
                             Выбрать все
                         </button>
                         <button id="deselectAll" 
-                                class="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
-                            <svg class="w-4 h-4 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                class="inline-flex items-center justify-center px-2 py-1 rounded-lg bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                            <svg class="w-3 h-3 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                             </svg>
                             Отменить выбор
                         </button>
+                        <a href="/products/add" 
+                           class="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            <svg class="w-4 h-4 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                            </svg>
+                            Добавить товар
+                        </a>
                     </div>
                 </div>
                 
@@ -136,6 +143,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{{ url_for('static', path='js/inventory.js') }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const searchInput = document.getElementById('searchInput');
@@ -250,9 +258,17 @@
         }
 
         async function exportProducts(productIds) {
+            const exportButton = document.getElementById('exportSelected');
+            const originalButtonHTML = `
+                <svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>Экспортировать</span>
+                <span class="ml-1.5 hidden" id="exportCount"></span>
+            `;
+            
             try {
                 exportButton.disabled = true;
-                const originalText = exportButton.innerHTML;
                 exportButton.innerHTML = `
                     <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -261,12 +277,14 @@
                     Экспортируем...
                 `;
                 
-                const response = await fetch('/api/products/export', {
-                    method: 'POST',
+                const params = new URLSearchParams();
+                Array.from(productIds).forEach(sku => params.append('skus', sku));
+                
+                const response = await fetch(`/api/werehouse/export/stock/?${params}`, {
+                    method: 'GET',
                     headers: {
                         'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ product_ids: Array.from(productIds) })
+                    }
                 });
 
                 if (!response.ok) {
@@ -287,7 +305,13 @@
                 alert('Не удалось экспортировать товары. Пожалуйста, попробуйте еще раз.');
             } finally {
                 exportButton.disabled = false;
-                exportButton.innerHTML = originalText;
+                exportButton.innerHTML = originalButtonHTML;
+                // Обновляем счетчик после восстановления HTML кнопки
+                const exportCount = document.getElementById('exportCount');
+                if (exportCount) {
+                    exportCount.textContent = productIds.size > 0 ? `(${productIds.size})` : '';
+                    exportCount.classList.toggle('hidden', productIds.size === 0);
+                }
             }
         }
 
@@ -353,4 +377,7 @@
         pageSizeSelect.value = pageSize;
     });
 </script>
-{% endblock %} 
+{% endblock %}
+
+</body>
+</html> 

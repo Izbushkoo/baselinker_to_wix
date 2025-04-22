@@ -54,6 +54,7 @@ class AllegroOrder(SQLModel, table=True):
     status: str
     updated_at: datetime = Field()
     belongs_to: str = Field(nullable=False, default="1")
+    is_stock_updated: bool = Field(default=False)  # Флаг, был ли списан товар
     
     # Связь с токеном
     token_id: str = Field(foreign_key="allegro_tokens.id_")

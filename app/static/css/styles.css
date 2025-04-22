@@ -1,0 +1,22 @@
+.stock-info {
+    background-color: #f8f9fa;
+    padding: 1rem;
+    border-radius: 0.25rem;
+    margin-top: 1rem;
+}
+
+.stock-info h6 {
+    color: #495057;
+    margin-bottom: 0.75rem;
+}
+
+.stock-info p {
+    margin-bottom: 0.5rem;
+    color: #6c757d;
+}
+
+.total-stock {
+    border-top: 1px solid #dee2e6;
+    padding-top: 0.5rem;
+    color: #212529 !important;
+} 

@@ -1,5 +1,6 @@
 import requests
 import csv
+import traceback
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from sqlmodel import Session
@@ -31,6 +32,8 @@ import redis
 from celery.beat import PersistentScheduler, ScheduleEntry
 import json
 from collections import UserDict
+from app.services.stock_service import AllegroStockService
+from app.services.werehouse import manager
 
 
 def get_redis_client():
@@ -166,11 +169,6 @@ def chunks(lst, n):
     """Возвращает генератор чанков размера n из списка lst."""
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
-
-
-@celery.task(name="tasks.example_task")
-def example_task(x, y):
-    return {"result": x + y}
 
 
 # Задача для обработки одного товара
@@ -345,20 +343,23 @@ def sync_allegro_orders(token_id: str, from_date: str = None) -> Dict[str, Any]:
                 logger.info(f"Синхронизация начнется с 30 дней назад: {last_sync_time.isoformat()}")
 
         logger.info(f"last_sync_time_{token_id}: {last_sync_time.isoformat()}")    
-        logger.info("Начинаем полную синхронизацию заказов Allegro")
         
         session = SessionLocal()
         try:
             service = SyncAllegroOrderService(session)
             token = get_allegro_token(session, token_id)
             
+            # Инициализируем сервис для обработки списаний
+            stock_service = AllegroStockService(session, manager.get_manager())
+            
             offset = 0
             limit = 100
             total_synced = 0
+            total_stock_updated = 0
             
             # Получаем все существующие заказы из базы одним запросом
             existing_orders = {}
-            orders_info = service.repository.get_all_orders_basic_info()
+            orders_info = service.repository.get_all_orders_basic_info(token_id)
             if orders_info:
                 existing_orders = {
                     order["id"]: order["updateTime"] 
@@ -409,34 +410,48 @@ def sync_allegro_orders(token_id: str, from_date: str = None) -> Dict[str, Any]:
                     )
                     
                     try:
+                        # Обновляем или добавляем заказ
                         if order_id in existing_orders:
-                            service.repository.update_order(token_id, order_id, order_details)
+                            order = service.repository.update_order(token_id, order_id, order_details)
                         else:
-                            service.repository.add_order(token_id, order_details)
+                            order = service.repository.add_order(token_id, order_details)
+                        
+                        # Обрабатываем списание товара
+                        if stock_service.process_order_stock_update(order, werehouse="B"):
+                            total_stock_updated += 1
+                        
                         total_synced += 1
+                        
                     except Exception as e:
                         if "duplicate key value violates unique constraint" in str(e):
                             # Если это дублирование покупателя, получаем существующего и пробуем снова
                             logger.info(f"Найден существующий покупатель для заказа {order_id}, используем его")
-                            # Получаем существующего покупателя и пробуем добавить заказ снова
-                            service.repository.add_order_with_existing_buyer(token_id, order_details)
+
+                            order = service.repository.add_order_with_existing_buyer(token_id, order_details)
+                            if stock_service.process_order_stock_update(order, werehouse="B"):
+                                total_stock_updated += 1
                             total_synced += 1
                         else:
                             raise
-                
+                    
+                    
                 # Если получили меньше заказов чем limit, значит это последняя страница
                 if len(checkout_forms) < limit:
                     break
                     
                 offset += limit
             
-            redis_client.set(f"last_sync_time_{token_id}", (datetime.utcnow() - timedelta(days=10)).isoformat())
-            
+            # Сохраняем время последней синхронизации
+            redis_client.set(f"last_sync_time_{token_id}", (datetime.utcnow() - timedelta(seconds=5)).isoformat())
+
             logger.info(f"Успешно синхронизировано {total_synced} заказов")
+            logger.info(f"Обработано списаний товаров: {total_stock_updated}")
             return {
                 "status": "success",
                 "message": "Синхронизация завершена",
-                "from_date": from_date
+                "from_date": from_date,
+                "orders_synced": total_synced,
+                "stock_updated": total_stock_updated
             }
         finally:
             session.close()
@@ -448,123 +463,13 @@ def sync_allegro_orders(token_id: str, from_date: str = None) -> Dict[str, Any]:
             "message": str(e)
         }
     except Exception as e:
-        logger.error(f"Ошибка при синхронизации: {str(e)}")
+        
+        logger.error(f"Ошибка при синхронизации: {str(e)} {traceback.print_exc()}")
         return {
             "status": "error",
             "message": f"Ошибка при синхронизации: {str(e)}"
         }
 
-@celery.task(name='app.celery_app.check_recent_orders')
-def check_recent_orders(token_id: str):
-    """
-    Задача для проверки обновлений заказов за последние 3 дня.
-    Запускается каждый час.
-    """
-    logger.info("Начинаем проверку недавних заказов Allegro")
-    
-    try:
-        with Session(engine) as session:
-            service = SyncAllegroOrderService(session)
-            
-            # Получаем и проверяем токен из базы данных
-            token = get_allegro_token(session, token_id)
-            
-            # Устанавливаем временной диапазон
-            now = datetime.utcnow()
-            three_days_ago = now - timedelta(days=3)
-            
-            offset = 0
-            limit = 100
-            total_checked = 0
-            updated_orders = 0
-            
-            # Получаем все существующие заказы из базы одним запросом
-            existing_orders = {}
-            orders_info = service.repository.get_all_orders_basic_info()
-            if orders_info:
-                existing_orders = {
-                    order["id"]: order["updateTime"] for order in orders_info
-                }
-            
-            while True:
-                # Проверяем rate limit перед запросом
-                allegro_rate_limiter.wait_if_needed()
-                
-                # Получаем страницу заказов
-                orders_data = service.api_service.get_orders(
-                    token=token.access_token,
-                    # status="READY_FOR_PROCESSING",
-                    offset=offset,
-                    limit=limit,
-                    updated_at_gte=three_days_ago,
-                    updated_at_lte=now,
-                    sort="-updatedAt"  # Сортируем по времени обновления
-                )
-                
-                checkout_forms = orders_data.get("checkoutForms", [])
-                if not checkout_forms:
-                    break
-                
-                # Собираем ID заказов, которые нужно обновить
-                orders_to_update = []
-                for order_data in checkout_forms:
-                    order_id = order_data["id"]
-                    try:
-                        update_time = datetime.fromisoformat(order_data.get("updatedAt").replace('Z', '+00:00'))
-                    except Exception as e:
-                        logger.error(f"Ошибка при парсинге даты для заказа {order_id}: {str(e)} {order_data.get('updatedAt')}")
-                        continue
-                    total_checked += 1
-                    logger.info(f"update_time: {update_time}    existing_orders[order_id]: {existing_orders[order_id]}")
-                    # Проверяем, нужно ли обновлять заказ
-                    if order_id not in existing_orders or update_time.replace(tzinfo=None) !=  existing_orders[order_id].replace(tzinfo=None):
-                        orders_to_update.append(order_id)
-                
-                # Получаем детали только для заказов, которые нужно обновить
-                for order_id in orders_to_update:
-                    # Проверяем rate limit перед каждым запросом деталей
-                    allegro_rate_limiter.wait_if_needed()
-                    
-                    order_details = service.api_service.get_order_details(
-                        token=token.access_token,
-                        order_id=order_id
-                    )
-                    
-                    try:
-                        if order_id in existing_orders:
-                            service.repository.update_order(token_id, order_id, order_details)
-                        else:
-                            service.repository.add_order(token_id, order_details)
-                        updated_orders += 1
-                    except Exception as e:
-                        if "duplicate key value violates unique constraint" in str(e):
-                            # Если это дублирование покупателя, получаем существующего и пробуем снова
-                            logger.info(f"Найден существующий покупатель для заказа {order_id}, используем его")
-                            service.repository.add_order_with_existing_buyer(token_id, order_details)
-                            updated_orders += 1
-                        else:
-                            raise
-                
-                # Если получили меньше заказов чем limit, значит это последняя страница
-                if len(checkout_forms) < limit:
-                    break
-                    
-                offset += limit
-            
-            logger.info(f"Проверено {total_checked} заказов, обновлено {updated_orders}\n Срок проверки: {three_days_ago.isoformat()} - {now.isoformat()}")
-            return {
-                "status": "success",
-                "total_checked": total_checked,
-                "updated_orders": updated_orders,
-                "period": {
-                    "from": three_days_ago.isoformat(),
-                    "to": now.isoformat()
-                }
-            }
-            
-    except Exception as e:
-        logger.error(f"Ошибка при проверке заказов: {str(e)}")
-        return {"status": "error", "message": str(e)}
 
 
 @celery.task(name="app.backup_base")
@@ -624,7 +529,7 @@ def sync_allegro_orders_immediate(token_id: str, from_date: str = None) -> Dict[
             
             # Получаем все существующие заказы из базы одним запросом
             existing_orders = {}
-            orders_info = service.repository.get_all_orders_basic_info()
+            orders_info = service.repository.get_all_orders_basic_info(token_id)
             if orders_info:
                 existing_orders = {
                     order["id"]: order["updateTime"] 

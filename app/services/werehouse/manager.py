@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel, Field, Session, create_engine, select
 from sqlalchemy import Column, JSON, text
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import pandas as pd
 from io import BytesIO
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Query
@@ -337,46 +337,52 @@ class InventoryManager:
             except ValueError as e:
                 raise ValueError(f'Ошибка в данных: {str(e)}. SKU: {sku}, количество: {qty}')
 
-    def get_stock_report(self) -> pd.DataFrame:
-        '''Получить DataFrame по остаткам: sku, название, EAN, остатки по каждому складу и изображение.'''
+    def get_stock_report(self) -> Tuple[pd.DataFrame, List[bytes]]:
+        """
+        Возвращает кортеж:
+        - DataFrame с колонками sku, name, eans, warehouse_*, total (без image)
+        - Список байтов изображений в том же порядке, что и строки в DataFrame
+        """
         with Session(self.engine) as session:
-            # Получаем все продукты
             products = session.exec(select(Product)).all()
-            # Получаем все остатки
-            stocks = session.exec(select(Stock)).all()
-            
-            if not products:
-                # Возвращаем пустой DataFrame с нужными колонками
-                return pd.DataFrame(columns=['sku', 'name', 'eans', 'image'])
-            
-            # Получаем уникальные склады
-            warehouses = sorted(list(set(s.warehouse for s in stocks)))
-            
-            # Создаем словарь остатков по SKU и складу
-            stock_data = {}
-            for s in stocks:
-                if s.sku not in stock_data:
-                    stock_data[s.sku] = {wh: 0 for wh in warehouses}
-                stock_data[s.sku][s.warehouse] = s.quantity
-            
-            rows = []
-            for product in products:
-                row = {
-                    'sku': product.sku,
-                    'name': product.name,
-                    'eans': ', '.join(product.eans) if product.eans else '',
-                    'image': product.image
-                }
-                # Добавляем остатки по складам
-                total = 0
-                for wh in warehouses:
-                    qty = stock_data.get(product.sku, {}).get(wh, 0)
-                    row[f'warehouse_{wh}'] = qty
-                    total += qty
-                row['total'] = total
-                rows.append(row)
-            
-            return pd.DataFrame(rows)
+            stocks   = session.exec(select(Stock)).all()
+
+        if not products:
+            empty_df = pd.DataFrame(columns=[
+                'sku', 'name', 'eans', 'total'
+            ] + [f'warehouse_{w.value}' for w in Werehouses])
+            return empty_df, []
+
+        # накапливаем строки
+        rows = []
+        images = []
+        # создаём словарь stock_data
+        stock_data = {s.sku: {w.value: 0 for w in Werehouses} for s in stocks}
+        for s in stocks:
+            stock_data.setdefault(s.sku, {w.value: 0 for w in Werehouses})
+            stock_data[s.sku][s.warehouse] = s.quantity
+
+        for prod in products:
+            # Собираем общие данные (без image)
+            row = {
+                'sku': prod.sku,
+                'name': prod.name,
+                'eans': ', '.join(prod.eans) if prod.eans else '',
+            }
+            total = 0
+            for wh in Werehouses:
+                qty = stock_data.get(prod.sku, {}).get(wh.value, 0)
+                row[f'warehouse_{wh.value}'] = qty
+                total += qty
+            row['total'] = total
+
+            rows.append(row)
+            # А картинку — собираем параллельно в отдельный список
+            images.append(prod.image or b'')
+
+        # Теперь df без колонки image
+        df = pd.DataFrame(rows)
+        return df, images
 
     def get_sales_report(self, start_date: date, end_date: date, sku: Optional[str] = None) -> pd.DataFrame:
         '''Получить DataFrame логов продаж за период по SKU.'''
@@ -402,3 +408,124 @@ class InventoryManager:
             session.exec(text("DELETE FROM stock"))
             session.exec(text("DELETE FROM product"))
             session.commit()
+
+    def transfer_stock(self, sku: str, from_warehouse: str, to_warehouse: str, quantity: int) -> None:
+        '''
+        Перемещает указанное количество товара с одного склада на другой.
+        
+        Args:
+            sku (str): SKU товара
+            from_warehouse (str): Склад-источник
+            to_warehouse (str): Склад-назначение
+            quantity (int): Количество для перемещения
+            
+        Raises:
+            ValueError: Если количество отрицательное или равно нулю
+            ValueError: Если склады совпадают
+            ValueError: Если товара нет на складе-источнике
+            ValueError: Если недостаточно товара на складе-источнике
+        '''
+        try:
+            logging.info(
+                f"Запрос на перемещение товара: SKU={sku}, "
+                f"количество={quantity}, со склада={from_warehouse}, "
+                f"на склад={to_warehouse}"
+            )
+            
+            # Проверяем корректность входных данных
+            if quantity <= 0:
+                raise ValueError("Количество должно быть положительным числом")
+                
+            if from_warehouse == to_warehouse:
+                raise ValueError("Склад источника и назначения не могут совпадать")
+            
+            # Используем существующий метод transfer
+            self.transfer(sku, quantity, from_warehouse, to_warehouse)
+            
+            logging.info(
+                f"Успешно перемещено {quantity} единиц товара {sku} "
+                f"со склада {from_warehouse} на склад {to_warehouse}"
+            )
+            
+        except Exception as e:
+            logging.error(f"Ошибка при перемещении товара: {str(e)}")
+            raise
+
+    def get_product_sales_history(self, sku: str) -> List[dict]:
+        '''Получить историю продаж конкретного товара.
+
+        Args:
+            sku (str): SKU товара
+
+        Returns:
+            List[dict]: Список словарей с информацией о продажах
+        '''
+        with Session(self.engine) as session:
+            sales = session.exec(
+                select(Sale)
+                .where(Sale.sku == sku)
+                .order_by(Sale.timestamp.desc())
+            ).all()
+            
+            return [
+                {
+                    'id': sale.id,
+                    'warehouse': sale.warehouse,
+                    'quantity': sale.quantity,
+                    'timestamp': sale.timestamp.isoformat()
+                }
+                for sale in sales
+            ]
+
+    def add_to_warehouse(self, sku: str, warehouse: str, quantity: int) -> None:
+        '''
+        Пополняет указанное количество товара на складе.
+        
+        Args:
+            sku (str): SKU товара
+            warehouse (str): Склад для пополнения
+            quantity (int): Количество для добавления
+            
+        Raises:
+            ValueError: Если количество отрицательное или равно нулю
+            ValueError: Если товар не существует в базе данных
+        '''
+        try:
+            logging.info(
+                f"Запрос на пополнение товара: SKU={sku}, "
+                f"количество={quantity}, склад={warehouse}"
+            )
+            
+            # Проверяем корректность входных данных
+            if quantity <= 0:
+                raise ValueError("Количество должно быть положительным числом")
+            
+            with Session(self.engine) as session:
+                # Проверяем существование товара
+                product = session.get(Product, sku)
+                if not product:
+                    raise ValueError(f"Товар с SKU {sku} не найден в базе данных")
+                
+                # Получаем текущий остаток на складе
+                stock = session.get(Stock, (sku, warehouse))
+                
+                if stock:
+                    # Если остаток существует, увеличиваем его
+                    stock.quantity += quantity
+                    logging.info(f"Увеличен остаток на складе {warehouse}: было {stock.quantity - quantity}, стало {stock.quantity}")
+                else:
+                    # Если остатка нет, создаем новый
+                    stock = Stock(sku=sku, warehouse=warehouse, quantity=quantity)
+                    logging.info(f"Создан новый остаток на складе {warehouse}: {quantity}")
+                
+                session.add(stock)
+                session.commit()
+                
+                logging.info(
+                    f"Успешно добавлено {quantity} единиц товара {sku} "
+                    f"на склад {warehouse}"
+                )
+                
+        except Exception as e:
+            logging.error(f"Ошибка при пополнении товара: {str(e)}")
+            raise
