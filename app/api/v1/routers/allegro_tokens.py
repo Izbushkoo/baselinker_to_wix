@@ -71,13 +71,3 @@ async def delete_token_route(
         return HTTPException(404, "Smth went wrong. Not deleted or not exists")
     else:
         return TokenOfAllegro(**token.model_dump(exclude_none=True))
-
-
-
-
-
-
-
-
-
-
