@@ -10,4 +10,5 @@ class User(SQLModel, table=True):
     full_name: str
     email: str
     password: str
+    is_admin: bool = False
     is_active: bool = True

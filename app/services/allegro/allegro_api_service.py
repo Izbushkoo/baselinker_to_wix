@@ -95,9 +95,10 @@ class SyncAllegroApiService(BaseAllegroApiService):
         """
         try:
             # Проверяем, не является ли дата будущей
-            if updated_at_gte and updated_at_gte > datetime.now():
+            now = datetime.now().replace(tzinfo=None)
+            if updated_at_gte and updated_at_gte.replace(tzinfo=None) > now:
                 logger.warning(f"Указана будущая дата {updated_at_gte}, используем текущую дату")
-                updated_at_gte = datetime.now()
+                updated_at_gte = now
                 
             params = {
                 'offset': offset,
@@ -107,40 +108,24 @@ class SyncAllegroApiService(BaseAllegroApiService):
             if status:
                 params['status'] = status
             if updated_at_gte:
-                # Форматируем дату в ISO 8601 с Z в конце
-                params['updatedAt.gte'] = updated_at_gte.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+                # Убираем информацию о часовом поясе перед форматированием
+                gte_date = updated_at_gte.replace(tzinfo=None)
+                params['updatedAt.gte'] = gte_date.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
             if updated_at_lte:
-                params['updatedAt.lte'] = updated_at_lte.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+                # Убираем информацию о часовом поясе перед форматированием
+                lte_date = updated_at_lte.replace(tzinfo=None)
+                params['updatedAt.lte'] = lte_date.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
             if sort:
                 params['sort'] = sort
                 
-            headers = {
-                'Authorization': f'Bearer {token}',
-                'Accept': 'application/vnd.allegro.public.v1+json'
-            }
-            
-            logger.info(f"Отправляем запрос к API Allegro с параметрами: {params}")
-            
-            response = requests.get(
-                f"{self.base_url}/order/checkout-forms",
-                headers=headers,
+            response = self.client.get(
+                "/order/checkout-forms",
+                headers=self._get_headers(token),
                 params=params
             )
             
-            if response.status_code == 200:
-                return response.json()
-            else:
-                error_msg = f"Client error '{response.status_code} {response.reason}' for url '{response.url}'"
-                logger.error(error_msg)
-                
-                # Логируем тело ответа с ошибкой
-                try:
-                    error_body = response.json()
-                    logger.error(f"Тело ответа с ошибкой: {error_body}")
-                except:
-                    logger.error(f"Не удалось получить тело ответа: {response.text}")
-                
-                raise ValueError(f"Ошибка при получении заказов: {error_msg}")
+            response.raise_for_status()
+            return response.json()
                 
         except Exception as e:
             logger.error(f"Ошибка при получении заказов: {str(e)}")

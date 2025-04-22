@@ -26,3 +26,12 @@ class Sale(SQLModel, table=True):
     warehouse: str
     quantity: int
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+class Transfer(SQLModel, table=True):
+    '''Лог перемещений товаров между складами.'''
+    id: Optional[int] = Field(default=None, primary_key=True)
+    sku: str = Field(foreign_key='product.sku')
+    source: str
+    destination: str
+    quantity: int
+    timestamp: datetime = Field(default_factory=datetime.utcnow)

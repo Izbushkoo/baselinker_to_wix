@@ -32,9 +32,7 @@
             <div class="min-w-0">
                 <h3 class="text-base font-bold text-gray-900 truncate">{{ product['name'] }}</h3>
                 <div class="mt-1 flex items-center gap-3 text-sm text-gray-500">
-                    <span class="inline-flex items-center rounded-md bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10">
-                        SKU: {{ product['sku'] }}
-                    </span>
+                    <span class="inline-flex items-center rounded-md bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10 cursor-pointer hover:bg-gray-100" onclick="copyToClipboard(this)" data-sku="{{ product['sku'] }}" title="Нажмите, чтобы скопировать">SKU: {{ product['sku'] }}</span>
                     {% if product['ean'] %}
                     <span class="inline-flex items-center rounded-md bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10">
                         EAN: {{ product['ean'] }}
@@ -89,13 +87,12 @@
                     {% for warehouse, quantity in product['stocks'].items() %}
                     <div class="flex items-center justify-between p-2 bg-white rounded border border-gray-200">
                         <div class="flex items-center space-x-2">
-                            <span class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full {% if quantity > 0 %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
-                                {{ warehouse }}
+                            <span class="text-sm font-medium text-gray-900">
+                                Склад "{{ warehouse }}"
                             </span>
-                            <span class="text-gray-900 font-medium">Склад {{ warehouse }}</span>
                         </div>
                         <div class="flex items-center space-x-2">
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium {% if quantity > 0 %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-bold {% if quantity > 0 %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
                                 {{ quantity }} шт.
                             </span>
                             <div class="flex items-center space-x-2">
@@ -159,7 +156,7 @@
                     <select name="from_warehouse" id="fromWarehouse" class="shadow border rounded w-full py-2 px-3" required>
                         <option value="">Выберите склад</option>
                         {% for warehouse in warehouses %}
-                        <option value="{{ warehouse.id }}">{{ warehouse.name }}</option>
+                        <option value="{{ warehouse }}">{{ warehouse }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -171,7 +168,7 @@
                     <select name="to_warehouse" id="toWarehouse" class="shadow border rounded w-full py-2 px-3" required>
                         <option value="">Выберите склад</option>
                         {% for warehouse in warehouses %}
-                        <option value="{{ warehouse.id }}">{{ warehouse.name }}</option>
+                        <option value="{{ warehouse }}">{{ warehouse }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -218,6 +215,23 @@
 
 <!-- В конец файла добавим JavaScript для обработки списания -->
 <script>
+// Добавляем в начало скрипта функцию копирования
+function copyToClipboard(element) {
+    const text = element.getAttribute('data-sku');
+    navigator.clipboard.writeText(text).then(() => {
+        // Сохраняем оригинальный текст
+        const originalText = element.textContent;
+        // Меняем текст на "Скопировано"
+        element.textContent = "Скопировано!";
+        // Возвращаем оригинальный текст через 1 секунду
+        setTimeout(() => {
+            element.textContent = originalText;
+        }, 1000);
+    }).catch(err => {
+        console.error('Ошибка при копировании:', err);
+    });
+}
+
 // Ждём, пока страница загрузится
 document.addEventListener('DOMContentLoaded', () => {
   const wrapper   = document.getElementById('errorModalWrapper');
@@ -272,7 +286,7 @@ function removeFromStock(button) {
     // Отключаем кнопку на время запроса
     button.disabled = true;
 
-    fetch('/api/werehouse/remove/', {
+    fetch('/api/warehouse/remove/', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -349,7 +363,7 @@ function addToStock(button) {
     // Отключаем кнопку на время запроса
     button.disabled = true;
 
-    fetch('/api/werehouse/add/', {
+    fetch('/api/warehouse/add/', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

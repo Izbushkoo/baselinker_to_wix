@@ -1,36 +1,71 @@
 {% extends "base.html" %}
 
-{% block title %}Вход - Werehouse{% endblock %}
+{% block title %}Вход - Warehouse{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-body">
-                <h3 class="card-title text-center mb-4">Вход в систему</h3>
-                <form id="loginForm" method="POST" action="{{ url_for('login') }}">
-                    <div class="mb-3">
-                        <label for="email" class="form-label">Email</label>
-                        <input type="email" class="form-control" id="email" name="email" required>
+{% if user %}
+<script>
+    window.location.href = '{{ request.args.get("next", "/") }}';
+</script>
+{% else %}
+<div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-900">
+    <div class="max-w-md w-full">
+        <div class="text-center mb-8">
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white">
+                Вход в систему
+            </h2>
+            <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                или
+                <a href="{{ url_for('register') }}" class="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300">
+                    зарегистрируйтесь для нового аккаунта
+                </a>
+            </p>
+        </div>
+        
+        <div class="bg-white dark:bg-gray-800 py-8 px-4 shadow sm:rounded-lg sm:px-10">
+            <form id="loginForm" method="POST" action="{{ url_for('login') }}" class="space-y-6">
+                <div>
+                    <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Email
+                    </label>
+                    <div class="mt-1">
+                        <input id="email" name="email" type="email" required
+                            class="appearance-none block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 
+                                   focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white sm:text-sm"
+                            placeholder="your@email.com">
                     </div>
-                    <div class="mb-3">
-                        <label for="password" class="form-label">Пароль</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
+                </div>
+
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Пароль
+                    </label>
+                    <div class="mt-1">
+                        <input id="password" name="password" type="password" required
+                            class="appearance-none block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 
+                                   focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white sm:text-sm"
+                            placeholder="••••••••">
                     </div>
-                    <div class="d-grid gap-2">
-                        <button type="submit" class="btn btn-primary">Войти</button>
-                        <a href="{{ url_for('register') }}" class="btn btn-link">Нет аккаунта? Зарегистрируйтесь</a>
-                    </div>
-                </form>
-            </div>
+                </div>
+
+                <div>
+                    <button type="submit"
+                        class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white 
+                               bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 
+                               dark:focus:ring-offset-gray-800 transition-colors duration-200">
+                        Войти
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
 <script>
-document.getElementById('loginForm').addEventListener('submit', async (e) => {
+document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const formData = new FormData(e.target);
@@ -51,10 +86,11 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             throw new Error(error.detail || 'Ошибка входа');
         }
 
-        // После успешного входа перенаправляем на главную страницу
-        window.location.href = '/';
+        const urlParams = new URLSearchParams(window.location.search);
+        const nextUrl = urlParams.get('next') || '/';
+        window.location.href = nextUrl;
     } catch (error) {
-        showError(error.message);
+        showNotification(error.message, 'error');
     }
 });
 </script>

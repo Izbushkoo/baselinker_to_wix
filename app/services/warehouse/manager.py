@@ -1,5 +1,6 @@
 from sqlmodel import SQLModel, Field, Session, create_engine, select
 from sqlalchemy import Column, JSON, text
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Tuple
 import pandas as pd
 from io import BytesIO
@@ -10,18 +11,24 @@ from enum import Enum
 import logging
 import openpyxl
 
-from app.models.werehouse import Product, Stock, Sale
+from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.core.config import settings
 
-class Werehouses(str, Enum):
+logger = logging.getLogger(__name__)
+
+class StockError(Exception):
+    """Исключение для ошибок, связанных с остатками на складе."""
+    pass
+
+class Warehouses(str, Enum):
     """Перечисление доступных складов в системе.
     
     Attributes:
         A (str): Основной склад для хранения товаров
         B (str): Вторичный склад для хранения товаров
     """
-    A = 'A'  # Основной склад
-    B = 'B'  # Вторичный склад
+    A = 'Ирина'  # Основной склад
+    B = 'Женя'  # Вторичный склад
 
 def get_manager() -> 'InventoryManager':
     dsn = settings.SQLALCHEMY_DATABASE_URI.unicode_string()
@@ -37,6 +44,8 @@ class InventoryManager:
         '''Пополнение остатков на указанном складе.'''
         if quantity <= 0:
             raise ValueError('Количество пополнения должно быть положительным.')
+            
+        # Используем значение склада как есть, без преобразования в ключ
         with Session(self.engine) as session:
             key = (sku, warehouse)
             stock = session.get(Stock, key)
@@ -47,73 +56,103 @@ class InventoryManager:
             session.add(stock)
             session.commit()
 
-    def transfer(self, sku: str, quantity: int, from_warehouse: str, to_warehouse: str):
-        '''Перемещение количества между любыми складами.'''
-        logging.info(f"Начало перемещения: SKU={sku}, количество={quantity}, со склада={from_warehouse}, на склад={to_warehouse}")
+    def transfer(
+        self,
+        sku: str,
+        source: str,
+        destination: str,
+        quantity: int,
+    ) -> None:
+        """
+        Перемещает указанное количество товара с одного склада на другой.
         
-        if quantity <= 0:
-            logging.error(f"Ошибка: количество должно быть положительным, получено {quantity}")
-            raise ValueError('Количество перевода должно быть положительным.')
-            
-        if from_warehouse == to_warehouse:
-            logging.error(f"Ошибка: склады совпадают: {from_warehouse}")
-            raise ValueError('Склады отправления и назначения должны различаться.')
-            
+        Args:
+            sku: SKU товара
+            source: Склад-источник
+            destination: Склад-получатель
+            quantity: Количество для перемещения
+        
+        Raises:
+            ValueError: Если количество отрицательное или склады совпадают
+            StockError: Если на складе-источнике недостаточно товара
+        """
+        logger.info(f"Начало перемещения {quantity} единиц товара {sku} со склада {source} на склад {destination}")
+        
         with Session(self.engine) as session:
-            # Проверяем наличие товара на складе-источнике
-            src = session.get(Stock, (sku, from_warehouse))
-            logging.info(f"Проверка склада-источника: найден={src is not None}, "
-                        f"текущий остаток={src.quantity if src else 0}")
-            
-            if not src:
-                logging.error(f"Ошибка: товар {sku} не найден на складе {from_warehouse}")
-                raise ValueError(f'Недостаточно на складе {from_warehouse}.')
-            
-            if src.quantity < quantity:
-                logging.error(f"Ошибка: недостаточно товара. Требуется {quantity}, в наличии {src.quantity}")
-                raise ValueError(f'Недостаточно на складе {from_warehouse}. Требуется {quantity}, в наличии {src.quantity}')
-            
-            # Проверяем склад назначения
-            dest = session.get(Stock, (sku, to_warehouse))
-            logging.info(f"Проверка склада-назначения: найден={dest is not None}, "
-                        f"текущий остаток={dest.quantity if dest else 0}")
-            
-            # Уменьшаем количество на складе-источнике
-            src.quantity -= quantity
-            logging.info(f"Уменьшен остаток на складе {from_warehouse}: было {src.quantity + quantity}, стало {src.quantity}")
-            
-            # Увеличиваем количество на складе-назначения
-            if not dest:
-                dest = Stock(sku=sku, warehouse=to_warehouse, quantity=quantity)
-                logging.info(f"Создан новый остаток на складе {to_warehouse}: {quantity}")
-            else:
-                dest.quantity += quantity
-                logging.info(f"Увеличен остаток на складе {to_warehouse}: было {dest.quantity - quantity}, стало {dest.quantity}")
-            
             try:
-                session.add(src)
-                session.add(dest)
+                if quantity <= 0:
+                    raise ValueError("Количество должно быть положительным")
+                
+                if source == destination:
+                    raise ValueError("Склады источника и назначения должны различаться")
+
+                # Проверяем наличие товара на складе-источнике
+                source_stock = session.get(Stock, (sku, source))
+                if not source_stock:
+                    raise StockError(f"Товар {sku} отсутствует на складе {source}")
+                
+                if source_stock.quantity < quantity:
+                    raise StockError(
+                        f"Недостаточно товара на складе {source}. "
+                        f"Запрошено: {quantity}, доступно: {source_stock.quantity}"
+                    )
+
+                # Получаем или создаем запись о товаре на складе-получателе
+                dest_stock = session.get(Stock, (sku, destination))
+                if not dest_stock:
+                    dest_stock = Stock(sku=sku, warehouse=destination, quantity=0)
+                    session.add(dest_stock)
+
+                # Обновляем количества
+                source_stock.quantity -= quantity
+                dest_stock.quantity += quantity
+                
+                # Создаем запись о перемещении
+                transfer_log = Transfer(
+                    sku=sku,
+                    source=source,
+                    destination=destination,
+                    quantity=quantity
+                )
+                session.add(transfer_log)
+                
                 session.commit()
-                logging.info("Перемещение успешно завершено")
+                logger.info(f"Успешно перемещено {quantity} единиц товара {sku} со склада {source} на склад {destination}")
+                
             except Exception as e:
-                logging.error(f"Ошибка при сохранении изменений: {str(e)}")
                 session.rollback()
+                logger.error(f"Ошибка при перемещении товара: {str(e)}")
                 raise
 
     def remove_from_warehouse(self, sku: str, warehouse: str, quantity: int):
         '''Списание количества с указанного склада + логирование.'''
+        logger.info(f'Начало списания {quantity} единиц товара {sku} со склада {warehouse}')
+        
         if quantity <= 0:
             raise ValueError('Количество списания должно быть положительным.')
-        with Session(self.engine) as session:
-            stock = session.get(Stock, (sku, warehouse))
-            if not stock or stock.quantity < quantity:
-                raise ValueError(f'Недостаточно на складе {warehouse}.')
-            stock.quantity -= quantity
-            session.add(stock)
-            # логирование списания
-            sale = Sale(sku=sku, warehouse=warehouse, quantity=quantity)
-            session.add(sale)
-            session.commit()
+            
+        try:
+            with Session(self.engine) as session:
+                stock = session.get(Stock, (sku, warehouse))
+                if not stock:
+                    raise ValueError(f'Товар {sku} не найден на складе {warehouse}')
+                    
+                if stock.quantity < quantity:
+                    raise ValueError(f'Недостаточно товара на складе {warehouse}. Запрошено: {quantity}, доступно: {stock.quantity}')
+                    
+                stock.quantity -= quantity
+                session.add(stock)
+                
+                # логирование списания
+                sale = Sale(sku=sku, warehouse=warehouse, quantity=quantity)
+                session.add(sale)
+                session.commit()
+                
+                logger.info(f'Успешно списано {quantity} единиц товара {sku} со склада {warehouse}')
+                
+        except Exception as e:
+            logger.error(f'Ошибка при списании товара: {str(e)}')
+            raise
 
     def remove_one(self, sku: str, warehouse: str):
         '''Списание одной единицы с указанного склада.'''
@@ -331,7 +370,7 @@ class InventoryManager:
                     continue
                     
                 qty = int(row[qty_col])
-                self.transfer(sku, qty, from_warehouse, to_warehouse)
+                self.transfer(sku, from_warehouse, to_warehouse, qty)
             except KeyError as e:
                 raise ValueError(f'Колонка не найдена: {e}. Ожидаются колонки: {sku_col}, {qty_col}')
             except ValueError as e:
@@ -345,21 +384,21 @@ class InventoryManager:
         """
         with Session(self.engine) as session:
             products = session.exec(select(Product)).all()
-            stocks   = session.exec(select(Stock)).all()
+            stocks = session.exec(select(Stock)).all()
 
         if not products:
             empty_df = pd.DataFrame(columns=[
                 'sku', 'name', 'eans', 'total'
-            ] + [f'warehouse_{w.value}' for w in Werehouses])
+            ] + [f'warehouse_{w.value}' for w in Warehouses])
             return empty_df, []
 
         # накапливаем строки
         rows = []
         images = []
-        # создаём словарь stock_data
-        stock_data = {s.sku: {w.value: 0 for w in Werehouses} for s in stocks}
+        # создаём словарь stock_data с значениями складов
+        stock_data = {s.sku: {w.value: 0 for w in Warehouses} for s in stocks}
         for s in stocks:
-            stock_data.setdefault(s.sku, {w.value: 0 for w in Werehouses})
+            stock_data.setdefault(s.sku, {w.value: 0 for w in Warehouses})
             stock_data[s.sku][s.warehouse] = s.quantity
 
         for prod in products:
@@ -370,7 +409,7 @@ class InventoryManager:
                 'eans': ', '.join(prod.eans) if prod.eans else '',
             }
             total = 0
-            for wh in Werehouses:
+            for wh in Warehouses:
                 qty = stock_data.get(prod.sku, {}).get(wh.value, 0)
                 row[f'warehouse_{wh.value}'] = qty
                 total += qty
@@ -415,6 +454,7 @@ class InventoryManager:
     def clear_all_data(self):
         '''Удаляет все продукты, остатки и логи продаж из базы данных.'''
         with Session(self.engine) as session:
+            session.exec(text("DELETE FROM transfer"))
             session.exec(text("DELETE FROM sale"))
             session.exec(text("DELETE FROM stock"))
             session.exec(text("DELETE FROM product"))
@@ -448,10 +488,10 @@ class InventoryManager:
                 raise ValueError("Количество должно быть положительным числом")
                 
             if from_warehouse == to_warehouse:
-                raise ValueError("Склад источника и назначения не могут совпадать")
+                raise ValueError("Склады источника и назначения не могут совпадать")
             
             # Используем существующий метод transfer
-            self.transfer(sku, quantity, from_warehouse, to_warehouse)
+            self.transfer(sku, from_warehouse, to_warehouse, quantity)
             
             logging.info(
                 f"Успешно перемещено {quantity} единиц товара {sku} "
@@ -487,6 +527,29 @@ class InventoryManager:
                 }
                 for sale in sales
             ]
+
+    def add_to_warehouse(self, sku: str, warehouse: str, quantity: int) -> None:
+        '''Добавление количества на указанный склад.'''
+        if quantity <= 0:
+            raise ValueError('Количество должно быть положительным.')
+            
+        # Преобразуем значение склада в ключ перечисления
+        warehouse_key = None
+        for key, value in Warehouses.__members__.items():
+            if value.value == warehouse:
+                warehouse_key = key
+                break
+        if warehouse_key is None:
+            warehouse_key = warehouse  # Если передан ключ, используем его как есть
+            
+        with Session(self.engine) as session:
+            stock = session.get(Stock, (sku, warehouse_key))
+            if not stock:
+                stock = Stock(sku=sku, warehouse=warehouse_key, quantity=quantity)
+            else:
+                stock.quantity += quantity
+            session.add(stock)
+            session.commit()
 
     def add_to_warehouse(self, sku: str, warehouse: str, quantity: int) -> None:
         '''

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Werehouse - Управление складом{% endblock %}</title>
+    <title>{% block title %}Warehouse - Управление складом{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="{{ url_for('static', path='css/main.css') }}" rel="stylesheet">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
@@ -41,13 +41,16 @@
                 <div class="flex h-16 items-center justify-between">
                     <div class="flex items-center">
                         <div class="flex-shrink-0">
-                            <a href="/" class="text-white font-bold text-xl">Werehouse</a>
+                            <a href="/" class="text-white font-bold text-xl">Warehouse</a>
                         </div>
                         <div class="hidden md:block">
                             <div class="ml-10 flex items-baseline space-x-4">
                                 <a href="/" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Главная</a>
                                 <a href="/catalog" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Склад</a>
                                 <a href="/operations" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Импорт/Экспорт</a>
+                                {% if user and user.is_admin %}
+                                <a href="/synchronization" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Синхронизация</a>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
@@ -67,8 +70,6 @@
                                     </button>
                                 </div>
                                 <div class="hidden absolute right-0 z-10 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none" role="menu" aria-orientation="vertical" aria-labelledby="user-menu-button" tabindex="-1" id="user-menu">
-                                    <a href="/profile" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem">Профиль</a>
-                                    <a href="/settings" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem">Настройки</a>
                                     <button id="logout-btn" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem">Выйти</button>
                                 </div>
                             </div>
@@ -90,8 +91,11 @@
             <div class="hidden md:hidden" id="mobile-menu">
                 <div class="space-y-1 px-2 pb-3 pt-2 sm:px-3">
                     <a href="/" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Главная</a>
-                    <a href="/catalog" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Каталог</a>
-                    <a href="/operations" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Операции</a>
+                    <a href="/catalog" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Склад</a>
+                    <a href="/operations" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Импорт/Экспорт</a>
+                    {% if user and user.is_admin %}
+                    <a href="/synchronization" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Синхронизация</a>
+                    {% endif %}
                 </div>
                 <div class="border-t border-gray-700 pb-3 pt-4">
                     {% if user %}

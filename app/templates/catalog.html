@@ -1,8 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Склад - Werehouse{% endblock %}
+{% block title %}Склад - Warehouse{% endblock %}
 
 {% block content %}
+{% if not user %}
+<script>
+    window.location.href = '{{ url_for("login", next=request.path) }}';
+</script>
+{% else %}
 <div class="min-h-screen bg-gray-50">
     <!-- Фиксированный хедер каталога -->
     <div class="sticky top-16 left-0 right-0 bg-white z-10 border-b border-gray-200 shadow-sm">
@@ -140,6 +145,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
@@ -280,7 +286,7 @@
                 const params = new URLSearchParams();
                 Array.from(productIds).forEach(sku => params.append('skus', sku));
                 
-                const response = await fetch(`/api/werehouse/export/stock/?${params}`, {
+                const response = await fetch(`/api/warehouse/export/stock/?${params}`, {
                     method: 'GET',
                     headers: {
                         'Content-Type': 'application/json'

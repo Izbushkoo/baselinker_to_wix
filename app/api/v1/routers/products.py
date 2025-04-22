@@ -2,16 +2,16 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException, Request, File, UploadFile, Form
 from sqlmodel import select, func
 from sqlmodel.ext.asyncio.session import AsyncSession
-from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi.responses import StreamingResponse, HTMLResponse, RedirectResponse
 import io
 import pandas as pd
 import base64
 from sqlalchemy import or_, text, bindparam
 from fastapi.templating import Jinja2Templates
 from app.api import deps
-from app.models.werehouse import Product, Stock
+from app.models.warehouse import Product, Stock
 from app.models.user import User
-from app.services.werehouse.manager import Werehouses
+from app.services.warehouse.manager import Warehouses
 
 router = APIRouter()
 web_router = APIRouter()
@@ -24,8 +24,14 @@ async def catalog(
     page: int = 1,
     page_size: int = 50,
     db: AsyncSession = Depends(deps.get_async_session),
-    current_user: User = Depends(deps.get_current_user_from_cookie)
+    current_user: User = Depends(deps.get_current_user_optional)
 ):
+    """
+    Отображение каталога товаров с пагинацией
+    """
+    if not current_user:
+        return RedirectResponse(url=f"/login?next=/catalog", status_code=302)
+
     # Получаем общее количество товаров
     total_count_query = select(func.count()).select_from(Product)
     result = await db.exec(total_count_query)
@@ -58,7 +64,7 @@ async def catalog(
     products_with_stocks = []
     for row in products:
         product = row[0]  # Получаем объект Product
-        total_stock = row[1]  # Получаем total_stock
+        total_stock = row[1] or 0  # Получаем total_stock, используем 0 если None
         
         # Получаем остатки для продукта
         stocks_query = select(Stock).where(Stock.sku == product.sku)
@@ -67,20 +73,28 @@ async def catalog(
         
         # Создаем словарь с данными продукта
         product_data = {
-            "id": product.sku,  # используем SKU как ID
+            "id": product.sku,
             "sku": product.sku,
             "name": product.name,
             "eans": product.eans,
             "ean": product.eans[0] if product.eans else None,
             "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
-            "warehouse": next((s.warehouse for s in stocks if s.quantity > 0), None),
-            "total_stock": total_stock or 0,
-            "stocks": {stock.warehouse: stock.quantity for stock in stocks}  # Добавляем остатки по складам
+            "total_stock": total_stock,
+            "stocks": {}
         }
+        
+        # Инициализируем остатки для всех складов как 0
+        for warehouse in Warehouses:
+            product_data["stocks"][warehouse.value] = 0
+            
+        # Заполняем фактические остатки
+        for stock in stocks:
+            product_data["stocks"][stock.warehouse] = stock.quantity
+        
         products_with_stocks.append(product_data)
 
     # Используем список складов из перечисления
-    warehouses = [{"id": w.value, "name": f"Склад {w.value}"} for w in Werehouses]
+    warehouses = [w.value for w in Warehouses]
 
     return templates.TemplateResponse(
         "catalog.html",
@@ -168,8 +182,16 @@ async def list_products(
             "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
             "warehouse": next((s.warehouse for s in stocks if s.quantity > 0), None),
             "total_stock": total_stock or 0,
-            "stocks": {stock.warehouse: stock.quantity for stock in stocks}  # Добавляем остатки по складам
+            "stocks": {}
         }
+        
+        # Инициализируем остатки для всех складов как 0
+        for warehouse in Warehouses:
+            product_data["stocks"][warehouse.value] = 0
+            
+        # Заполняем фактические остатки
+        for stock in stocks:
+            product_data["stocks"][stock.warehouse] = stock.quantity
         
         # Генерируем HTML для карточки товара
         html = templates.get_template("components/product_card.html").render(
@@ -244,7 +266,7 @@ async def add_product_form(
 ):
     """Отображает форму добавления нового товара."""
     # Получаем список складов из перечисления
-    warehouses = [{"id": w.value, "name": f"Склад {w.value}"} for w in Werehouses]
+    warehouses = [w.value for w in Warehouses]
     
     return templates.TemplateResponse(
         "add_product.html",
@@ -270,7 +292,7 @@ async def create_product(
     """Создает новый товар в базе данных."""
     try:
         # Проверяем, что выбран допустимый склад
-        if warehouse not in [w.value for w in Werehouses]:
+        if warehouse not in [w.value for w in Warehouses]:
             raise HTTPException(
                 status_code=400,
                 detail="Выбран недопустимый склад"
@@ -296,11 +318,14 @@ async def create_product(
             if not file_size:
                 image_data = None
 
+        # Разбиваем строку EAN по запятой и очищаем от пробелов
+        eans = [e.strip() for e in ean.split(',')] if ean else []
+
         # Создаем новый товар
         new_product = Product(
             sku=sku,
             name=name,
-            eans=[ean] if ean else [],
+            eans=eans,
             image=bytes(image_data) if image_data else None
         )
         

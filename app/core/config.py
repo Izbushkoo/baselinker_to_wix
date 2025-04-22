@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     POSTGRES_DB: str
     SQLALCHEMY_DATABASE_URI: Optional[PostgresDsn] = None
     SQLALCHEMY_DATABASE_URI_ASYNC: Optional[PostgresDsn] = None
+    ALLEGRO_CLIENT_ID: str
+    ALLEGRO_CLIENT_SECRET: str
 
     @field_validator("SQLALCHEMY_DATABASE_URI", mode='before')
     def assemble_db_connection(cls, v: Optional[str], values: ValidationInfo) -> Any:

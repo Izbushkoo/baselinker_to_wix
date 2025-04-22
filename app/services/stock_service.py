@@ -1,7 +1,7 @@
 from sqlmodel import Session, select
 from app.models.allegro_order import AllegroOrder, AllegroLineItem, OrderLineItem
-from app.services.werehouse.manager import InventoryManager
-from app.models.werehouse import Sale
+from app.services.warehouse.manager import InventoryManager
+from app.models.warehouse import Sale
 import logging
 
 logger = logging.getLogger(__name__)
@@ -11,7 +11,7 @@ class AllegroStockService:
         self.db = db
         self.manager = manager
 
-    def process_order_stock_update(self, order: AllegroOrder, werehouse: str) -> bool:
+    def process_order_stock_update(self, order: AllegroOrder, warehouse: str) -> bool:
         """
         Обрабатывает списание товара для заказа Allegro.
         Возвращает True если списание выполнено успешно.
@@ -34,25 +34,27 @@ class AllegroStockService:
             )
             order_items = self.db.exec(order_items_query).all()
 
-            # Списываем каждую позицию
+            # Проверяем наличие всех товаров перед списанием
             for order_item in order_items:
                 line_item = order_item.line_item
-                # Предполагаем, что external_id это SKU товара
                 sku = line_item.external_id
-                
-                # Получаем остатки по SKU
                 stocks = self.manager.get_stock_by_sku(sku)
                 if not stocks:
                     logger.warning(f"Товар {sku} не найден на складах")
-                    continue
+                    return False
+
+            # Списываем каждую позицию
+            for order_item in order_items:
+                line_item = order_item.line_item
+                sku = line_item.external_id
                 
                 try:
                     # Списываем одну единицу товара с указанного склада
-                    self.manager.remove_one(sku, werehouse)
-                    logger.info(f"Списана 1 единица товара {sku} со склада {werehouse}")
+                    self.manager.remove_one(sku, warehouse)
+                    logger.info(f"Списана 1 единица товара {sku} со склада {warehouse}")
                     
                     # Создаем запись о продаже
-                    sale = Sale(sku=sku, warehouse=werehouse, quantity=1)
+                    sale = Sale(sku=sku, warehouse=warehouse, quantity=1)
                     self.db.add(sale)
                     logger.info(f"Создана запись о продаже товара {sku}")
                     
@@ -70,5 +72,33 @@ class AllegroStockService:
 
         except Exception as e:
             logger.error(f"Ошибка при обработке списания для заказа {order.id}: {str(e)}")
+            self.db.rollback()
+            return False 
+
+    def mark_order_stock_updated(self, order: AllegroOrder, warehouse: str = None) -> bool:
+        """
+        Проставляет флаг списания товара для заказа Allegro без фактического списания.
+        Возвращает True если флаг успешно проставлен.
+        
+        Args:
+            order: Заказ Allegro
+        """
+        
+        try:
+            # Проверяем статус и флаг списания
+            fulfillment_status = order.fulfillment.get('status')
+            if fulfillment_status != 'SENT' or order.is_stock_updated:
+                return False
+
+            # Помечаем заказ как обработанный
+            order.is_stock_updated = True
+            self.db.add(order)
+            self.db.commit()
+            
+            logger.info(f"Успешно проставлен флаг списания для заказа {order.id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Ошибка при проставлении флага списания для заказа {order.id}: {str(e)}")
             self.db.rollback()
             return False 

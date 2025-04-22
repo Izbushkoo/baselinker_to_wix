@@ -4,11 +4,12 @@ import pandas as pd
 from io import BytesIO
 from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File, Query, Request, Form
-from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
+from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel.ext.asyncio.session import AsyncSession
 import openpyxl
 from openpyxl.utils import get_column_letter
+from app.models.user import User
 from openpyxl.drawing.image import Image as XLImage
 from app.api import deps
 from app.services.allegro import tokens as allegro_tokens
@@ -16,8 +17,8 @@ from app.services.allegro.data_access import get_tokens_list, insert_token, dele
 from app.services.allegro.pydantic_models import TokenOfAllegro
 from app.services.allegro.pydantic_models import InitializeAuth
 from app.models.user import User as UserModel
-from app.services.werehouse import manager
-from app.services.werehouse.manager import Werehouses
+from app.services.warehouse import manager
+from app.services.warehouse.manager import Warehouses
 from pydantic import BaseModel
 from openpyxl.styles import Font, Alignment
 
@@ -41,16 +42,11 @@ class AddItem(BaseModel):
     warehouse: str
     quantity: int
 
-@router.get("/inventory", response_class=HTMLResponse)
-async def inventory_page(request: Request, current_user: UserModel = Depends(deps.get_current_user)):
-    return templates.TemplateResponse("inventory.html", {
-        "request": request,
-        "user": current_user,
-        "warehouses": [w.value for w in Werehouses]
-    })
 
 @router.get("/operations", response_class=HTMLResponse)
-async def operations_page(request: Request, current_user: UserModel = Depends(deps.get_current_user)):
+async def operations_page(request: Request, current_user: User = Depends(deps.get_current_user_optional)):
+    if not current_user:
+        return RedirectResponse(url=f"/login?next=/operations", status_code=302)
     return templates.TemplateResponse("operations.html", {
         "request": request,
         "user": current_user
@@ -59,7 +55,7 @@ async def operations_page(request: Request, current_user: UserModel = Depends(de
 @router.post('/incoming/', summary='Импорт прихода на склад')
 async def upload_incoming(
     file: UploadFile = File(...),
-    warehouse: Werehouses = Query(Werehouses.A, description="Склад для импорта товаров"),
+    warehouse: Warehouses = Query(..., description="Склад для импорта товаров"),
     sku_col: str = 'sku',
     qty_col: str = 'кол-во',
     ean_col: str = 'EAN/UPC',
@@ -92,8 +88,8 @@ async def upload_transfer(
     
     # Проверяем и конвертируем значения складов
     try:
-        from_wh = Werehouses(from_warehouse)
-        to_wh = Werehouses(to_warehouse)
+        from_wh = Warehouses(from_warehouse)
+        to_wh = Warehouses(to_warehouse)
     except ValueError:
         raise HTTPException(status_code=400, detail='Неверное значение склада')
     
@@ -131,7 +127,7 @@ async def export_stock(
         "total": "Общий остаток"
     }
     # добавляем названия складов
-    for wh in Werehouses:
+    for wh in Warehouses:
         column_renames[f"warehouse_{wh.value}"] = f"Склад {wh.value}"
     
     df = df.rename(columns=column_renames)
@@ -141,7 +137,7 @@ async def export_stock(
 
     # порядок колонок
     cols = ["SKU", "Изображение", "Наименование", "EAN коды"]
-    cols.extend([f"Склад {wh.value}" for wh in Werehouses])
+    cols.extend([f"Склад {wh.value}" for wh in Warehouses])
     cols.append("Общий остаток")
     df = df[cols]
 
@@ -209,14 +205,14 @@ async def export_stock_no_images(manager: manager.InventoryManager = Depends(man
         "total": "Общий остаток"
     }
     # добавляем названия складов
-    for wh in Werehouses:
+    for wh in Warehouses:
         column_renames[f"warehouse_{wh.value}"] = f"Склад {wh.value}"
     
     df = df.rename(columns=column_renames)
     
     # порядок колонок
     cols = ["SKU", "Наименование", "EAN коды"]
-    cols.extend([f"Склад {wh.value}" for wh in Werehouses])
+    cols.extend([f"Склад {wh.value}" for wh in Warehouses])
     cols.append("Общий остаток")
     df = df[cols]
     
@@ -315,7 +311,7 @@ async def sales_report(
                 cell.alignment = Alignment(horizontal='center')
             
     buffer.seek(0)
-    filename = f"sales_{start_date}_{end_date}" + (f"_{sku}.xlsx" if sku else '.xlsx')
+    filename = f"sales_{start_date}_{end_date}" + '.xlsx'
     headers = {'Content-Disposition': f'attachment; filename="{filename}"'}
     return StreamingResponse(buffer, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers=headers)
 
@@ -344,8 +340,8 @@ async def transfer_item(
     '''Перемещает указанное количество товара с одного склада на другой.'''
     try:
         # Проверяем и конвертируем значения складов
-        from_wh = Werehouses(transfer.from_warehouse)
-        to_wh = Werehouses(transfer.to_warehouse)
+        from_wh = Warehouses(transfer.from_warehouse)
+        to_wh = Warehouses(transfer.to_warehouse)
         
         if from_wh == to_wh:
             raise HTTPException(
@@ -402,13 +398,16 @@ async def remove_from_stock(
     item: RemoveItem,
     manager: manager.InventoryManager = Depends(manager.get_manager)
 ):
-    '''Списывает указанное количество товара с определенного склада.'''
+    """Списывает указанное количество товара с определенного склада."""
     try:
         # Проверяем корректность склада
         try:
-            warehouse = Werehouses(item.warehouse)
+            warehouse = Warehouses(item.warehouse)
         except ValueError:
-            raise HTTPException(status_code=400, detail='Неверное значение склада')
+            raise HTTPException(
+                status_code=400,
+                detail='Неверное значение склада'
+            )
         
         # Проверяем наличие достаточного количества товара
         stocks = manager.get_stock_by_sku(item.sku)
@@ -425,11 +424,14 @@ async def remove_from_stock(
             )
         
         # Выполняем списание
-        manager.remove_from_warehouse(
-            item.sku,
-            warehouse.value,
-            item.quantity
-        )
+        try:
+            manager.remove_from_warehouse(
+                item.sku,
+                warehouse.value,
+                item.quantity
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         
         return JSONResponse({
             'status': 'success',
@@ -450,7 +452,7 @@ async def add_to_stock(
     try:
         # Проверяем корректность склада
         try:
-            warehouse = Werehouses(item.warehouse)
+            warehouse = Warehouses(item.warehouse)
         except ValueError:
             raise HTTPException(status_code=400, detail='Неверное значение склада')
         

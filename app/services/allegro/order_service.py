@@ -20,10 +20,11 @@ class SyncAllegroOrderService(BaseAllegroOrderService):
     def __init__(
         self,
         session: Session,
-        api_service: Optional[SyncAllegroApiService] = None
+        api_service: Optional[SyncAllegroApiService] = None,
+        base_url: str = "https://api.allegro.pl"
     ):
         self.session = session
-        self.api_service = api_service or SyncAllegroApiService()
+        self.api_service = api_service or SyncAllegroApiService(base_url=base_url)
         super().__init__(AllegroOrderRepository(session))
 
     def sync_orders(

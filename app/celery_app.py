@@ -1,12 +1,12 @@
 import requests
 import csv
 import traceback
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from sqlmodel import Session
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
-
 from celery import Celery, chord, group, chain
 from celery.schedules import crontab, schedule
 
@@ -33,8 +33,8 @@ from celery.beat import PersistentScheduler, ScheduleEntry
 import json
 from collections import UserDict
 from app.services.stock_service import AllegroStockService
-from app.services.werehouse import manager
-
+from app.services.warehouse import manager
+from app.services.warehouse.manager import InventoryManager
 
 def get_redis_client():
     redis_url = os.getenv("CELERY_REDIS_URL", "redis://redis:6379/0")
@@ -305,170 +305,170 @@ def get_allegro_token(session: Session, token_id: str) -> AllegroToken:
         
     return token
 
-@celery.task(name='app.celery_app.sync_allegro_orders')
-def sync_allegro_orders(token_id: str, from_date: str = None) -> Dict[str, Any]:
-    """
-    Синхронизирует заказы для указанного токена.
+# @celery.task(name='app.celery_app.sync_allegro_orders')
+# def sync_allegro_orders(token_id: str, from_date: str = None) -> Dict[str, Any]:
+#     """
+#     Синхронизирует заказы для указанного токена.
     
-    Args:
-        token_id: ID токена
-        from_date: Дата в формате DD-MM-YYYY (например, "20-03-2025"), с которой начать синхронизацию.
-                  Если указана, синхронизация начнется с 00:00:00 указанного дня.
-                  Если не указана, будет использовано время 30 дней назад.
-    """
-    try:
-        redis_client = get_redis_client()
+#     Args:
+#         token_id: ID токена
+#         from_date: Дата в формате DD-MM-YYYY (например, "20-03-2025"), с которой начать синхронизацию.
+#                   Если указана, синхронизация начнется с 00:00:00 указанного дня.
+#                   Если не указана, будет использовано время 30 дней назад.
+#     """
+#     try:
+#         redis_client = get_redis_client()
         
-        # Определяем время начала синхронизации
-        if from_date:
-            # Если передана дата, преобразуем её в datetime с временем 00:00:00
-            last_sync_time = parse_date(from_date)
-            if not last_sync_time:
-                raise ValueError(f"Неверный формат даты: {from_date}")
-            logger.info(f"Синхронизация начнется с {last_sync_time.isoformat()}")
-        else:
-            # Получаем время последней синхронизации из Redis
-            last_sync_raw = redis_client.get(f"last_sync_time_{token_id}")
-            if last_sync_raw:
-                try:
-                    last_sync_time = datetime.fromisoformat(last_sync_raw.decode('utf-8'))
-                    logger.info(f"Синхронизация начнется с последней синхронизации: {last_sync_time.isoformat()}")
-                except ValueError:
-                    # Если не удалось распарсить дату из Redis, используем 30 дней назад
-                    last_sync_time = datetime.utcnow() - timedelta(days=30)
-                    logger.warning(f"Не удалось распарсить дату из Redis, используем: {last_sync_time.isoformat()}")
-            else:
-                # Если нет сохраненного времени, используем 30 дней назад
-                last_sync_time = datetime.utcnow() - timedelta(days=30)
-                logger.info(f"Синхронизация начнется с 30 дней назад: {last_sync_time.isoformat()}")
+#         # Определяем время начала синхронизации
+#         if from_date:
+#             # Если передана дата, преобразуем её в datetime с временем 00:00:00
+#             last_sync_time = parse_date(from_date)
+#             if not last_sync_time:
+#                 raise ValueError(f"Неверный формат даты: {from_date}")
+#             logger.info(f"Синхронизация начнется с {last_sync_time.isoformat()}")
+#         else:
+#             # Получаем время последней синхронизации из Redis
+#             last_sync_raw = redis_client.get(f"last_sync_time_{token_id}")
+#             if last_sync_raw:
+#                 try:
+#                     last_sync_time = datetime.fromisoformat(last_sync_raw.decode('utf-8'))
+#                     logger.info(f"Синхронизация начнется с последней синхронизации: {last_sync_time.isoformat()}")
+#                 except ValueError:
+#                     # Если не удалось распарсить дату из Redis, используем 30 дней назад
+#                     last_sync_time = datetime.utcnow() - timedelta(days=30)
+#                     logger.warning(f"Не удалось распарсить дату из Redis, используем: {last_sync_time.isoformat()}")
+#             else:
+#                 # Если нет сохраненного времени, используем 30 дней назад
+#                 last_sync_time = datetime.utcnow() - timedelta(days=30)
+#                 logger.info(f"Синхронизация начнется с 30 дней назад: {last_sync_time.isoformat()}")
 
-        logger.info(f"last_sync_time_{token_id}: {last_sync_time.isoformat()}")    
+#         logger.info(f"last_sync_time_{token_id}: {last_sync_time.isoformat()}")    
         
-        session = SessionLocal()
-        try:
-            service = SyncAllegroOrderService(session)
-            token = get_allegro_token(session, token_id)
+#         session = SessionLocal()
+#         try:
+#             service = SyncAllegroOrderService(session)
+#             token = get_allegro_token(session, token_id)
             
-            # Инициализируем сервис для обработки списаний
-            stock_service = AllegroStockService(session, manager.get_manager())
+#             # Инициализируем сервис для обработки списаний
+#             stock_service = AllegroStockService(session, manager.get_manager())
             
-            offset = 0
-            limit = 100
-            total_synced = 0
-            total_stock_updated = 0
+#             offset = 0
+#             limit = 100
+#             total_synced = 0
+#             total_stock_updated = 0
             
-            # Получаем все существующие заказы из базы одним запросом
-            existing_orders = {}
-            orders_info = service.repository.get_all_orders_basic_info(token_id)
-            if orders_info:
-                existing_orders = {
-                    order["id"]: order["updateTime"] 
-                    for order in orders_info
-                }
-                logger.info(f"Загружено {len(existing_orders)} существующих заказов")
-            else:
-                logger.info("Нет существующих заказов, будет выполнена полная синхронизация")
+#             # Получаем все существующие заказы из базы одним запросом
+#             existing_orders = {}
+#             orders_info = service.repository.get_all_orders_basic_info(token_id)
+#             if orders_info:
+#                 existing_orders = {
+#                     order["id"]: order["updateTime"] 
+#                     for order in orders_info
+#                 }
+#                 logger.info(f"Загружено {len(existing_orders)} существующих заказов")
+#             else:
+#                 logger.info("Нет существующих заказов, будет выполнена полная синхронизация")
             
-            while True:
-                # Проверяем rate limit перед запросом
-                allegro_rate_limiter.wait_if_needed()
+#             while True:
+#                 # Проверяем rate limit перед запросом
+#                 allegro_rate_limiter.wait_if_needed()
                 
-                orders_data = service.api_service.get_orders(
-                    token=token.access_token,
-                    offset=offset,
-                    limit=limit,
-                    updated_at_gte=last_sync_time if last_sync_time else None,
-                    sort="-lineItems.boughtAt"  # Сначала новые заказы
-                )
+#                 orders_data = service.api_service.get_orders(
+#                     token=token.access_token,
+#                     offset=offset,
+#                     limit=limit,
+#                     updated_at_gte=last_sync_time if last_sync_time else None,
+#                     sort="-lineItems.boughtAt"  # Сначала новые заказы
+#                 )
                 
-                checkout_forms = orders_data.get("checkoutForms", [])
-                if not checkout_forms:
-                    break
+#                 checkout_forms = orders_data.get("checkoutForms", [])
+#                 if not checkout_forms:
+#                     break
                 
-                # Собираем ID заказов, которые нужно обновить
-                orders_to_update = []
-                for order_data in checkout_forms:
-                    update_time = datetime.fromisoformat(order_data.get("updatedAt").replace('Z', '+00:00'))
+#                 # Собираем ID заказов, которые нужно обновить
+#                 orders_to_update = []
+#                 for order_data in checkout_forms:
+#                     update_time = datetime.fromisoformat(order_data.get("updatedAt").replace('Z', '+00:00'))
 
-                    order_id = order_data["id"]
+#                     order_id = order_data["id"]
                     
-                    # Проверяем, нужно ли обновлять заказ
-                    if order_id not in existing_orders:
-                        orders_to_update.append(order_id)
-                    else:
-                        existing_update_time = existing_orders[order_id]
-                        if update_time.replace(tzinfo=None) > existing_update_time.replace(tzinfo=None):
-                            orders_to_update.append(order_id)
+#                     # Проверяем, нужно ли обновлять заказ
+#                     if order_id not in existing_orders:
+#                         orders_to_update.append(order_id)
+#                     else:
+#                         existing_update_time = existing_orders[order_id]
+#                         if update_time.replace(tzinfo=None) > existing_update_time.replace(tzinfo=None):
+#                             orders_to_update.append(order_id)
                 
-                # Получаем детали только для заказов, которые нужно обновить
-                for order_id in orders_to_update:
-                    allegro_rate_limiter.wait_if_needed()
+#                 # Получаем детали только для заказов, которые нужно обновить
+#                 for order_id in orders_to_update:
+#                     allegro_rate_limiter.wait_if_needed()
                     
-                    order_details = service.api_service.get_order_details(
-                        token=token.access_token,
-                        order_id=order_id
-                    )
+#                     order_details = service.api_service.get_order_details(
+#                         token=token.access_token,
+#                         order_id=order_id
+#                     )
                     
-                    try:
-                        # Обновляем или добавляем заказ
-                        if order_id in existing_orders:
-                            order = service.repository.update_order(token_id, order_id, order_details)
-                        else:
-                            order = service.repository.add_order(token_id, order_details)
+#                     try:
+#                         # Обновляем или добавляем заказ
+#                         if order_id in existing_orders:
+#                             order = service.repository.update_order(token_id, order_id, order_details)
+#                         else:
+#                             order = service.repository.add_order(token_id, order_details)
                         
-                        # Обрабатываем списание товара
-                        if stock_service.process_order_stock_update(order, werehouse="B"):
-                            total_stock_updated += 1
+#                         # Обрабатываем списание товара
+#                         if stock_service.process_order_stock_update(order, warehouse=manager.Warehouses.A.value):
+#                             total_stock_updated += 1
                         
-                        total_synced += 1
+#                         total_synced += 1
                         
-                    except Exception as e:
-                        if "duplicate key value violates unique constraint" in str(e):
-                            # Если это дублирование покупателя, получаем существующего и пробуем снова
-                            logger.info(f"Найден существующий покупатель для заказа {order_id}, используем его")
+#                     except Exception as e:
+#                         if "duplicate key value violates unique constraint" in str(e):
+#                             # Если это дублирование покупателя, получаем существующего и пробуем снова
+#                             logger.info(f"Найден существующий покупатель для заказа {order_id}, используем его")
 
-                            order = service.repository.add_order_with_existing_buyer(token_id, order_details)
-                            if stock_service.process_order_stock_update(order, werehouse="B"):
-                                total_stock_updated += 1
-                            total_synced += 1
-                        else:
-                            raise
+#                             order = service.repository.add_order_with_existing_buyer(token_id, order_details)
+#                             if stock_service.process_order_stock_update(order, warehouse=manager.Warehouses.A.value):
+#                                 total_stock_updated += 1
+#                             total_synced += 1
+#                         else:
+#                             raise
                     
                     
-                # Если получили меньше заказов чем limit, значит это последняя страница
-                if len(checkout_forms) < limit:
-                    break
+#                 # Если получили меньше заказов чем limit, значит это последняя страница
+#                 if len(checkout_forms) < limit:
+#                     break
                     
-                offset += limit
+#                 offset += limit
             
-            # Сохраняем время последней синхронизации
-            redis_client.set(f"last_sync_time_{token_id}", (datetime.utcnow() - timedelta(seconds=5)).isoformat())
+#             # Сохраняем время последней синхронизации
+#             redis_client.set(f"last_sync_time_{token_id}", (datetime.utcnow() - timedelta(seconds=5)).isoformat())
 
-            logger.info(f"Успешно синхронизировано {total_synced} заказов")
-            logger.info(f"Обработано списаний товаров: {total_stock_updated}")
-            return {
-                "status": "success",
-                "message": "Синхронизация завершена",
-                "from_date": from_date,
-                "orders_synced": total_synced,
-                "stock_updated": total_stock_updated
-            }
-        finally:
-            session.close()
+#             logger.info(f"Успешно синхронизировано {total_synced} заказов")
+#             logger.info(f"Обработано списаний товаров: {total_stock_updated}")
+#             return {
+#                 "status": "success",
+#                 "message": "Синхронизация завершена",
+#                 "from_date": from_date,
+#                 "orders_synced": total_synced,
+#                 "stock_updated": total_stock_updated
+#             }
+#         finally:
+#             session.close()
             
-    except ValueError as e:
-        logger.error(f"Ошибка валидации: {str(e)}")
-        return {
-            "status": "error",
-            "message": str(e)
-        }
-    except Exception as e:
+#     except ValueError as e:
+#         logger.error(f"Ошибка валидации: {str(e)}")
+#         return {
+#             "status": "error",
+#             "message": str(e)
+#         }
+#     except Exception as e:
         
-        logger.error(f"Ошибка при синхронизации: {str(e)} {traceback.print_exc()}")
-        return {
-            "status": "error",
-            "message": f"Ошибка при синхронизации: {str(e)}"
-        }
+#         logger.error(f"Ошибка при синхронизации: {str(e)} {traceback.print_exc()}")
+#         return {
+#             "status": "error",
+#             "message": f"Ошибка при синхронизации: {str(e)}"
+#         }
 
 
 
@@ -483,153 +483,302 @@ def backup_base():
     )
 
 
-@celery.task(name='app.celery_app.sync_allegro_orders_immediate')
-def sync_allegro_orders_immediate(token_id: str, from_date: str = None) -> Dict[str, Any]:
-    """
-    Немедленно синхронизирует заказы для указанного токена.
+# @celery.task(name='app.celery_app.sync_allegro_orders_immediate')
+# def sync_allegro_orders_immediate(token_id: str, from_date: str = None) -> Dict[str, Any]:
+#     """
+#     Немедленно синхронизирует заказы для указанного токена.
     
-    Args:
-        token_id: ID токена
-        from_date: Дата в формате DD-MM-YYYY, с которой начать синхронизацию (опционально)
+#     Args:
+#         token_id: ID токена
+#         from_date: Дата в формате DD-MM-YYYY, с которой начать синхронизацию (опционально)
+#     """
+#     try:
+#         redis_client = get_redis_client()
+        
+#         # Определяем время начала синхронизации
+#         if from_date:
+#             # Если передана дата, преобразуем её в datetime с временем 00:00:00
+#             last_sync_time = parse_date(from_date)
+#             if not last_sync_time:
+#                 raise ValueError(f"Неверный формат даты: {from_date}")
+#             logger.info(f"Синхронизация начнется с {last_sync_time.isoformat()}")
+#         else:
+#             # Получаем время последней синхронизации из Redis
+#             last_sync_raw = redis_client.get(f"last_sync_time_{token_id}")
+#             if last_sync_raw:
+#                 try:
+#                     last_sync_time = datetime.fromisoformat(last_sync_raw.decode('utf-8'))
+#                     logger.info(f"Синхронизация начнется с последней синхронизации: {last_sync_time.isoformat()}")
+#                 except ValueError:
+#                     # Если не удалось распарсить дату из Redis, используем 30 дней назад
+#                     last_sync_time = datetime.utcnow() - timedelta(days=30)
+#                     logger.warning(f"Не удалось распарсить дату из Redis, используем: {last_sync_time.isoformat()}")
+#             else:
+#                 # Если нет сохраненного времени, используем 30 дней назад
+#                 last_sync_time = datetime.utcnow() - timedelta(days=30)
+#                 logger.info(f"Синхронизация начнется с 30 дней назад: {last_sync_time.isoformat()}")
+
+#         logger.info(f"last_sync_time_{token_id}: {last_sync_time.isoformat()}")    
+            
+#         logger.info("Начинаем немедленную синхронизацию заказов Allegro")
+        
+#         session = SessionLocal()
+#         try:
+#             service = SyncAllegroOrderService(session)
+#             stock_service = AllegroStockService(session, manager.get_manager())
+            
+#             # Получаем и проверяем токен из базы данных
+#             token = get_allegro_token(session, token_id)
+            
+#             offset = 0
+#             limit = 100
+#             total_synced = 0
+#             total_stock_updated = 0
+            
+#             # Получаем все существующие заказы из базы одним запросом
+#             existing_orders = {}
+#             orders_info = service.repository.get_all_orders_basic_info(token_id)
+#             if orders_info:
+#                 existing_orders = {
+#                     order["id"]: order["updateTime"] 
+#                     for order in orders_info
+#                 }
+#                 logger.info(f"Загружено {len(existing_orders)} существующих заказов")
+#             else:
+#                 logger.info("Нет существующих заказов, будет выполнена полная синхронизация")
+            
+#             while True:
+#                 # Проверяем rate limit перед запросом
+#                 allegro_rate_limiter.wait_if_needed()
+                
+#                 # Получаем страницу заказов
+#                 orders_data = service.api_service.get_orders(
+#                     token=token.access_token,
+#                     offset=offset,
+#                     limit=limit,
+#                     updated_at_gte=last_sync_time if last_sync_time else None,
+#                     sort="-lineItems.boughtAt"  # Сначала новые заказы
+#                 )
+                
+#                 checkout_forms = orders_data.get("checkoutForms", [])
+#                 if not checkout_forms:
+#                     break
+                
+#                 # Собираем ID заказов, которые нужно обновить
+#                 orders_to_update = []
+#                 for order_data in checkout_forms:
+#                     update_time = datetime.fromisoformat(order_data.get("updatedAt").replace('Z', '+00:00'))
+#                     order_id = order_data["id"]
+                    
+#                     # Проверяем, нужно ли обновлять заказ
+#                     if order_id not in existing_orders:
+#                         orders_to_update.append(order_id)
+#                     else:
+#                         existing_update_time = existing_orders[order_id]
+#                         if update_time.replace(tzinfo=None) > existing_update_time.replace(tzinfo=None):
+#                             orders_to_update.append(order_id)
+                
+#                 # Получаем детали только для заказов, которые нужно обновить
+#                 for order_id in orders_to_update:
+#                     # Проверяем rate limit перед каждым запросом деталей
+#                     allegro_rate_limiter.wait_if_needed()
+                    
+#                     order_details = service.api_service.get_order_details(
+#                         token=token.access_token,
+#                         order_id=order_id
+#                     )
+                    
+#                     try:
+#                         if order_id in existing_orders:
+#                             order = service.repository.update_order(token_id, order_id, order_details)
+#                         else:
+#                             order = service.repository.add_order(token_id, order_details)
+#                         total_synced += 1
+                        
+#                         # Проставляем флаг списания
+#                         if stock_service.mark_order_stock_updated(order):
+#                             total_stock_updated += 1
+                            
+#                     except Exception as e:
+#                         if "duplicate key value violates unique constraint" in str(e):
+#                             # Если это дублирование покупателя, получаем существующего и пробуем снова
+#                             logger.info(f"Найден существующий покупатель для заказа {order_id}, используем его")
+#                             order = service.repository.add_order_with_existing_buyer(token_id, order_details)
+#                             total_synced += 1
+                            
+#                             # Проставляем флаг списания
+#                             if stock_service.mark_order_stock_updated(order):
+#                                 total_stock_updated += 1
+#                         else:
+#                             raise
+                
+#                 # Если получили меньше заказов чем limit, значит это последняя страница
+#                 if len(checkout_forms) < limit:
+#                     break
+                    
+#                 offset += limit
+            
+#             # Сохраняем время последней синхронизации
+#             redis_client.set(f"last_sync_time_{token_id}", (datetime.utcnow() - timedelta(seconds=5)).isoformat())
+
+#             logger.info(f"Успешно синхронизировано {total_synced} заказов")
+#             logger.info(f"Обновлено списание со склада для {total_stock_updated} заказов")
+            
+#             return {
+#                 "status": "success",
+#                 "message": "Немедленная синхронизация завершена",
+#                 "total_synced": total_synced,
+#                 "total_stock_updated": total_stock_updated,
+#                 "from_date": from_date
+#             }
+#         finally:
+#             session.close()
+            
+#     except ValueError as e:
+#         logger.error(f"Ошибка валидации: {str(e)}")
+#         return {
+#             "status": "error",
+#             "message": str(e)
+#         }
+#     except Exception as e:
+#         logger.error(f"Ошибка при синхронизации: {str(e)}")
+#         return {
+#             "status": "error",
+#             "message": f"Ошибка при синхронизации: {str(e)}"
+#         }
+
+
+def _parse_date_val(val: Optional[Any]) -> Optional[datetime]:
+    """Если val — str, пытаемся strptime; 
+       если уже datetime, возвращаем как есть."""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val
+    try:
+        # ожидаем формат 'DD-MM-YYYY'
+        return datetime.strptime(val, "%d-%m-%Y")
+    except Exception:
+        raise ValueError(f"Неверный формат даты: {val}")
+
+def _sync_orders_core(
+    token_id: str,
+    from_date: Optional[Any],
+    stock_update_method: str
+) -> Dict[str, Any]:
+    """
+    Универсальная синхронизация заказов.
+    
+    stock_update_method: имя метода AllegroStockService,
+        либо 'process_order_stock_update', либо 'mark_order_stock_updated'
     """
     try:
-        # Парсим дату только если она передана как строка
-        parsed_date = parse_date(from_date) if isinstance(from_date, str) else from_date
-        
-        # Получаем время последней синхронизации из Redis
         redis_client = get_redis_client()
-        last_sync_raw = redis_client.get(f"last_sync_time_{token_id}")
-        if last_sync_raw:
-            try:
-                last_sync_time = datetime.fromisoformat(last_sync_raw.decode('utf-8'))
-                logger.info(f"Синхронизация начнется с последней синхронизации: {last_sync_time.isoformat()}")
-            except ValueError:
-                last_sync_time = datetime.utcnow() - timedelta(days=30)
-                logger.warning(f"Не удалось распарсить дату из Redis, используем: {last_sync_time.isoformat()}")
-        else:
-            last_sync_time = datetime.utcnow() - timedelta(days=30)
-            logger.info(f"Синхронизация начнется с 30 дней назад: {last_sync_time.isoformat()}")
 
-        if parsed_date:
-            last_sync_time = parsed_date
-            logger.info(f"Синхронизация начнется с {parsed_date.isoformat()} (00:00:00)")
-            
-        logger.info("Начинаем немедленную синхронизацию заказов Allegro")
-        
-        session = SessionLocal()
+        # 1) Определяем время с которого синхроним
+        if from_date is not None:
+            last_sync_time = _parse_date_val(from_date)
+            logging.info(f"Начинаем синхронизацию с переданной даты {last_sync_time}")
+        else:
+            raw = redis_client.get(f"last_sync_time_{token_id}")
+            if raw:
+                try:
+                    last_sync_time = datetime.fromisoformat(raw.decode())
+                    logging.info(f"Начинаем с последней точки: {last_sync_time}")
+                except ValueError:
+                    last_sync_time = datetime.utcnow() - timedelta(days=30)
+                    logging.warning(f"Не смогли парсить Redis, берём 30 дней назад: {last_sync_time}")
+            else:
+                last_sync_time = datetime.utcnow() - timedelta(days=30)
+                logging.info(f"Нет записи в Redis, берём 30 дней назад: {last_sync_time}")
+
+        session: Session = SessionLocal()
         try:
-            service = SyncAllegroOrderService(session)
-            
-            # Получаем и проверяем токен из базы данных
-            token = get_allegro_token(session, token_id)
-            
+            order_service = SyncAllegroOrderService(session)
+            token = get_token_by_id_sync(session, token_id)
+
+            stock_service = AllegroStockService(session, manager.get_manager())
+            updater = getattr(stock_service, stock_update_method)
+
             offset = 0
             limit = 100
-            total_synced = 0
-            
-            # Получаем все существующие заказы из базы одним запросом
-            existing_orders = {}
-            orders_info = service.repository.get_all_orders_basic_info(token_id)
-            if orders_info:
-                existing_orders = {
-                    order["id"]: order["updateTime"] 
-                    for order in orders_info
-                }
-                logger.info(f"Загружено {len(existing_orders)} существующих заказов")
-            else:
-                logger.info("Нет существующих заказов, будет выполнена полная синхронизация")
-            
+            synced = 0
+            stock_updates = 0
+
+            # Загружаем все существующие заказы
+            existing = {
+                o["id"]: o["updateTime"]
+                for o in order_service.repository.get_all_orders_basic_info(token_id) or []
+            }
+
             while True:
-                # Проверяем rate limit перед запросом
                 allegro_rate_limiter.wait_if_needed()
-                
-                # Получаем страницу заказов
-                orders_data = service.api_service.get_orders(
-                    token=token.access_token,
-                    # status=["BOUGHT"],
+                page = order_service.api_service.get_orders(
+                    token.access_token,
                     offset=offset,
                     limit=limit,
-                    updated_at_gte=last_sync_time if last_sync_time else None,
-                    sort="-lineItems.boughtAt"  # Сначала новые заказы
+                    updated_at_gte=last_sync_time,
+                    sort="-lineItems.boughtAt"
                 )
-                
-                checkout_forms = orders_data.get("checkoutForms", [])
-                if not checkout_forms:
+                forms = page.get("checkoutForms", [])
+                if not forms:
                     break
-                
-                # Собираем ID заказов, которые нужно обновить
-                orders_to_update = []
-                for order_data in checkout_forms:
-                    update_time = datetime.fromisoformat(order_data.get("updatedAt").replace('Z', '+00:00'))
-                    order_id = order_data["id"]
-                    
-                    # Проверяем, нужно ли обновлять заказ
-                    if order_id not in existing_orders:
-                        orders_to_update.append(order_id)
-                    else:
-                        existing_update_time = existing_orders[order_id]
-                        if update_time > existing_update_time:
-                            orders_to_update.append(order_id)
-                
-                # Получаем детали только для заказов, которые нужно обновить
-                for order_id in orders_to_update:
-                    # Проверяем rate limit перед каждым запросом деталей
-                    allegro_rate_limiter.wait_if_needed()
-                    
-                    order_details = service.api_service.get_order_details(
-                        token=token.access_token,
-                        order_id=order_id
-                    )
-                    
-                    try:
-                        if order_id in existing_orders:
-                            service.repository.update_order(token_id, order_id, order_details)
-                        else:
-                            service.repository.add_order(token_id, order_details)
-                        total_synced += 1
-                    except Exception as e:
-                        if "duplicate key value violates unique constraint" in str(e):
-                            # Если это дублирование покупателя, получаем существующего и пробуем снова
-                            logger.info(f"Найден существующий покупатель для заказа {order_id}, используем его")
-                            # Получаем существующего покупателя и пробуем добавить заказ снова
-                            service.repository.add_order_with_existing_buyer(token_id, order_details)
-                            total_synced += 1
-                        else:
-                            raise
-                
-                # Если получили меньше заказов чем limit, значит это последняя страница
-                if len(checkout_forms) < limit:
-                    break
-                    
-                offset += limit
-            
-            # Сохраняем время последней синхронизации
-            redis_client.set(f"last_sync_time_{token_id}", (datetime.utcnow() - timedelta(seconds=5)).isoformat())
 
-            logger.info(f"Успешно синхронизировано {total_synced} заказов")
+                to_update = []
+                for f in forms:
+                    oid = f["id"]
+                    upd = datetime.fromisoformat(f["updatedAt"].replace("Z", "+00:00"))
+                    if oid not in existing or upd.replace(tzinfo=None) > existing[oid].replace(tzinfo=None):
+                        to_update.append(oid)
+
+                for oid in to_update:
+                    allegro_rate_limiter.wait_if_needed()
+                    details = order_service.api_service.get_order_details(
+                        token.access_token, oid
+                    )
+                    # обновляем или создаём
+                    if oid in existing:
+                        order = order_service.repository.update_order(token_id, oid, details)
+                    else:
+                        order = order_service.repository.add_order(token_id, details)
+                    synced += 1
+
+                    # вызываем тот метод, что передали
+                    if updater(order, warehouse="A"):
+                        stock_updates += 1
+
+                if len(forms) < limit:
+                    break
+                offset += limit
+
+            # сохраняем точку
+            redis_client.set(
+                f"last_sync_time_{token_id}",
+                (datetime.utcnow() - timedelta(seconds=5)).isoformat()
+            )
+
             return {
                 "status": "success",
-                "message": "Немедленная синхронизация завершена",
-                "total_synced": total_synced,
-                "from_date": from_date
+                "orders_synced": synced,
+                "stock_updated": stock_updates
             }
         finally:
             session.close()
-            
-    except ValueError as e:
-        logger.error(f"Ошибка валидации: {str(e)}")
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+
     except Exception as e:
-        logger.error(f"Ошибка при синхронизации: {str(e)}")
-        return {
-            "status": "error",
-            "message": f"Ошибка при синхронизации: {str(e)}"
-        }
+        logger.error("Ошибка при синхронизации:", exc_info=True)
+        return {"status": "error", "message": str(e)}
 
 
+@celery.task(name="app.celery_app.sync_allegro_orders")
+def sync_allegro_orders(token_id: str, from_date: Optional[str] = None):
+    # здесь вызываем общий код с process_order_stock_update
+    return _sync_orders_core(token_id, from_date, "process_order_stock_update")
 
+
+@celery.task(name="app.celery_app.sync_allegro_orders_immediate")
+def sync_allegro_orders_immediate(token_id: str, from_date: Optional[str] = None):
+    # здесь — с mark_order_stock_updated
+    return _sync_orders_core(token_id, from_date, "mark_order_stock_updated")
 
 

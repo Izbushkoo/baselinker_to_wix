@@ -39,7 +39,6 @@ async def create_user_route(
     *,
     db: AsyncSession = Depends(deps.get_async_session),
     user_in: UserCreate,
-    current_user: UserModel = Depends(deps.get_current_user),
 ) -> Any:
     """
     Create new user.

@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 quantity: formData.get('quantity')
             });
 
-            const response = await fetch('/api/werehouse/transfer-item/', {
+            const response = await fetch('/api/warehouse/transfer-item/', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

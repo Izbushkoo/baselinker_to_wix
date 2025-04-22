@@ -1,5 +1,7 @@
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Header
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Header, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import Session, select, func, text
 from datetime import timedelta, datetime
@@ -7,8 +9,9 @@ import os
 import logging
 import redis
 import json
-from app.api.deps import get_db, get_session
+from app.api.deps import get_db, get_session, get_current_user_from_cookie
 from app.models.allegro_token import AllegroToken
+from app.models.user import User
 from app.models.allegro_order import (
     AllegroOrder, AllegroBuyer, AllegroLineItem, OrderLineItem
 )
@@ -22,6 +25,9 @@ from app.services.allegro.tokens import check_token
 from app.utils.logging_config import logger
 
 router = APIRouter()
+web_router = APIRouter()
+
+templates = Jinja2Templates(directory="app/templates")
 
 def get_redis_client():
     redis_url = os.getenv("CELERY_REDIS_URL", "redis://redis:6379/0")
@@ -49,7 +55,7 @@ def start_sync_tasks(token_id: str, db: Session = Depends(get_db)) -> Dict[str, 
         # Формируем новые расписания для задач
         sync_entry = {
             "task": "app.celery_app.sync_allegro_orders",
-            "schedule": 200,  # 3600 секунд = 1 час
+            "schedule": 1800, # 1800 секунд = 30 минут
             "args": [token_id]
         }
 
@@ -81,8 +87,8 @@ def start_sync_tasks(token_id: str, db: Session = Depends(get_db)) -> Dict[str, 
                     "task_id": sync_task.id,
                     "schedule": {
                         "name": "sync_allegro_orders",
-                        "interval": "каждый час",
-                        "next_run": (datetime.now() + timedelta(hours=1)).isoformat()
+                        "interval": "Каждые 30 минут",
+                        "next_run": (datetime.now() + timedelta(minutes=30)).isoformat()
                     }
                 }
             }
@@ -150,7 +156,7 @@ def get_sync_status(token_id: str, db: Session = Depends(get_db)) -> Dict[str, A
         "tasks": {
             "sync_allegro_orders": {
                 "active": sync_task,
-                "schedule": "Каждый час" if sync_task else None
+                "schedule": "Каждые 30 минут" if sync_task else None
             }
         }
     }
@@ -178,7 +184,7 @@ def run_sync_once(
         parsed_date = parse_date(from_date) if from_date else None
         
         # Запускаем задачу синхронизации
-        task = celery.send_task('tasks.sync_allegro_orders', args=[token_id, parsed_date])
+        task = celery.send_task('app.celery_app.sync_allegro_orders', args=[token_id, parsed_date])
         
         return {
             "status": "success",
@@ -458,4 +464,28 @@ async def delete_all_orders(
 @router.post("/backup")
 async def backup():
     celery.send_task("app.backup_base")
+
+@web_router.get("/synchronization", response_class=HTMLResponse)
+async def get_synchronization_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Отображает страницу синхронизации с Allegro.
+    """
+    if not user:
+        return RedirectResponse(url=f"/login?next=/synchronization", status_code=302)
+    
+    if not user.is_admin:
+        return templates.TemplateResponse(
+            "base.html",
+            {"request": request, "user": user}
+        )
+
+    tokens = get_tokens_list_sync(db)
+    return templates.TemplateResponse(
+        "synchronization.html",
+        {"request": request, "tokens": tokens, "user": user}
+    )
 

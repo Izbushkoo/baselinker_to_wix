@@ -1,12 +1,13 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import RedirectResponse
 from sqlmodel import select, func
 from sqlmodel.ext.asyncio.session import AsyncSession
 from fastapi.templating import Jinja2Templates
 from app.api import deps
-from app.models.werehouse import Stock, Sale
+from app.models.warehouse import Stock, Sale
 from app.models.user import User
-from app.services.werehouse.manager import Werehouses
+from app.services.warehouse.manager import Warehouses
 
 router = APIRouter()
 web_router = APIRouter()
@@ -21,11 +22,14 @@ async def operations_page(
     warehouse: Optional[str] = None,
     type: Optional[str] = None,
     db: AsyncSession = Depends(deps.get_async_session),
-    current_user: User = Depends(deps.get_current_user_from_cookie)
+    current_user: User = Depends(deps.get_current_user_optional)
 ):
     """
     Отображение страницы операций с историей и фильтрацией
     """
+    if not current_user:
+        return RedirectResponse(url=f"/login?next=/operations", status_code=302)
+
     # Базовый запрос для получения операций
     query = select(Sale)
     
@@ -53,7 +57,7 @@ async def operations_page(
     operations = result.all()
     
     # Используем список складов из перечисления вместо запроса к базе
-    warehouses = [w.value for w in Werehouses]
+    warehouses = [w.value for w in Warehouses]
     
     return templates.TemplateResponse(
         "operations.html",
