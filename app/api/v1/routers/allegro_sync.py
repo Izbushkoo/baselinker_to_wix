@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Header
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import Session, select, func
+from sqlmodel import Session, select, func, text
 from datetime import timedelta, datetime
 import os
 import logging
@@ -398,42 +398,53 @@ async def delete_all_orders(
         if not token:
             raise HTTPException(status_code=404, detail="Токен не найден")
         
-        # Удаляем в правильном порядке с учетом зависимостей
-        # 1. Сначала удаляем связи в таблице order_line_items для заказов этого токена
-        order_line_items = await database.exec(
-            select(OrderLineItem)
-            .join(AllegroOrder)
-            .where(AllegroOrder.token_id == token_id)
-        )
-        for item in order_line_items:
-            await database.delete(item)
+        # Удаляем данные с помощью SQL запросов в правильном порядке
+        # 1. Удаляем связи в таблице order_line_items
+        delete_items = text("""
+            DELETE FROM order_line_items 
+            WHERE order_id IN (
+                SELECT id FROM allegro_orders WHERE token_id = :token_id
+            )
+        """).bindparams(token_id=token_id)
+        await database.exec(delete_items)
         
-        # 2. Затем удаляем заказы
-        orders = await database.exec(
-            select(AllegroOrder).where(AllegroOrder.token_id == token_id)
-        )
-        for order in orders:
-            await database.delete(order)
+        # 2. Удаляем заказы
+        delete_orders = text("""
+            DELETE FROM allegro_orders 
+            WHERE token_id = :token_id
+        """).bindparams(token_id=token_id)
+        await database.exec(delete_orders)
         
-        # 3. Удаляем товарные позиции, которые не используются в других заказах
-        line_items = await database.exec(
-            select(AllegroLineItem)
-            .outerjoin(OrderLineItem)
-            .where(OrderLineItem.id == None)
-        )
-        for item in line_items:
-            await database.delete(item)
+        # 3. Удаляем неиспользуемые товарные позиции
+        delete_unused_items = text("""
+            DELETE FROM allegro_line_items 
+            WHERE id NOT IN (
+                SELECT line_item_id FROM order_line_items
+            )
+        """)
+        await database.exec(delete_unused_items)
         
-        # 4. В последнюю очередь удаляем покупателей, которые не используются в других заказах
-        buyers = await database.exec(
-            select(AllegroBuyer)
-            .outerjoin(AllegroOrder)
-            .where(AllegroOrder.id == None)
-        )
-        for buyer in buyers:
-            await database.delete(buyer)
+        # 4. Удаляем неиспользуемых покупателей
+        delete_unused_buyers = text("""
+            DELETE FROM allegro_buyers 
+            WHERE id NOT IN (
+                SELECT buyer_id FROM allegro_orders
+            )
+        """)
+        await database.exec(delete_unused_buyers)
         
         await database.commit()
+        
+        # Удаляем время последней синхронизации из Redis для данного токена
+        try:
+            client = get_redis_client()
+            last_sync_key = f"last_sync_time_{token_id}"
+            client.delete(last_sync_key)
+            logger.info(f"Время последней синхронизации для токена {token_id} удалено из Redis")
+        except Exception as redis_error:
+            logger.error(f"Ошибка при очистке Redis для токена {token_id}: {str(redis_error)}")
+            # Продолжаем выполнение, так как основные данные уже удалены
+            
         return {
             "status": "success",
             "message": "Все заказы и связанные данные для токена успешно удалены"

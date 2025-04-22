@@ -19,6 +19,7 @@ from app.models.user import User as UserModel
 from app.services.werehouse import manager
 from app.services.werehouse.manager import Werehouses
 from pydantic import BaseModel
+from openpyxl.styles import Font, Alignment
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -253,14 +254,66 @@ async def export_stock_no_images(manager: manager.InventoryManager = Depends(man
 async def sales_report(
     start_date: date = Query(..., description='Начальная дата в формате YYYY-MM-DD'),
     end_date: date = Query(..., description='Конечная дата в формате YYYY-MM-DD'),
-    sku: Optional[str] = Query(None, description='Фильтр по SKU'),
+    sku: Optional[str] = Query(None, description='Фильтр по SKU (можно указать несколько через запятую)'),
     manager: manager.InventoryManager = Depends(manager.get_manager)
 ):
-    '''Возвращает XLSX-файл с логами продаж за указанный период.'''
+    '''Возвращает XLSX-файл с агрегированными логами продаж за указанный период.
+    
+    Параметры:
+    - start_date: начальная дата периода
+    - end_date: конечная дата периода
+    - sku: опционально, один или несколько SKU через запятую (например: "SKU1,SKU2,SKU3")
+    '''
     df = manager.get_sales_report(start_date, end_date, sku)
+    
+    # Если данных нет, создаем пустой DataFrame с нужными колонками
+    if df.empty:
+        df = pd.DataFrame(columns=['sku', 'warehouse', 'quantity'])
+    
+    # Переименовываем колонки для отчета
+    column_names = {
+        'sku': 'SKU',
+        'warehouse': 'Склад',
+        'quantity': 'Количество'
+    }
+    df = df.rename(columns=column_names)
+    
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Sales')
+        
+        # Получаем рабочий лист
+        worksheet = writer.sheets['Sales']
+        
+        # Форматируем заголовки
+        for col in range(len(df.columns)):
+            column_letter = get_column_letter(col + 1)
+            cell = worksheet[f"{column_letter}1"]
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(horizontal='center')
+        
+        # Автоматическая ширина столбцов
+        for column in worksheet.columns:
+            max_length = 0
+            column_letter = get_column_letter(column[0].column)
+            
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            
+            adjusted_width = (max_length + 2)
+            worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+        # Центрируем данные в столбце количества, если есть данные
+        if not df.empty:
+            quantity_col = get_column_letter(df.columns.get_loc('Количество') + 1)
+            for row in range(2, len(df) + 2):
+                cell = worksheet[f"{quantity_col}{row}"]
+                cell.alignment = Alignment(horizontal='center')
+            
     buffer.seek(0)
     filename = f"sales_{start_date}_{end_date}" + (f"_{sku}.xlsx" if sku else '.xlsx')
     headers = {'Content-Disposition': f'attachment; filename="{filename}"'}

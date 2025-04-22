@@ -385,15 +385,26 @@ class InventoryManager:
         return df, images
 
     def get_sales_report(self, start_date: date, end_date: date, sku: Optional[str] = None) -> pd.DataFrame:
-        '''Получить DataFrame логов продаж за период по SKU.'''
+        '''Получить DataFrame агрегированных логов продаж за период по SKU.'''
         with Session(self.engine) as session:
             stmt = select(Sale).where(Sale.timestamp >= datetime.combine(start_date, datetime.min.time()),
                                      Sale.timestamp <= datetime.combine(end_date, datetime.max.time()))
             if sku:
-                stmt = stmt.where(Sale.sku == sku)
+                # Разбиваем строку SKU на список и очищаем от пробелов
+                sku_list = [s.strip() for s in sku.split(',') if s.strip()]
+                if sku_list:
+                    stmt = stmt.where(Sale.sku.in_(sku_list))
             sales = session.exec(stmt).all()
-        rows = [{'sku': s.sku, 'warehouse': s.warehouse, 'quantity': s.quantity, 'timestamp': s.timestamp} for s in sales]
-        return pd.DataFrame(rows)
+            
+        rows = [{'sku': s.sku, 'warehouse': s.warehouse, 'quantity': s.quantity} for s in sales]
+        df = pd.DataFrame(rows)
+        
+        # Агрегируем данные по SKU и складу
+        if not df.empty:
+            df = df.groupby(['sku', 'warehouse'])['quantity'].sum().reset_index()
+            df = df.sort_values(['warehouse', 'sku'])
+            
+        return df
 
     def get_stock_by_sku(self, sku: str) -> dict:
         '''Получить остатки по конкретному SKU на всех складах.'''
