@@ -349,6 +349,7 @@ async def get_all_orders(
             order_dict = {
                 "id": order.id,
                 "status": order.status,
+                "is_stock_updated": order.is_stock_updated,
                 "updated_at": order.updated_at.isoformat() if order.updated_at else None,
                 "belongs_to": order.belongs_to,
                 "token_id": order.token_id,

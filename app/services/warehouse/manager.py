@@ -93,7 +93,7 @@ class InventoryManager:
                 
                 if source_stock.quantity < quantity:
                     raise StockError(
-                        f"Недостаточно товара на складе {source}. "
+                        f"Недостаточно товара '{sku}' на складе '{source}'. "
                         f"Запрошено: {quantity}, доступно: {source_stock.quantity}"
                     )
 

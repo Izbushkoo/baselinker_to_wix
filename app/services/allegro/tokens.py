@@ -8,20 +8,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import requests
 import json
 import time
+import os
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import Session
+from sqlalchemy import create_engine
 
 from app.database import SessionLocal
 from app.core.config import settings
 from app.models.allegro_token import AllegroToken
 from app.services.allegro.data_access import update_token_by_id, update_token_by_id_sync, insert_token_sync, get_token_by_id_sync
 from app.services.allegro.pydantic_models import InitializeAuth
+from app.services.allegro.pydantic_models import InitializeAuth as SchemaInitializeAuth
 
 
 CODE_URL = "https://allegro.pl/auth/oauth/device"
 TOKEN_URL = "https://allegro.pl/auth/oauth/token"
+
+ALLEGRO_AUTH_URL = "https://allegro.pl/auth/oauth/device"
+ALLEGRO_TOKEN_URL = "https://allegro.pl/auth/oauth/token"
 
 logger = logging.getLogger(__name__)
 
@@ -284,4 +290,162 @@ def initialize_auth(init_auth: InitializeAuth) -> Dict[str, Any]:
         return allegro_token
     finally:
         database.close()
+
+
+def initialize_device_flow(account_name: str) -> Dict:
+    """
+    Инициализирует процесс Device Flow авторизации для Allegro.
+    
+    Args:
+        account_name: Имя аккаунта для идентификации токена
+    
+    Returns:
+        Dict с данными авторизации (device_code, user_code, verification_uri, etc.)
+    """
+    client_id = os.getenv("ALLEGRO_CLIENT_ID")
+    client_secret = os.getenv("ALLEGRO_CLIENT_SECRET")
+    
+    if not client_id or not client_secret:
+        raise ValueError("ALLEGRO_CLIENT_ID и ALLEGRO_CLIENT_SECRET должны быть установлены")
+    
+    try:
+        response = requests.post(
+            ALLEGRO_AUTH_URL,
+            auth=(client_id, client_secret),
+            data={"client_id": client_id}
+        )
+        response.raise_for_status()
+        auth_data = response.json()
+        auth_data["account_name"] = account_name
+        return auth_data
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Ошибка при инициализации Device Flow: {str(e)}")
+        raise
+
+
+def check_auth_status(device_code: str, account_name: str) -> str:
+    """
+    Проверяет статус авторизации для данного device_code.
+    
+    Args:
+        device_code: Код устройства, полученный от initialize_device_flow
+        account_name: Имя аккаунта для идентификации токена
+    
+    Returns:
+        'pending', 'completed', или 'failed'
+    """
+    client_id = os.getenv("ALLEGRO_CLIENT_ID")
+    client_secret = os.getenv("ALLEGRO_CLIENT_SECRET")
+    
+    try:
+        response = requests.post(
+            ALLEGRO_TOKEN_URL,
+            auth=(client_id, client_secret),
+            data={
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                "device_code": device_code
+            }
+        )
+        
+        if response.status_code == 400:
+            error = response.json().get("error")
+            if error == "authorization_pending":
+                return "pending"
+            else:
+                logger.error(f"Ошибка авторизации: {error}")
+                return "failed"
+        
+        response.raise_for_status()
+        token_data = response.json()
+        
+        # Сохраняем токен в базу данных
+        token = AllegroToken(
+            account_name=account_name,
+            access_token=token_data["access_token"],
+            refresh_token=token_data["refresh_token"],
+            client_id=client_id,
+            client_secret=client_secret,
+            redirect_url="none"
+        )
+        
+        with SessionLocal() as session:
+            session.add(token)
+            session.commit()
+        
+        return "completed"
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Ошибка при проверке статуса авторизации: {str(e)}")
+        return "failed"
+
+
+def refresh_token(account_name: str) -> Optional[AllegroToken]:
+    """
+    Обновляет токен для указанного аккаунта.
+    
+    Args:
+        account_name: Имя аккаунта
+    
+    Returns:
+        Обновленный токен или None в случае ошибки
+    """
+    client_id = os.getenv("ALLEGRO_CLIENT_ID")
+    client_secret = os.getenv("ALLEGRO_CLIENT_SECRET")
+    
+    with SessionLocal() as session:
+        token = session.exec(
+            select(AllegroToken).where(AllegroToken.account_name == account_name)
+        ).first()
+        
+        if not token:
+            logger.error(f"Токен не найден для аккаунта {account_name}")
+            return None
+        
+        try:
+            response = requests.post(
+                ALLEGRO_TOKEN_URL,
+                auth=(client_id, client_secret),
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": token.refresh_token
+                }
+            )
+            response.raise_for_status()
+            token_data = response.json()
+            
+            token.access_token = token_data["access_token"]
+            token.refresh_token = token_data["refresh_token"]
+            token.expires_at = datetime.now() + timedelta(seconds=token_data["expires_in"])
+            session.add(token)
+            session.commit()
+            session.refresh(token)
+            
+            return token
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Ошибка при обновлении токена: {str(e)}")
+            return None
+
+
+def get_token(account_name: str) -> Optional[AllegroToken]:
+    """
+    Получает действующий токен для указанного аккаунта.
+    
+    Args:
+        account_name: Имя аккаунта
+    
+    Returns:
+        Действующий токен или None, если токен не найден или не может быть обновлен
+    """
+    with SessionLocal() as session:
+        token = session.exec(
+            select(AllegroToken).where(AllegroToken.account_name == account_name)
+        ).first()
+        
+        if not token:
+            return None
+        
+        # Если токен истекает в течение 5 минут, обновляем его
+        if token.expires_at <= datetime.now() + timedelta(minutes=5):
+            return refresh_token(account_name)
+        
+        return token
 

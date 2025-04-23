@@ -3,93 +3,91 @@
 {% block content %}
 <div class="min-h-screen py-6">
     <div class="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg overflow-hidden">
+        <div class="bg-gray-900 shadow-sm rounded-lg overflow-hidden">
             <div class="p-6">
                 <div class="mb-8">
-                    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Подключение аккаунта Allegro</h1>
-                    <p class="text-gray-600 dark:text-gray-400">Для подключения аккаунта Allegro необходимо выполнить следующие шаги:</p>
+                    <h1 class="text-2xl font-bold text-white mb-2">Подключение аккаунта Allegro</h1>
+                    <p class="text-gray-400">Для подключения аккаунта Allegro необходимо выполнить следующие шаги:</p>
                 </div>
 
                 <div class="space-y-8">
                     <!-- Форма подключения -->
                     <form id="connectForm" class="space-y-6">
                         <div>
-                            <label for="account_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            <label for="account_name" class="block text-sm font-medium text-gray-300">
                                 Название аккаунта
                             </label>
                             <div class="mt-1">
                                 <input type="text" name="account_name" id="account_name" required
-                                    class="block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
+                                    class="block w-full px-4 py-3 rounded-md bg-gray-800 border-gray-700 text-gray-300 placeholder-gray-500 focus:border-primary-500 focus:ring-primary-500 focus:ring-1 shadow-sm"
                                     placeholder="Например: Основной магазин">
                             </div>
-                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                            <p class="mt-2 text-sm text-gray-500">
                                 Это название будет использоваться для идентификации аккаунта в системе
                             </p>
                         </div>
 
-                        <div>
-                            <label for="client_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Client ID
-                            </label>
-                            <div class="mt-1">
-                                <input type="text" name="client_id" id="client_id" required
-                                    class="block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
-                                    placeholder="Введите Client ID из Allegro API">
-                            </div>
-                        </div>
-
-                        <div>
-                            <label for="client_secret" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Client Secret
-                            </label>
-                            <div class="mt-1">
-                                <input type="password" name="client_secret" id="client_secret" required
-                                    class="block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white sm:text-sm"
-                                    placeholder="Введите Client Secret из Allegro API">
-                            </div>
-                        </div>
-
-                        <div class="flex justify-end gap-4">
+                        <div class="flex justify-end gap-4 pt-4">
                             <a href="/synchronization"
-                                class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600">
+                                class="inline-flex items-center px-4 py-2 border border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-300 bg-transparent hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-primary-500 transition-colors duration-200">
                                 Отмена
                             </a>
                             <button type="submit"
-                                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                                class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-primary-500 transition-colors duration-200">
                                 Подключить
                             </button>
                         </div>
                     </form>
-
-                    <!-- Инструкции -->
-                    <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
-                        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Как получить Client ID и Client Secret?</h3>
-                        <ol class="list-decimal list-inside space-y-3 text-gray-600 dark:text-gray-400">
-                            <li>Перейдите на <a href="https://developer.allegro.pl" target="_blank" class="text-primary-600 hover:text-primary-500">developer.allegro.pl</a></li>
-                            <li>Войдите в свой аккаунт Allegro</li>
-                            <li>Перейдите в раздел "Мои приложения"</li>
-                            <li>Нажмите "Создать новое приложение"</li>
-                            <li>Заполните необходимые поля и получите Client ID и Client Secret</li>
-                        </ol>
-                    </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
+<!-- Модальное окно для авторизации -->
+<div id="authModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+    <div class="bg-gray-900 rounded-lg p-8 max-w-lg w-full mx-4">
+        <div class="text-center mb-6">
+            <h3 class="text-xl font-bold text-white mb-2">Авторизация Allegro</h3>
+            <p class="text-gray-400">Перейдите по ссылке для авторизации</p>
+        </div>
+        
+        <div class="flex flex-col items-center space-y-6">
+            <!-- Ссылка -->
+            <div class="text-center w-full">
+                <a id="authLink" href="#" target="_blank" class="block w-full py-3 px-4 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors duration-200 text-center">
+                    Открыть страницу авторизации
+                </a>
+            </div>
+
+            <!-- Прогресс -->
+            <div class="w-full">
+                <div class="flex justify-between text-sm text-gray-400 mb-2">
+                    <span>Ожидание авторизации</span>
+                    <span id="authTimer">60с</span>
+                </div>
+                <div class="w-full bg-gray-700 rounded-full h-2">
+                    <div id="authProgress" class="bg-primary-600 h-2 rounded-full transition-all duration-1000" style="width: 100%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.0/build/qrcode.min.js"></script>
 <script>
+let authCheckInterval;
+let timerInterval;
+
 document.getElementById('connectForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const formData = {
-        account_name: document.getElementById('account_name').value,
-        client_id: document.getElementById('client_id').value,
-        client_secret: document.getElementById('client_secret').value
+        account_name: document.getElementById('account_name').value
     };
 
     try {
-        const response = await fetch('/api/allegro_tokens', {
+        const response = await fetch('/api/allegro_tokens/initialize', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -97,23 +95,122 @@ document.getElementById('connectForm').addEventListener('submit', async (e) => {
             body: JSON.stringify(formData)
         });
 
-        const data = await response.json();
-
-        if (response.ok) {
-            showNotification('Аккаунт успешно подключен', 'success');
-            // Перенаправляем на страницу авторизации Allegro
-            if (data.auth_url) {
-                window.location.href = data.auth_url;
-            } else {
-                window.location.href = '/synchronization';
-            }
-        } else {
-            showNotification(`Ошибка: ${data.detail}`, 'error');
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Ошибка при подключении аккаунта');
         }
+
+        const data = await response.json();
+        showAuthModal(data.verification_uri_complete, data.interval, data.device_code, formData.account_name);
     } catch (error) {
-        showNotification('Ошибка при подключении аккаунта', 'error');
+        console.error('Ошибка:', error);
+        showNotification(error.message, 'error');
     }
 });
+
+function showAuthModal(authUrl, interval, deviceCode, accountName) {
+    const modal = document.getElementById('authModal');
+    const authLink = document.getElementById('authLink');
+    
+    // Устанавливаем ссылку
+    authLink.href = authUrl;
+    
+    // Показываем модальное окно
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    
+    // Запускаем таймер на 60 секунд
+    startAuthTimer(60);
+    
+    // Начинаем проверку статуса
+    startAuthCheck(deviceCode, interval, accountName);
+}
+
+function startAuthTimer(totalSeconds) {
+    const progressBar = document.getElementById('authProgress');
+    const timerText = document.getElementById('authTimer');
+    let secondsLeft = totalSeconds;
+    
+    // Очищаем предыдущий интервал, если есть
+    if (timerInterval) {
+        clearInterval(timerInterval);
+    }
+    
+    const updateTimer = () => {
+        const percentage = (secondsLeft / totalSeconds) * 100;
+        progressBar.style.width = `${percentage}%`;
+        timerText.textContent = `${secondsLeft}с`;
+        secondsLeft--;
+    };
+    
+    updateTimer();
+    timerInterval = setInterval(() => {
+        if (secondsLeft < 0) {
+            clearInterval(timerInterval);
+            return;
+        }
+        updateTimer();
+    }, 1000);
+}
+
+async function startAuthCheck(deviceCode, interval, accountName) {
+    // Очищаем предыдущий интервал, если есть
+    if (authCheckInterval) {
+        clearInterval(authCheckInterval);
+    }
+    
+    let attempts = Math.floor(60 / interval);
+    
+    authCheckInterval = setInterval(async () => {
+        if (attempts <= 0) {
+            clearInterval(authCheckInterval);
+            hideAuthModal();
+            showNotification('Время авторизации истекло', 'error');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/allegro_tokens/check/${deviceCode}?account_name=${encodeURIComponent(accountName)}`);
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.detail || 'Ошибка при проверке статуса');
+            }
+            
+            if (data.status === 'completed') {
+                clearInterval(authCheckInterval);
+                hideAuthModal();
+                showNotification('Аккаунт успешно подключен', 'success');
+                setTimeout(() => {
+                    window.location.href = '/synchronization';
+                }, 1000);
+            } else if (data.status === 'failed') {
+                clearInterval(authCheckInterval);
+                hideAuthModal();
+                showNotification('Ошибка при подключении аккаунта', 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка:', error);
+            showNotification(error.message, 'error');
+        }
+        
+        attempts--;
+    }, interval * 1000);
+}
+
+function hideAuthModal() {
+    const modal = document.getElementById('authModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    
+    // Очищаем интервалы
+    if (authCheckInterval) {
+        clearInterval(authCheckInterval);
+    }
+    if (timerInterval) {
+        clearInterval(timerInterval);
+    }
+}
 
 function showNotification(message, type = 'info') {
     const colors = {
@@ -155,5 +252,12 @@ function showNotification(message, type = 'info') {
         }, 500);
     }, 3000);
 }
+
+// Закрытие модального окна при клике вне его области
+document.getElementById('authModal').addEventListener('click', (e) => {
+    if (e.target.id === 'authModal') {
+        hideAuthModal();
+    }
+});
 </script>
 {% endblock %} 

@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
 
+    // Глобальная функция для открытия модального окна
     window.openTransferModal = function(button) {
         const sku = button.dataset.productSku;
         const name = button.dataset.productName;
@@ -34,10 +35,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     };
 
-    window.handleTransfer = async function(event) {
+    // Обработчик отправки формы
+    document.getElementById('transferForm').addEventListener('submit', async function(event) {
         event.preventDefault();
-        const form = event.target;
-        const formData = new FormData(form);
+        const formData = new FormData(event.target);
 
         try {
             console.log('Отправка данных:', {
@@ -76,7 +77,7 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('Ошибка:', error);
             alert(error.message);
         }
-    };
+    });
 
     // Закрытие модального окна при клике вне его области
     document.addEventListener('click', function(event) {

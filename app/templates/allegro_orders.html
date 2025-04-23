@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-screen py-6 bg-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between items-center mb-6">
+            <div class="flex items-center space-x-4">
+                <a href="/synchronization" class="text-gray-400 hover:text-white">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                    </svg>
+                </a>
+                <h1 class="text-2xl font-bold text-white">Заказы {{ account_name }}</h1>
+            </div>
+        </div>
+
+        <div id="orders-container" class="space-y-4">
+            <!-- Здесь будут отображаться заказы -->
+        </div>
+    </div>
+</div>
+
+<script>
+async function fetchOrders() {
+    try {
+        const response = await fetch('/api/allegro_sync/orders/{{ token_id }}');
+        if (!response.ok) {
+            throw new Error('Ошибка при загрузке заказов');
+        }
+        const data = await response.json();
+        displayOrders(data.orders);
+    } catch (error) {
+        showNotification(error.message, 'error');
+    }
+}
+
+function displayOrders(orders) {
+    const container = document.getElementById('orders-container');
+    container.innerHTML = '';
+
+    orders.forEach(order => {
+        const orderElement = document.createElement('div');
+        orderElement.className = 'bg-gray-800 rounded-lg shadow overflow-hidden';
+        
+        const mainInfo = `
+            <div class="p-4 cursor-pointer" onclick="toggleOrderDetails('${order.id}')">
+                <div class="flex items-center justify-between">
+                    <div class="flex-1">
+                        <div class="flex items-center space-x-4">
+                            <span class="text-lg font-medium text-white">ID: ${order.id}</span>
+                            <span class="text-sm text-gray-400">${new Date(order.updated_at).toLocaleString()}</span>
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.status)}">
+                                ${order.status}
+                            </span>
+                        </div>
+                    </div>
+                    <svg id="arrow-${order.id}" class="w-5 h-5 text-gray-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                </div>
+            </div>
+        `;
+
+        const details = `
+            <div id="details-${order.id}" class="hidden border-t border-gray-700 p-4">
+                ${order.buyer ? `
+                    <div class="mb-4">
+                        <h3 class="text-sm font-medium text-gray-400 mb-2">Информация о покупателе</h3>
+                        <div class="grid grid-cols-2 gap-4 text-sm text-white">
+                            <div>Email: ${order.buyer.email || '-'}</div>
+                            <div>Телефон: ${order.buyer.phone_number || '-'}</div>
+                            <div>Имя: ${order.buyer.first_name || '-'}</div>
+                            <div>Фамилия: ${order.buyer.last_name || '-'}</div>
+                            ${order.buyer.company_name ? `<div>Компания: ${order.buyer.company_name}</div>` : ''}
+                            ${order.buyer.address ? `<div class="col-span-2">Адрес: ${order.buyer.address}</div>` : ''}
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${order.delivery ? `
+                    <div class="mb-4">
+                        <h3 class="text-sm font-medium text-gray-400 mb-2">Доставка</h3>
+                        <div class="text-sm text-white">
+                            <pre class="whitespace-pre-wrap">${JSON.stringify(order.delivery, null, 2)}</pre>
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${order.payment ? `
+                    <div class="mb-4">
+                        <h3 class="text-sm font-medium text-gray-400 mb-2">Оплата</h3>
+                        <div class="text-sm text-white">
+                            <pre class="whitespace-pre-wrap">${JSON.stringify(order.payment, null, 2)}</pre>
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${order.line_items && order.line_items.length > 0 ? `
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-400 mb-2">Товары</h3>
+                        <div class="space-y-2">
+                            ${order.line_items.map(item => `
+                                <div class="bg-gray-700 p-3 rounded-lg">
+                                    <div class="grid grid-cols-2 gap-2 text-sm text-white">
+                                        <div>Название: ${item.offer_name}</div>
+                                        <div>ID: ${item.offer_id}</div>
+                                        <div>Цена: ${item.price}</div>
+                                        <div>Оригинальная цена: ${item.original_price}</div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+
+        orderElement.innerHTML = mainInfo + details;
+        container.appendChild(orderElement);
+    });
+}
+
+function toggleOrderDetails(orderId) {
+    const details = document.getElementById(`details-${orderId}`);
+    const arrow = document.getElementById(`arrow-${orderId}`);
+    
+    if (details.classList.contains('hidden')) {
+        details.classList.remove('hidden');
+        arrow.classList.add('rotate-180');
+    } else {
+        details.classList.add('hidden');
+        arrow.classList.remove('rotate-180');
+    }
+}
+
+function getStatusColor(status) {
+    const colors = {
+        'NEW': 'bg-blue-100 text-blue-800',
+        'READY_FOR_PROCESSING': 'bg-yellow-100 text-yellow-800',
+        'PROCESSING': 'bg-purple-100 text-purple-800',
+        'COMPLETED': 'bg-green-100 text-green-800',
+        'CANCELLED': 'bg-red-100 text-red-800'
+    };
+    return colors[status] || 'bg-gray-100 text-gray-800';
+}
+
+function showNotification(message, type = 'info') {
+    const colors = {
+        success: 'bg-green-600',
+        error: 'bg-red-600',
+        info: 'bg-blue-600'
+    };
+
+    const notification = document.createElement('div');
+    notification.className = `fixed left-1/2 top-4 transform -translate-x-1/2 z-50 ${colors[type]} text-white px-6 py-4 rounded-lg shadow-lg`;
+    notification.textContent = message;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.remove();
+    }, 3000);
+}
+
+// Загружаем заказы при загрузке страницы
+document.addEventListener('DOMContentLoaded', fetchOrders);
+</script>
+{% endblock %} 
