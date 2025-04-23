@@ -100,12 +100,30 @@ document.getElementById('registerForm')?.addEventListener('submit', async (e) =>
             throw new Error(error.detail || 'Ошибка при регистрации');
         }
 
-        showNotification('Регистрация успешна! Перенаправляем на страницу входа...', 'success');
-        setTimeout(() => {
-            window.location.href = '{{ url_for("login") }}';
-        }, 1500);
+        // Сразу делаем логин после успешной регистрации
+        const loginFormData = new URLSearchParams();
+        loginFormData.append('username', data.email);
+        loginFormData.append('password', data.password);
+
+        const loginRes = await fetch('/api/auth/login/access-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            credentials: 'include',
+            body: loginFormData
+        });
+
+        if (!loginRes.ok) {
+            throw new Error('Ошибка при автоматическом входе');
+        }
+
+        // Перенаправляем на главную страницу
+        window.location.href = '/';
     } catch (error) {
-        showNotification(error.message, 'error');
+        if (window.showError) {
+            window.showError(error.message);
+        } else {
+            alert(error.message);
+        }
     }
 });
 </script>
