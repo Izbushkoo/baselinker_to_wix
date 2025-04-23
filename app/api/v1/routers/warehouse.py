@@ -21,6 +21,7 @@ from app.services.warehouse import manager
 from app.services.warehouse.manager import Warehouses
 from pydantic import BaseModel
 from openpyxl.styles import Font, Alignment
+from urllib.parse import quote
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -95,10 +96,48 @@ async def upload_transfer(
     
     content = await file.read()
     try:
-        manager.import_transfer_from_excel(content, from_wh.value, to_wh.value, sku_col, qty_col, header)
+        errors_df = manager.import_transfer_from_excel(content, from_wh.value, to_wh.value, sku_col, qty_col, header)
+        
+        # Если есть ошибки, возвращаем файл с ошибками
+        if not errors_df.empty:
+            # Удаляем колонку с изображениями, если она есть
+            if 'Foto' in errors_df.columns:
+                errors_df = errors_df.drop('Foto', axis=1)
+            
+            # Создаем буфер для Excel файла
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                # Сохраняем данные
+                errors_df.to_excel(writer, index=False)
+                
+                # Получаем рабочий лист для форматирования
+                worksheet = writer.sheets['Sheet1']
+                
+                # Устанавливаем ширину колонок
+                for idx, col in enumerate(errors_df.columns):
+                    max_length = max(
+                        errors_df[col].astype(str).apply(len).max(),
+                        len(str(col))
+                    )
+                    worksheet.column_dimensions[get_column_letter(idx + 1)].width = min(max_length + 2, 50)
+            
+            output.seek(0)
+            
+            # Формируем имя файла с ошибками и кодируем его
+            filename = f"errors_{file.filename}"
+            encoded_filename = quote(filename)
+            
+            return StreamingResponse(
+                output,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": f"attachment; filename={encoded_filename}"
+                }
+            )
+            
+        return JSONResponse({'status': 'success', 'file': file.filename, 'from': from_wh.value, 'to': to_wh.value})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    return JSONResponse({'status': 'success', 'file': file.filename, 'from': from_wh.value, 'to': to_wh.value})
 
 @router.get(
     "/export/stock/",

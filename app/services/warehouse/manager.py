@@ -124,34 +124,54 @@ class InventoryManager:
                 logger.error(f"Ошибка при перемещении товара: {str(e)}")
                 raise
 
-    def remove_from_warehouse(self, sku: str, warehouse: str, quantity: int):
-        '''Списание количества с указанного склада + логирование.'''
-        logger.info(f'Начало списания {quantity} единиц товара {sku} со склада {warehouse}')
-        
+    def _remove_from_warehouse_base(self, session: Session, sku: str, warehouse: str, quantity: int):
+        '''Базовая логика списания количества со склада.'''
         if quantity <= 0:
             raise ValueError('Количество списания должно быть положительным.')
             
+        stock = session.get(Stock, (sku, warehouse))
+        if not stock:
+            raise ValueError(f'Товар {sku} не найден на складе {warehouse}')
+            
+        if stock.quantity < quantity:
+            raise ValueError(f'Недостаточно товара на складе {warehouse}. Запрошено: {quantity}, доступно: {stock.quantity}')
+            
+        stock.quantity -= quantity
+        session.add(stock)
+        return stock
+
+    def remove_from_warehouse(self, sku: str, warehouse: str, quantity: int):
+        '''Списание количества с указанного склада без логирования продажи.'''
+        logger.info(f'Начало списания {quantity} единиц товара {sku} со склада {warehouse}')
+        
         try:
             with Session(self.engine) as session:
-                stock = session.get(Stock, (sku, warehouse))
-                if not stock:
-                    raise ValueError(f'Товар {sku} не найден на складе {warehouse}')
-                    
-                if stock.quantity < quantity:
-                    raise ValueError(f'Недостаточно товара на складе {warehouse}. Запрошено: {quantity}, доступно: {stock.quantity}')
-                    
-                stock.quantity -= quantity
-                session.add(stock)
-                
-                # логирование списания
-                sale = Sale(sku=sku, warehouse=warehouse, quantity=quantity)
-                session.add(sale)
+                self._remove_from_warehouse_base(session, sku, warehouse, quantity)
                 session.commit()
                 
                 logger.info(f'Успешно списано {quantity} единиц товара {sku} со склада {warehouse}')
                 
         except Exception as e:
             logger.error(f'Ошибка при списании товара: {str(e)}')
+            raise
+
+    def remove_as_sale(self, sku: str, warehouse: str, quantity: int):
+        '''Списание количества с указанного склада с логированием продажи.'''
+        logger.info(f'Начало списания продажи {quantity} единиц товара {sku} со склада {warehouse}')
+        
+        try:
+            with Session(self.engine) as session:
+                self._remove_from_warehouse_base(session, sku, warehouse, quantity)
+                
+                # Логируем продажу
+                sale = Sale(sku=sku, warehouse=warehouse, quantity=quantity)
+                session.add(sale)
+                session.commit()
+                
+                logger.info(f'Успешно списана продажа {quantity} единиц товара {sku} со склада {warehouse}')
+                
+        except Exception as e:
+            logger.error(f'Ошибка при списании продажи: {str(e)}')
             raise
 
     def remove_one(self, sku: str, warehouse: str):
@@ -355,26 +375,53 @@ class InventoryManager:
         sku_col: str = 'sku',
         qty_col: str = 'кол-во',
         header: int = 1
-    ):
-        '''Импорт перемещения из XLSX (bytes): SKU и количество.'''
+    ) -> pd.DataFrame:
+        '''Импорт перемещения из XLSX (bytes): SKU и количество.
+        
+        Returns:
+            pd.DataFrame: DataFrame с оставшимися строками и колонкой ошибок
+        '''
+        # Читаем исходный файл
         df = pd.read_excel(BytesIO(file_bytes), header=header)
-        for _, row in df.iterrows():
+        
+        # Создаем колонку для ошибок
+        df['error'] = None
+        
+        # Создаем список для хранения индексов успешно обработанных строк
+        successful_rows = []
+        
+        # Обрабатываем каждую строку
+        for idx, row in df.iterrows():
             try:
                 # Пропускаем строку если SKU или количество - nan
                 if pd.isna(row[sku_col]) or pd.isna(row[qty_col]):
+                    df.at[idx, 'error'] = 'Отсутствует SKU или количество'
                     continue
                     
                 sku = str(row[sku_col])
                 # Пропускаем если SKU пустой
                 if not sku or sku.lower() == 'none':
+                    df.at[idx, 'error'] = 'Пустой SKU'
                     continue
                     
                 qty = int(row[qty_col])
                 self.transfer(sku, from_warehouse, to_warehouse, qty)
+                successful_rows.append(idx)
+                
             except KeyError as e:
-                raise ValueError(f'Колонка не найдена: {e}. Ожидаются колонки: {sku_col}, {qty_col}')
+                df.at[idx, 'error'] = f'Колонка не найдена: {e}'
             except ValueError as e:
-                raise ValueError(f'Ошибка в данных: {str(e)}. SKU: {sku}, количество: {qty}')
+                df.at[idx, 'error'] = str(e)
+            except Exception as e:
+                df.at[idx, 'error'] = f'Неизвестная ошибка: {str(e)}'
+        
+        # Удаляем успешно обработанные строки
+        df = df.drop(successful_rows)
+        
+        # Если есть строки с ошибками, возвращаем их
+        if not df.empty:
+            return df
+        return pd.DataFrame()
 
     def get_stock_report(self) -> Tuple[pd.DataFrame, List[bytes]]:
         """

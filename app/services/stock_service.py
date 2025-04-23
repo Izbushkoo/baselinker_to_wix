@@ -50,13 +50,7 @@ class AllegroStockService:
                 
                 try:
                     # Списываем одну единицу товара с указанного склада
-                    self.manager.remove_one(sku, warehouse)
-                    logger.info(f"Списана 1 единица товара {sku} со склада {warehouse}")
-                    
-                    # Создаем запись о продаже
-                    sale = Sale(sku=sku, warehouse=warehouse, quantity=1)
-                    self.db.add(sale)
-                    logger.info(f"Создана запись о продаже товара {sku}")
+                    self.manager.remove_as_sale(sku, warehouse, 1)
                     
                 except ValueError as e:
                     logger.error(f"Ошибка при списании товара {sku}: {str(e)}")

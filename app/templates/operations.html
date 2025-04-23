@@ -87,39 +87,6 @@
                     </div>
                 </div>
             </div>
-
-            <!-- Отчет по продажам -->
-            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-                <h2 class="text-lg font-semibold text-gray-900 mb-4">Отчет по продажам</h2>
-                <form id="salesReportForm" class="space-y-4">
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Начальная дата</label>
-                            <input type="date" 
-                                   name="start_date" 
-                                   class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Конечная дата</label>
-                            <input type="date" 
-                                   name="end_date" 
-                                   class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md">
-                        </div>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">SKU (необязательно)</label>
-                        <input type="text" 
-                               name="sku" 
-                               placeholder="Введите SKU через запятую (например: SKU1,SKU2,SKU3)" 
-                               class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md">
-                    </div>
-                    <div class="pt-2">
-                        <button type="submit" class="inline-flex justify-center items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                            Сформировать отчет
-                        </button>
-                    </div>
-                </form>
-            </div>
         </div>
     </div>
 </div>
@@ -171,25 +138,28 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error(error.detail || 'Ошибка при импорте перемещения');
             }
             
-            alert('Перемещение успешно импортировано');
-            transferForm.reset();
+            // Проверяем тип ответа
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
+                // Если получили файл с ошибками, скачиваем его
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = response.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'errors.xlsx';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+                alert('Импорт завершен с ошибками. Скачан файл с ошибками.');
+            } else {
+                // Если все успешно
+                alert('Перемещение успешно импортировано');
+                transferForm.reset();
+            }
         } catch (error) {
             showError(error.message);
         }
-    });
-
-    // Форма отчета по продажам
-    const salesReportForm = document.getElementById('salesReportForm');
-    salesReportForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const formData = new FormData(salesReportForm);
-        const params = new URLSearchParams();
-        
-        formData.forEach((value, key) => {
-            if (value) params.append(key, value);
-        });
-        
-        window.location.href = `/api/warehouse/sales/report/?${params.toString()}`;
     });
 });
 </script>
