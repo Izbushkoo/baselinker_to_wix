@@ -1,12 +1,12 @@
 from sqlmodel import SQLModel, Field, Session, create_engine, select
 from sqlalchemy import Column, JSON, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 import pandas as pd
 from io import BytesIO
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Query
 from fastapi.responses import JSONResponse, StreamingResponse
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from enum import Enum
 import logging
 import openpyxl
@@ -650,3 +650,46 @@ class InventoryManager:
         except Exception as e:
             logging.error(f"Ошибка при пополнении товара: {str(e)}")
             raise
+
+    def get_sales_statistics(self, skus: Optional[List[str]] = None) -> Dict[str, Dict[str, int]]:
+        '''Получить статистику продаж за последние 15, 30 и 60 дней по SKU.
+        
+        Returns:
+            Dict[str, Dict[str, int]]: Словарь в формате {sku: {'15d': кол-во, '30d': кол-во, '60d': кол-во}}
+        '''
+        now = datetime.utcnow()
+        periods = {
+            '15d': (now - timedelta(days=15)),
+            '30d': (now - timedelta(days=30)),
+            '60d': (now - timedelta(days=60))
+        }
+        
+        result = {}
+        
+        with Session(self.engine) as session:
+            # Базовый запрос
+            base_query = select(Sale)
+            if skus:
+                base_query = base_query.where(Sale.sku.in_(skus))
+            
+            # Получаем все продажи за последние 60 дней
+            sales = session.exec(
+                base_query.where(Sale.timestamp >= periods['60d'])
+            ).all()
+            
+            # Группируем продажи по SKU
+            sales_by_sku = {}
+            for sale in sales:
+                if sale.sku not in sales_by_sku:
+                    sales_by_sku[sale.sku] = []
+                sales_by_sku[sale.sku].append(sale)
+            
+            # Подсчитываем количество для каждого периода
+            for sku, sku_sales in sales_by_sku.items():
+                result[sku] = {
+                    '15d': sum(s.quantity for s in sku_sales if s.timestamp >= periods['15d']),
+                    '30d': sum(s.quantity for s in sku_sales if s.timestamp >= periods['30d']),
+                    '60d': sum(s.quantity for s in sku_sales if s.timestamp >= periods['60d'])
+                }
+        
+        return result

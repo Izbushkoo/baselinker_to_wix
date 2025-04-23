@@ -519,3 +519,173 @@ async def add_to_stock(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get(
+    "/export/stock-with-sales/",
+    summary="Экспорт остатков со статистикой продаж",
+    response_class=StreamingResponse,
+)
+async def export_stock_with_sales(
+    skus: Optional[List[str]] = Query(None, description="Список SKU для экспорта"),
+    manager: manager.InventoryManager = Depends(manager.get_manager),
+):
+    """Возвращает XLSX-файл с остатками, картинками 100×100px и статистикой продаж за 15/30/60 дней."""
+    # получаем DF без image и параллельный список bytes
+    df, images = manager.get_stock_report()
+    
+    # получаем статистику продаж
+    sales_stats = manager.get_sales_statistics(skus)
+
+    # фильтрация, если skus заданы
+    if skus:
+        mask = df["sku"].isin(skus)
+        df = df[mask].reset_index(drop=True)
+        images = [img for keep, img in zip(mask, images) if keep]
+
+    # добавляем колонки со статистикой продаж
+    df['Продажи за 15 дней'] = df['sku'].map(lambda x: sales_stats.get(x, {}).get('15d', 0))
+    df['Продажи за 30 дней'] = df['sku'].map(lambda x: sales_stats.get(x, {}).get('30d', 0))
+    df['Продажи за 60 дней'] = df['sku'].map(lambda x: sales_stats.get(x, {}).get('60d', 0))
+
+    # переименования для читабельности
+    column_renames = {
+        "sku": "SKU",
+        "eans": "EAN коды",
+        "name": "Наименование",
+        "total": "Общий остаток"
+    }
+    # добавляем названия складов
+    for wh in Warehouses:
+        column_renames[f"warehouse_{wh.value}"] = f"Склад {wh.value}"
+    
+    df = df.rename(columns=column_renames)
+
+    # вставляем пустую колонку-«держатель» под изображения
+    df.insert(1, "Изображение", "")
+
+    # порядок колонок
+    cols = ["SKU", "Изображение", "Наименование", "EAN коды"]
+    cols.extend([f"Склад {wh.value}" for wh in Warehouses])
+    cols.extend(["Общий остаток", "Продажи за 15 дней", "Продажи за 30 дней", "Продажи за 60 дней"])
+    df = df[cols]
+
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        # пишем данные (картинки пока пустые)
+        df.to_excel(writer, index=False, sheet_name="Остатки")
+        ws = writer.sheets["Остатки"]
+
+        # находим букву колонки «Изображение»
+        img_col_idx    = df.columns.get_loc("Изображение") + 1
+        img_col_letter = get_column_letter(img_col_idx)
+
+        # 1) форматируем заголовки и ширину
+        for idx, col in enumerate(df.columns, start=1):
+            cell = ws.cell(row=1, column=idx)
+            cell.font = cell.font.copy(bold=True)
+            if col == "Изображение":
+                ws.column_dimensions[img_col_letter].width = 18  # ~100px
+            else:
+                max_len = max(df[col].astype(str).map(len).max(), len(col))
+                ws.column_dimensions[get_column_letter(idx)].width = min(max_len + 2, 50)
+
+        # 2) вставка картинок 100×100 и высота строк
+        for row_idx, img_bytes in enumerate(images, start=2):
+            if not img_bytes:
+                continue
+            try:
+                img = XLImage(BytesIO(img_bytes))
+                img.width  = 100
+                img.height = 100
+                ws.row_dimensions[row_idx].height = 75  # под ~100px
+
+                ws.add_image(img, f"{img_col_letter}{row_idx}")
+            except Exception as e:
+                logging.error(f"Не удалось вставить изображение в строке {row_idx}: {e}")
+
+    buf.seek(0)
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"stock_report_with_sales_{ts}.xlsx"
+    headers = {
+        "Content-Disposition": (
+            f'attachment; filename="{filename}"; '
+            f"filename*=UTF-8''{filename}"
+        )
+    }
+    return StreamingResponse(
+        buf,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers=headers
+    )
+
+@router.get('/export/stock-with-sales/no-images/', summary='Экспорт остатков со статистикой продаж без изображений') 
+async def export_stock_with_sales_no_images(
+    skus: Optional[List[str]] = Query(None, description="Список SKU для экспорта"),
+    manager: manager.InventoryManager = Depends(manager.get_manager)
+):
+    '''Возвращает XLSX-файл с остатками по складам, общим остатком и статистикой продаж за 15/30/60 дней, без изображений.'''
+    df, _ = manager.get_stock_report()  # Игнорируем список изображений
+    
+    # получаем статистику продаж
+    sales_stats = manager.get_sales_statistics(skus)
+
+    # фильтрация, если skus заданы
+    if skus:
+        mask = df["sku"].isin(skus)
+        df = df[mask].reset_index(drop=True)
+
+    # добавляем колонки со статистикой продаж
+    df['Продажи за 15 дней'] = df['sku'].map(lambda x: sales_stats.get(x, {}).get('15d', 0))
+    df['Продажи за 30 дней'] = df['sku'].map(lambda x: sales_stats.get(x, {}).get('30d', 0))
+    df['Продажи за 60 дней'] = df['sku'].map(lambda x: sales_stats.get(x, {}).get('60d', 0))
+    
+    # Русские названия столбцов
+    column_renames = {
+        "sku": "SKU",
+        "eans": "EAN коды",
+        "name": "Наименование",
+        "total": "Общий остаток"
+    }
+    # добавляем названия складов
+    for wh in Warehouses:
+        column_renames[f"warehouse_{wh.value}"] = f"Склад {wh.value}"
+    
+    df = df.rename(columns=column_renames)
+    
+    # порядок колонок
+    cols = ["SKU", "Наименование", "EAN коды"]
+    cols.extend([f"Склад {wh.value}" for wh in Warehouses])
+    cols.extend(["Общий остаток", "Продажи за 15 дней", "Продажи за 30 дней", "Продажи за 60 дней"])
+    df = df[cols]
+    
+    # Создаем Excel-файл
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Остатки')
+        worksheet = writer.sheets['Остатки']
+        
+        # Форматируем заголовки и ширины
+        for idx, col in enumerate(df.columns, start=1):
+            cell = worksheet.cell(row=1, column=idx)
+            cell.font = cell.font.copy(bold=True)
+            
+            # Устанавливаем ширину колонок
+            max_len = max(
+                df[col].astype(str).map(len).max(),
+                len(col)
+            )
+            worksheet.column_dimensions[get_column_letter(idx)].width = min(max_len + 2, 50)
+    
+    buffer.seek(0)
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"stock_report_with_sales_no_images_{ts}.xlsx"
+    headers = {
+        'Content-Disposition': f'attachment; filename="{filename}"; filename*=UTF-8\'\'{filename}'
+    }
+    return StreamingResponse(
+        buffer,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers=headers
+    )
