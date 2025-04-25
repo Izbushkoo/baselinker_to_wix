@@ -8,11 +8,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.api import deps
 from app.core.config import settings
 from app.services.user import (
+    get_user_by_id,
     get_user_by_email,
     create_user,
     get_users,
     update_user,
     delete_user,
+    toggle_admin_status_by_id,
 )
 from app.models.user import User as UserModel
 from app.schemas.user import User, UserCreate, UserUpdate
@@ -25,7 +27,6 @@ async def read_users(
     db: AsyncSession = Depends(deps.get_async_session),
     skip: int = 0,
     limit: int = 100,
-    current_user: UserModel = Depends(deps.get_current_user),
 ) -> Any:
     """
     Retrieve users.
@@ -75,6 +76,26 @@ async def update_user_me(
         user_in.email = email
     user = await update_user(db, db_obj=current_user, obj_in=user_in)
     return user
+
+@router.put("/{email}/toggle-admin", response_model=User)
+async def toggle_admin_status(
+    email: str,
+    *,
+    db: AsyncSession = Depends(deps.get_async_session),
+) -> Any:
+    """
+    Переключение статуса администратора для пользователя.
+    Только для администраторов.
+    """
+    user = await get_user_by_email(db, email=email)
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="Пользователь не найден"
+        )
+
+    # Создаем объект обновления с противоположным значением is_admin
+    return await toggle_admin_status_by_id(db, user.id)
 
 
 @router.get("/me", response_model=User)

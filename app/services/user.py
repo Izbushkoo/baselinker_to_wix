@@ -69,3 +69,13 @@ async def delete_user(db: AsyncSession, user_id: int) -> None:
         user = res.first()
         await session.delete(user)
         await session.commit()
+
+async def toggle_admin_status_by_id(db: AsyncSession, user_id: int) -> None:
+    async with db as session:
+        statement = select(user_models.User).where(user_models.User.id == user_id)
+        res = await session.exec(statement=statement)
+        user = res.first()
+        user.is_admin = not user.is_admin
+        await session.commit()
+        await session.refresh(user)
+        return user

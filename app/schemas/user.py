@@ -8,6 +8,7 @@ class UserBase(BaseModel):
     email: Optional[EmailStr] = None
     is_active: Optional[bool] = True
     full_name: Optional[str] = None
+    is_admin: Optional[bool]
 
 
 # Properties to receive via API on creation

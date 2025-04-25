@@ -105,7 +105,8 @@ async def catalog(
             "page": page,
             "page_size": page_size,
             "total_pages": total_pages,
-            "warehouses": warehouses
+            "warehouses": warehouses,
+            "current_user": current_user
         }
     )
 
@@ -196,7 +197,8 @@ async def list_products(
         # Генерируем HTML для карточки товара
         html = templates.get_template("components/product_card.html").render(
             product=product_data,
-            selected_products=[]
+            selected_products=[],
+            current_user=current_user
         )
         
         products_with_stocks.append({

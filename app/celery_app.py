@@ -695,7 +695,7 @@ def _sync_orders_core(
         session: Session = SessionLocal()
         try:
             order_service = SyncAllegroOrderService(session)
-            token = get_token_by_id_sync(session, token_id)
+            token = get_allegro_token(session, token_id)
 
             stock_service = AllegroStockService(session, manager.get_manager())
             updater = getattr(stock_service, stock_update_method)

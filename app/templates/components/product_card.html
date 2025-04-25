@@ -73,6 +73,7 @@
             <div class="bg-gray-50 rounded-lg p-4">
                 <div class="flex items-center justify-between mb-3">
                     <h4 class="text-sm font-medium text-gray-900">Остатки по складам</h4>
+                    {% if current_user and current_user.is_admin %}
                     <button 
                         type="button"
                         onclick="openTransferModal(this)"
@@ -82,6 +83,7 @@
                     >
                         Переместить
                     </button>
+                    {% endif %}
                 </div>
                 <div class="grid grid-cols-1 gap-2">
                     {% for warehouse, quantity in product['stocks'].items() %}
@@ -95,6 +97,7 @@
                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-bold {% if quantity > 0 %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
                                 {{ quantity }} шт.
                             </span>
+                            {% if current_user and current_user.is_admin %}
                             <div class="flex items-center space-x-2">
                                 <input type="number" 
                                        min="1" 
@@ -124,6 +127,7 @@
                                     Пополнить
                                 </button>
                             </div>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}
