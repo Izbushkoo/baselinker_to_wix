@@ -295,8 +295,8 @@ async def get_all_orders(
         to_date: Фильтр по дате окончания
     """
     try:
-        # Формируем базовый запрос
-        query = select(AllegroOrder).where(AllegroOrder.token_id == token_id)
+        # Формируем базовый запрос с сортировкой по дате обновления
+        query = select(AllegroOrder).where(AllegroOrder.token_id == token_id).order_by(AllegroOrder.updated_at.desc())
         
         # Применяем фильтры
         if status:

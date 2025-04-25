@@ -1,5 +1,7 @@
 import logging
 from typing import List, Optional
+from sqlmodel import select, update
+from app.models.allegro_order import AllegroOrder
 import pandas as pd
 from io import BytesIO
 from datetime import date, datetime
@@ -697,7 +699,8 @@ async def export_stock_with_sales_no_images(
 @router.post('/sale-from-order/', summary='Списание товаров из заказа')
 async def sale_from_order(
     sale_data: SaleFromOrder,
-    manager: manager.InventoryManager = Depends(manager.get_manager)
+    manager: manager.InventoryManager = Depends(manager.get_manager),
+    db: AsyncSession = Depends(deps.get_async_session)
 ):
     '''Списывает товары из заказа как продажу только если все товары есть в наличии.'''
     try:
@@ -731,6 +734,15 @@ async def sale_from_order(
                             'message': f'Ошибка при списании товара {item["external_id"]}: {str(e)}'
                         }
                     )
+
+
+        
+        update_stmt = update(AllegroOrder).where(
+            AllegroOrder.id == sale_data.order_id
+        ).values(is_stock_updated=True)
+        
+        await db.exec(update_stmt)
+        await db.commit()
         
         return JSONResponse({
             'status': 'success',
@@ -738,6 +750,7 @@ async def sale_from_order(
         })
         
     except Exception as e:
+        await db.rollback()
         return JSONResponse(
             status_code=500,
             content={
