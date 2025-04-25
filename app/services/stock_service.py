@@ -46,9 +46,9 @@ class AllegroStockService:
                     logger.warning(message)
                     self.tg_manager.send_message(message)
                     return False
-                elif all(quantity == 0 for quantity in stocks.values()):
-                    message = f"⚠️ Товар с SKU '<code>{sku}</code>' есть в базе, но остатки нулевые на всех складах (заказ <code>{order.id}</code>)"
-                    logger.warning(message) 
+                elif stocks.get(warehouse.A.value, 0) == 0:
+                    message = f"⚠️ Товар с SKU '<code>{sku}</code>' есть в базе, но остатки нулевые на складе {warehouse.A.value} (заказ <code>{order.id}</code>)<br>Списания не произошло"
+                    logger.warning(message)
                     self.tg_manager.send_message(message)
                     return False
 
