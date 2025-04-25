@@ -1,13 +1,14 @@
 import os
-from typing import Optional, List, Dict, Any
+import time
+from typing import Optional, Dict, Any, List
+
 import httpx
 
-
-
+from app.utils.logging_config import logger
 class TelegramManager:
     """
-    Синхронный клиент для Telegram Bot API с отправкой сообщений и 
-    автоматическим получением chat_id групп, где бот является админом.
+    Синхронный клиент для Telegram Bot API на httpx.
+    Поддерживает отправку сообщений и автоматическую обработку 429 Too Many Requests.
     """
 
     def __init__(
@@ -18,11 +19,11 @@ class TelegramManager:
         token = os.getenv(token_env_var)
         if not token:
             raise RuntimeError(f"Environment variable {token_env_var} is not set")
-        self.api = httpx.Client(
+        self.chat_id = chat_id
+        self._client = httpx.Client(
             base_url=f"https://api.telegram.org/bot{token}",
             timeout=10.0,
         )
-        self.chat_id = chat_id
 
     def send_message(
         self,
@@ -31,9 +32,14 @@ class TelegramManager:
         parse_mode: Optional[str] = "HTML",
         disable_web_page_preview: bool = False,
         disable_notification: bool = False,
+        max_retries: int = 5,
     ) -> Dict[str, Any]:
         """
-        Send a text message to a chat.
+        Send a text message to a chat, with handling of 429 errors.
+
+        :param text: текст сообщения
+        :param chat_id: приоритетный chat_id, иначе используется self.chat_id
+        :param max_retries: сколько раз пытаться при 429
         """
         target = chat_id or self.chat_id
         if target is None:
@@ -48,12 +54,40 @@ class TelegramManager:
         if parse_mode:
             payload["parse_mode"] = parse_mode
 
-        r = self.api.post("/sendMessage", json=payload)
-        r.raise_for_status()
-        data = r.json()
-        if not data.get("ok"):
-            raise RuntimeError(f"Telegram API error: {data.get('description')}")
-        return data
+        attempts = 0
+        while True:
+            try:
+                r = self._client.post("/sendMessage", json=payload)
+                r.raise_for_status()
+                data = r.json()
+                if not data.get("ok", False):
+                    raise RuntimeError(f"Telegram API error: {data.get('description')}")
+                return data
+
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                if status == 429 and attempts < max_retries:
+                    attempts += 1
+                    # попытаться прочитать retry_after из тела или заголовков
+                    retry_after = None
+                    try:
+                        body = exc.response.json()
+                        logger.info(f"Retry after: {body}")
+                        retry_after = body.get("parameters", {}).get("retry_after")
+
+                    except Exception:
+                        pass
+                    if retry_after is None:
+                        retry_after = exc.response.headers.get("Retry-After")
+                    # приводим к int
+                    try:
+                        wait = int(retry_after)
+                    except Exception:
+                        wait = 1
+                    time.sleep(wait + 1)
+                    continue
+                # иначе пробрасываем ошибку
+                raise
 
     def get_updates(
         self,
@@ -62,44 +96,42 @@ class TelegramManager:
         timeout: int = 0,
     ) -> List[Dict[str, Any]]:
         """
-        Получить список обновлений. offset берёт только обновления с update_id > offset.
+        Получить список обновлений.
         """
         params: Dict[str, Any] = {"limit": limit, "timeout": timeout}
-        if offset:
+        if offset is not None:
             params["offset"] = offset
-        r = self.api.get("/getUpdates", params=params)
+        r = self._client.get("/getUpdates", params=params)
         r.raise_for_status()
         data = r.json()
-        if not data.get("ok"):
+        if not data.get("ok", False):
             raise RuntimeError(f"getUpdates error: {data.get('description')}")
         return data["result"]
 
     def get_me(self) -> Dict[str, Any]:
-        """
-        Запрос getMe() для получения информации о самом боте (в т.ч. его id).
-        """
-        r = self.api.get("/getMe")
+        """Получить информацию о боте (в т.ч. его id)."""
+        r = self._client.get("/getMe")
         r.raise_for_status()
         data = r.json()
-        if not data.get("ok"):
+        if not data.get("ok", False):
             raise RuntimeError(f"getMe error: {data.get('description')}")
         return data["result"]
 
     def get_chat_member(self, chat_id: int, user_id: int) -> Dict[str, Any]:
-        """
-        Запрос getChatMember для проверки статуса пользователя в чате.
-        """
-        r = self.api.get("/getChatMember", params={"chat_id": chat_id, "user_id": user_id})
+        """Запрос getChatMember для проверки статуса пользователя в чате."""
+        r = self._client.get(
+            "/getChatMember",
+            params={"chat_id": chat_id, "user_id": user_id}
+        )
         r.raise_for_status()
         data = r.json()
-        if not data.get("ok"):
+        if not data.get("ok", False):
             raise RuntimeError(f"getChatMember error: {data.get('description')}")
         return data["result"]
 
     def discover_admin_groups(self) -> List[int]:
         """
-        Автоматически находит все группы/супергруппы, которые бот видел в обновлениях,
-        и возвращает те chat_id, где он является администратором или создателем.
+        Автоматически находит группы/супергруппы, где бот админ.
         """
         updates = self.get_updates()
         me = self.get_me()
@@ -107,7 +139,6 @@ class TelegramManager:
         found_groups = set()
 
         for upd in updates:
-            # Сообщения могут идти в полях message, my_chat_member, etc.
             msg = upd.get("message") or upd.get("my_chat_member")
             if not msg:
                 continue
@@ -116,7 +147,6 @@ class TelegramManager:
             if not chat:
                 continue
 
-            # Интересуют только группы и супергруппы
             if chat.get("type") not in ("group", "supergroup"):
                 continue
 
@@ -127,7 +157,6 @@ class TelegramManager:
                 if status in ("administrator", "creator"):
                     found_groups.add(cid)
             except Exception:
-                # пропускаем чаты, где что-то пошло не так
                 continue
 
         return list(found_groups)

@@ -2,7 +2,7 @@ import traceback
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
-from sqlmodel import Session
+from sqlmodel import Session, select
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 from celery import Celery, chord, group, chain
@@ -35,6 +35,7 @@ from app.services.stock_service import AllegroStockService
 from app.services.warehouse import manager
 from app.services.warehouse.manager import InventoryManager
 from app.services.tg_client import TelegramManager
+from app.models.allegro_order import AllegroOrder
 
 def get_redis_client():
     redis_url = os.getenv("CELERY_REDIS_URL", "redis://redis:6379/0")
@@ -158,6 +159,10 @@ celery.conf.beat_schedule = {
     'backup-base-daily': {
         'task': 'app.backup_base',
         'schedule': crontab(hour="3", minute="10"),
+    },
+    'check-and-update-stock': {
+        'task': 'app.celery_app.check_and_update_stock',
+        'schedule': 1200.0,  # 20 минут = 1200 секунд
     },
 }
 
@@ -780,5 +785,63 @@ def sync_allegro_orders(token_id: str, from_date: Optional[str] = None):
 def sync_allegro_orders_immediate(token_id: str, from_date: Optional[str] = None):
     # здесь — с mark_order_stock_updated
     return _sync_orders_core(token_id, from_date, "mark_order_stock_updated")
+
+
+@celery.task(name="app.celery_app.check_and_update_stock")
+def check_and_update_stock():
+    """
+    Проверяет все заказы для всех токенов и пытается произвести списание товаров,
+    если они еще не были списаны (is_stock_updated = False).
+    """
+    try:
+        session = SessionLocal()
+        try:
+            # Получаем все токены
+            tokens_query = select(AllegroToken)
+            tokens = session.exec(tokens_query).all()
+            
+            if not tokens:
+                logger.info("Нет токенов Allegro в базе данных")
+                return {"status": "success", "message": "Нет токенов для обработки"}
+
+            total_processed = 0
+            total_updated = 0
+            stock_service = AllegroStockService(session, manager.get_manager())
+
+            for token in tokens:
+                # Получаем все заказы для токена, где is_stock_updated = False
+                orders_query = select(AllegroOrder).where(
+                    AllegroOrder.token_id == token.id_,
+                    AllegroOrder.is_stock_updated == False
+                )
+                orders = session.exec(orders_query).all()
+
+                logger.info(f"Найдено {len(orders)} необработанных заказов для токена {token.id_}")
+
+                for order in orders:
+                    try:
+                        if stock_service.process_order_stock_update(order, warehouse=manager.Warehouses.A.value):
+                            total_updated += 1
+                        total_processed += 1
+                    except Exception as e:
+                        logger.error(f"Ошибка при обработке заказа {order.id}: {str(e)}")
+                        continue
+
+            logger.info(f"Обработано заказов: {total_processed}, успешно списано: {total_updated}")
+            return {
+                "status": "success", 
+                "total_processed": total_processed,
+                "total_updated": total_updated
+            }
+
+        finally:
+            session.close()
+
+    except Exception as e:
+        logger.error(f"Ошибка при проверке и обновлении стоков: {str(e)}")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
 
 

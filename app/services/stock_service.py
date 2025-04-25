@@ -4,6 +4,7 @@ from app.models.allegro_order import AllegroOrder, AllegroLineItem, OrderLineIte
 from app.services.warehouse.manager import InventoryManager
 from app.models.warehouse import Sale
 import logging
+from app.services.warehouse.manager import Warehouses
 from app.services.tg_client import TelegramManager
 
 logger = logging.getLogger(__name__)
@@ -46,8 +47,8 @@ class AllegroStockService:
                     logger.warning(message)
                     self.tg_manager.send_message(message)
                     return False
-                elif stocks.get(warehouse.A.value, 0) == 0:
-                    message = f"⚠️ Товар с SKU '<code>{sku}</code>' есть в базе, но остатки нулевые на складе {warehouse.A.value} (заказ <code>{order.id}</code>)<br>Списания не произошло"
+                elif stocks.get(Warehouses.A.value, 0) == 0:
+                    message = f"⚠️ Товар с SKU '<code>{sku}</code>' есть в базе, но остатки нулевые на складе {Warehouses.A.value} (заказ <code>{order.id}</code>)<br>Списания не произошло"
                     logger.warning(message)
                     self.tg_manager.send_message(message)
                     return False

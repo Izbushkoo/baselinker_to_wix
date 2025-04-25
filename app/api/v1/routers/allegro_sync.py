@@ -466,6 +466,27 @@ async def delete_all_orders(
 async def backup():
     celery.send_task("app.backup_base")
 
+@router.post("/check-stock")
+def check_stock() -> Dict[str, Any]:
+    """
+    Запускает немедленную проверку и обновление стоков для всех заказов.
+    """
+    try:
+        # Запускаем задачу проверки стоков
+        task = celery.send_task('app.celery_app.check_and_update_stock')
+        
+        return {
+            "status": "success",
+            "message": "Задача проверки стоков запущена",
+            "task_id": task.id
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при запуске проверки стоков: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при запуске проверки стоков: {str(e)}"
+        )
+
 @web_router.get("/synchronization", response_class=HTMLResponse)
 async def get_synchronization_page(
     request: Request,
