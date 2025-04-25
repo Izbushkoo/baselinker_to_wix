@@ -9,7 +9,7 @@ import base64
 from sqlalchemy import or_, text, bindparam
 from fastapi.templating import Jinja2Templates
 from app.api import deps
-from app.models.warehouse import Product, Stock
+from app.models.warehouse import Product, Stock, Sale
 from app.models.user import User
 from app.services.warehouse.manager import Warehouses
 
@@ -380,7 +380,16 @@ async def delete_product(
                 detail="Товар не найден"
             )
 
-        # Сначала удаляем все связанные остатки
+        # Сначала удаляем все связанные продажи
+        sales_query = select(Sale).where(Sale.sku == sku)
+        sales = await db.exec(sales_query)
+        for sale in sales:
+            await db.delete(sale)
+        
+        # Применяем удаление продаж
+        await db.flush()
+
+        # Затем удаляем все связанные остатки
         stocks_query = select(Stock).where(Stock.sku == sku)
         stocks = await db.exec(stocks_query)
         for stock in stocks:
@@ -389,7 +398,7 @@ async def delete_product(
         # Применяем удаление остатков
         await db.flush()
             
-        # Затем удаляем сам товар
+        # В конце удаляем сам товар
         await db.delete(product)
         await db.commit()
         
