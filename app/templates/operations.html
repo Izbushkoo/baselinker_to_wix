@@ -8,6 +8,7 @@
         <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 mb-8">Импорт и экспорт</h1>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {% if current_user and current_user.is_admin %}
             <!-- Импорт прихода -->
             <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
                 <h2 class="text-lg font-semibold text-gray-900 mb-4">Импорт прихода на склад</h2>
@@ -71,9 +72,10 @@
                     </div>
                 </form>
             </div>
+            {% endif %}
 
-            <!-- Экспорт остатков -->
-            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+            <!-- Экспорт остатков - доступен всем -->
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200 {% if not current_user.is_admin %}md:col-span-2{% endif %}">
                 <h2 class="text-lg font-semibold text-gray-900 mb-4">Экспорт остатков</h2>
                 <div class="space-y-4">
                     <p class="text-sm text-gray-500">Выгрузка текущих остатков по всем складам в формате Excel</p>

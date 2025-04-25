@@ -1,8 +1,10 @@
+import os
 from sqlmodel import Session, select
 from app.models.allegro_order import AllegroOrder, AllegroLineItem, OrderLineItem
 from app.services.warehouse.manager import InventoryManager
 from app.models.warehouse import Sale
 import logging
+from app.services.tg_client import TelegramManager
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +12,7 @@ class AllegroStockService:
     def __init__(self, db: Session, manager: InventoryManager):
         self.db = db
         self.manager = manager
+        self.tg_manager = TelegramManager(chat_id=os.getenv("NOTIFY_GROUP_ID"))
 
     def process_order_stock_update(self, order: AllegroOrder, warehouse: str) -> bool:
         """
@@ -33,14 +36,20 @@ class AllegroStockService:
                 .join(AllegroLineItem)
             )
             order_items = self.db.exec(order_items_query).all()
-
             # Проверяем наличие всех товаров перед списанием
             for order_item in order_items:
                 line_item = order_item.line_item
                 sku = line_item.external_id
                 stocks = self.manager.get_stock_by_sku(sku)
                 if not stocks:
-                    logger.warning(f"Товар {sku} не найден на складах")
+                    message = f"❌ Товар с SKU '<code>{sku}</code>' не найден в базе (заказ <code>{order.id}</code>)"
+                    logger.warning(message)
+                    self.tg_manager.send_message(message)
+                    return False
+                elif all(quantity == 0 for quantity in stocks.values()):
+                    message = f"⚠️ Товар с SKU '<code>{sku}</code>' есть в базе, но остатки нулевые на всех складах (заказ <code>{order.id}</code>)"
+                    logger.warning(message) 
+                    self.tg_manager.send_message(message)
                     return False
 
             # Списываем каждую позицию
@@ -53,7 +62,9 @@ class AllegroStockService:
                     self.manager.remove_as_sale(sku, warehouse, 1)
                     
                 except ValueError as e:
-                    logger.error(f"Ошибка при списании товара {sku}: {str(e)}")
+                    message = f"❌ Товар с SKU '<code>{sku}</code>' не найден в базе (заказ <code>{order.id}</code>)"
+                    logger.warning(message)
+                    self.tg_manager.send_message(message)
                     return False
 
             # Помечаем заказ как обработанный

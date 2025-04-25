@@ -1,5 +1,3 @@
-import requests
-import csv
 import traceback
 import logging
 from datetime import datetime, timedelta
@@ -10,6 +8,7 @@ from app.core.config import settings
 from celery import Celery, chord, group, chain
 from celery.schedules import crontab, schedule
 
+from app.services.warehouse.manager import Warehouses
 from app.services import baselinker as BL
 from app.services.process_funcs import transform_product
 from app.schemas.wix_models import WixImportFileModel
@@ -35,6 +34,7 @@ from collections import UserDict
 from app.services.stock_service import AllegroStockService
 from app.services.warehouse import manager
 from app.services.warehouse.manager import InventoryManager
+from app.services.tg_client import TelegramManager
 
 def get_redis_client():
     redis_url = os.getenv("CELERY_REDIS_URL", "redis://redis:6379/0")
@@ -744,7 +744,7 @@ def _sync_orders_core(
                     synced += 1
 
                     # вызываем тот метод, что передали
-                    if updater(order, warehouse="A"):
+                    if updater(order, warehouse=Warehouses.A):
                         stock_updates += 1
 
                 if len(forms) < limit:

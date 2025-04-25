@@ -69,6 +69,7 @@ async def operations_page(
             "page": page,
             "page_size": page_size,
             "total_operations": total_count,
-            "total_pages": (total_count + page_size - 1) // page_size
+            "total_pages": (total_count + page_size - 1) // page_size,
+            "current_user": current_user
         }
     ) 

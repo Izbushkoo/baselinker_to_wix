@@ -351,3 +351,44 @@ async def create_product(
             status_code=400,
             detail=f"Не удалось создать товар: {str(e)}"
         )
+
+@router.delete("/{sku}")
+async def delete_product(
+    sku: str,
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_from_cookie)
+):
+    """
+    Удаляет товар по его SKU
+    """
+    # Проверяем права доступа
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Недостаточно прав для удаления товара"
+        )
+    
+    try:
+        # Сначала удаляем все связанные остатки через SQL запрос
+        delete_stocks = text("DELETE FROM stock WHERE sku = :sku")
+        await db.execute(delete_stocks, {"sku": sku})
+        
+        # Затем удаляем сам товар через SQL запрос
+        delete_product = text("DELETE FROM product WHERE sku = :sku")
+        result = await db.execute(delete_product, {"sku": sku})
+        
+        if result.rowcount == 0:
+            raise HTTPException(
+                status_code=404,
+                detail="Товар не найден"
+            )
+        
+        await db.commit()
+        return {"message": "Товар успешно удален"}
+        
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Не удалось удалить товар: {str(e)}"
+        )
