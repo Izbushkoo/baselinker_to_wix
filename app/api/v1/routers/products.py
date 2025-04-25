@@ -279,7 +279,7 @@ async def add_product_form(
         }
     )
 
-@router.post("/products")
+@router.post("")
 async def create_product(
     request: Request,
     name: str = Form(...),
@@ -369,21 +369,30 @@ async def delete_product(
         )
     
     try:
-        # Сначала удаляем все связанные остатки через SQL запрос
-        delete_stocks = text("DELETE FROM stock WHERE sku = :sku")
-        await db.execute(delete_stocks, {"sku": sku})
+        # Проверяем существование товара
+        product_query = select(Product).where(Product.sku == sku)
+        product = await db.exec(product_query)
+        product = product.first()
         
-        # Затем удаляем сам товар через SQL запрос
-        delete_product = text("DELETE FROM product WHERE sku = :sku")
-        result = await db.execute(delete_product, {"sku": sku})
-        
-        if result.rowcount == 0:
+        if not product:
             raise HTTPException(
                 status_code=404,
                 detail="Товар не найден"
             )
+
+        # Сначала удаляем все связанные остатки
+        stocks_query = select(Stock).where(Stock.sku == sku)
+        stocks = await db.exec(stocks_query)
+        for stock in stocks:
+            await db.delete(stock)
         
+        # Применяем удаление остатков
+        await db.flush()
+            
+        # Затем удаляем сам товар
+        await db.delete(product)
         await db.commit()
+        
         return {"message": "Товар успешно удален"}
         
     except Exception as e:

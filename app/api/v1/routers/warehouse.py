@@ -19,7 +19,7 @@ from app.services.allegro.pydantic_models import InitializeAuth
 from app.models.user import User as UserModel
 from app.services.warehouse import manager
 from app.services.warehouse.manager import Warehouses
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from openpyxl.styles import Font, Alignment
 from urllib.parse import quote
 
@@ -43,6 +43,10 @@ class AddItem(BaseModel):
     warehouse: str
     quantity: int
 
+class SaleFromOrder(BaseModel):
+    order_id: str
+    line_items: List[dict]
+    warehouse: str = Field(default=Warehouses.A.value, description="Склад для списания товаров")
 
 @router.get("/operations", response_class=HTMLResponse)
 async def operations_page(request: Request, current_user: User = Depends(deps.get_current_user_optional)):
@@ -689,3 +693,55 @@ async def export_stock_with_sales_no_images(
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         headers=headers
     )
+
+@router.post('/sale-from-order/', summary='Списание товаров из заказа')
+async def sale_from_order(
+    sale_data: SaleFromOrder,
+    manager: manager.InventoryManager = Depends(manager.get_manager)
+):
+    '''Списывает товары из заказа как продажу только если все товары есть в наличии.'''
+    try:
+        # Сначала проверяем наличие всех товаров
+        for item in sale_data.line_items:
+            if 'external_id' in item and item['external_id']:
+                stocks = manager.get_stock_by_sku(item['external_id'])
+                if not stocks or sale_data.warehouse not in stocks or stocks[sale_data.warehouse] < 1:
+                    return JSONResponse(
+                        status_code=400,
+                        content={
+                            'status': 'error',
+                            'message': f'Товар {item["external_id"]} отсутствует на складе {sale_data.warehouse}'
+                        }
+                    )
+
+        # Если все товары есть в наличии, выполняем списание
+        for item in sale_data.line_items:
+            if 'external_id' in item and item['external_id']:
+                try:
+                    manager.remove_as_sale(
+                        sku=item['external_id'],
+                        warehouse=sale_data.warehouse,
+                        quantity=1  # Списываем по одной единице для каждой позиции
+                    )
+                except Exception as e:
+                    return JSONResponse(
+                        status_code=400,
+                        content={
+                            'status': 'error',
+                            'message': f'Ошибка при списании товара {item["external_id"]}: {str(e)}'
+                        }
+                    )
+        
+        return JSONResponse({
+            'status': 'success',
+            'message': f'Успешно списаны товары из заказа {sale_data.order_id}'
+        })
+        
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                'status': 'error',
+                'message': f'Ошибка при обработке заказа: {str(e)}'
+            }
+        )
