@@ -129,4 +129,4 @@ async def register_user(
 @router.post("/logout")
 async def logout(response: Response):
     response.delete_cookie("access_token", path="/")
-    return JSONResponse({"msg": "Logged out"})
+    return {"msg": "Logged out"}
