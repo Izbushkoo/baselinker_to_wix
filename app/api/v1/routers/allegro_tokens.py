@@ -83,12 +83,53 @@ async def delete_token_route(
     token_id: str,
     database: AsyncSession = Depends(deps.get_async_session)
 ):
-    """Удаляет токен по ID."""
+    """Удаляет токен по ID и все связанные заказы и связанные сущности."""
     logging.info(f"Access to allegro tokens add")
+    from sqlalchemy import text
     try:
+        # 1. Удаляем связи в таблице order_line_items
+        delete_items = text("""
+            DELETE FROM order_line_items 
+            WHERE order_id IN (
+                SELECT id FROM allegro_orders WHERE token_id = :token_id
+            )
+        """).bindparams(token_id=token_id)
+        await database.exec(delete_items)
+        
+        # 2. Удаляем заказы
+        delete_orders = text("""
+            DELETE FROM allegro_orders 
+            WHERE token_id = :token_id
+        """).bindparams(token_id=token_id)
+        await database.exec(delete_orders)
+        
+        # 3. Удаляем неиспользуемые товарные позиции
+        delete_unused_items = text("""
+            DELETE FROM allegro_line_items 
+            WHERE id NOT IN (
+                SELECT line_item_id FROM order_line_items
+            )
+        """)
+        await database.exec(delete_unused_items)
+        
+        # 4. Удаляем неиспользуемых покупателей
+        delete_unused_buyers = text("""
+            DELETE FROM allegro_buyers 
+            WHERE id NOT IN (
+                SELECT buyer_id FROM allegro_orders
+            )
+        """)
+        await database.exec(delete_unused_buyers)
+        
+        await database.flush()
+        
+        # 5. Удаляем сам токен
         token = await delete_token(database, token_id)
-    except Exception :
-        return HTTPException(404, "Smth went wrong. Not deleted or not exists")
+        await database.commit()
+    except Exception as e:
+        logging.error(f"Ошибка при удалении токена и заказов: {e}")
+        await database.rollback()
+        raise HTTPException(500, "Ошибка при удалении токена и связанных заказов")
     else:
         return TokenOfAllegro(**token.model_dump(exclude_none=True))
 
