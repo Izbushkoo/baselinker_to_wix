@@ -79,6 +79,12 @@ def transform_product(server_product: dict, lang_code: str = "en") -> DetailedPr
     # Если нужно, можно добавить извлечённые ссылки в список изображений
     images.extend(extracted_image_links)
 
+    # Удаляем дубликаты изображений
+    images = list(set(images))
+
+    # Ограничиваем количество изображений до 15
+    images = images[:15]
+
 
     return DetailedProduct(
         ean=ean,
