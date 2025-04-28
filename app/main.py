@@ -46,8 +46,8 @@ async def home(
     request: Request,
     current_user: Optional[UserModel] = Depends(deps.get_current_user_optional)
 ):
-    logger.info(f"request: {request.headers}")
-    logger.info(f"Current user: {current_user.email if current_user else 'Not authenticated'}")
+    # logger.info(f"request: {request.headers}")
+    # logger.info(f"Current user: {current_user.email if current_user else 'Not authenticated'}")
     
     return templates.TemplateResponse("index.html", {
         "request": request,
