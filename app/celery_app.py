@@ -36,6 +36,8 @@ from app.services.warehouse import manager
 from app.services.warehouse.manager import InventoryManager
 from app.services.tg_client import TelegramManager
 from app.models.allegro_order import AllegroOrder
+import csv
+import requests
 
 def get_redis_client():
     redis_url = os.getenv("CELERY_REDIS_URL", "redis://redis:6379/0")
