@@ -37,8 +37,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Обработчик отправки формы
     document.getElementById('transferForm').addEventListener('submit', async function(event) {
+        console.log('Форма отправлена');
         event.preventDefault();
         const formData = new FormData(event.target);
+        
+        console.log('Данные формы:', {
+            sku: formData.get('sku'),
+            from_warehouse: formData.get('from_warehouse'),
+            to_warehouse: formData.get('to_warehouse'),
+            quantity: formData.get('quantity')
+        });
 
         try {
             const requestData = {

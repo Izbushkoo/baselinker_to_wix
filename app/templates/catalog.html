@@ -149,73 +149,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
-    // Функция для безопасной загрузки скрипта с учетом протокола
-    function loadScript(src) {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            // Проверяем, работаем ли мы по HTTPS
-            if (window.location.protocol === 'https:' && src.startsWith('http:')) {
-                src = src.replace('http:', 'https:');
-            }
-            script.src = src;
-            script.onload = resolve;
-            script.onerror = () => reject(new Error(`Ошибка загрузки скрипта ${src}`));
-            document.body.appendChild(script);
-        });
-    }
-
-    // Функция для инициализации модального окна
-    function initTransferModal() {
-        window.openTransferModal = function(button) {
-            const sku = button.dataset.productSku;
-            const name = button.dataset.productName;
-            
-            console.log('Открытие модального окна:', { sku, name });
-            
-            const modalTemplate = document.getElementById('transferModal');
-            if (!modalTemplate) {
-                console.error('Модальное окно не найдено');
-                return;
-            }
-            
-            // Заполняем данные в модальном окне
-            document.getElementById('transferSku').value = sku;
-            document.getElementById('productName').textContent = name;
-            
-            // Показываем модальное окно
-            modalTemplate.classList.remove('hidden');
-            window.currentModal = modalTemplate;
-            
-            // Сбрасываем форму
-            document.getElementById('transferForm').reset();
-        };
-
-        window.closeTransferModal = function() {
-            const modalTemplate = document.getElementById('transferModal');
-            if (modalTemplate) {
-                modalTemplate.classList.add('hidden');
-                document.getElementById('transferForm').reset();
-                window.currentModal = null;
-            }
-        };
-    }
-
-    // Загружаем inventory.js и инициализируем функциональность
-    document.addEventListener('DOMContentLoaded', async () => {
-        try {
-            // Инициализируем базовые функции модального окна
-            initTransferModal();
-            
-            // Загружаем основной скрипт
-            await loadScript("{{ url_for('static', path='js/inventory.js') }}");
-            console.log('inventory.js успешно загружен');
-        } catch (error) {
-            console.error('Ошибка при загрузке inventory.js:', error);
-            alert('Произошла ошибка при загрузке скрипта. Пожалуйста, обновите страницу.');
-        }
-    });
-</script>
+<script src="{{ url_for('static', path='js/inventory.js') }}"></script>
 {% endblock %}
 
 </body>
