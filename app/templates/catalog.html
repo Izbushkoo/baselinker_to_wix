@@ -149,7 +149,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{{ url_for('static', path='js/inventory.js') }}"></script>
+<script src="{{ url_for('static', path='js/inventory.js').replace('http://', 'https://') }}"></script>
 {% endblock %}
 
 </body>
