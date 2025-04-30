@@ -424,6 +424,7 @@ async def transfer_item(
     except ValueError as e:
         raise HTTPException(status_code=400, detail='Неверное значение склада')
     except Exception as e:
+        logging.error(f"Ошибка при перемещении товара: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get('/product/{sku}/sales/', summary='История продаж товара')
