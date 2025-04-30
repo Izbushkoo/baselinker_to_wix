@@ -41,27 +41,33 @@ document.addEventListener('DOMContentLoaded', function() {
         const formData = new FormData(event.target);
 
         try {
-            console.log('Отправка данных:', {
+            const requestData = {
                 sku: formData.get('sku'),
                 from_warehouse: formData.get('from_warehouse'),
                 to_warehouse: formData.get('to_warehouse'),
-                quantity: formData.get('quantity')
-            });
+                quantity: parseInt(formData.get('quantity'))
+            };
+            
+            console.log('Начало отправки запроса');
+            console.log('URL:', '/api/warehouse/transfer-item/');
+            console.log('Данные запроса:', requestData);
 
             const response = await fetch('/api/warehouse/transfer-item/', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    sku: formData.get('sku'),
-                    from_warehouse: formData.get('from_warehouse'),
-                    to_warehouse: formData.get('to_warehouse'),
-                    quantity: parseInt(formData.get('quantity'))
-                })
+                body: JSON.stringify(requestData)
+            });
+
+            console.log('Получен ответ:', {
+                status: response.status,
+                statusText: response.statusText,
+                headers: Object.fromEntries(response.headers.entries())
             });
 
             const data = await response.json();
+            console.log('Данные ответа:', data);
 
             if (!response.ok) {
                 throw new Error(data.detail || 'Ошибка при перемещении товара');
@@ -71,10 +77,14 @@ document.addEventListener('DOMContentLoaded', function() {
             alert(data.message || 'Товар успешно перемещен');
 
             // Закрываем модальное окно и обновляем страницу
-            closeTransferModal();
+            window.closeTransferModal();
             window.location.reload();
         } catch (error) {
-            console.error('Ошибка:', error);
+            console.error('Подробная ошибка:', {
+                name: error.name,
+                message: error.message,
+                stack: error.stack
+            });
             alert(error.message);
         }
     });

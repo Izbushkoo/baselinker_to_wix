@@ -149,238 +149,71 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{{ url_for('static', path='js/inventory.js') }}"></script>
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const searchInput = document.getElementById('searchInput');
-        const pageSizeSelect = document.getElementById('pageSizeSelect');
-        const exportButton = document.getElementById('exportSelected');
-        const exportCount = document.getElementById('exportCount');
-        const selectedCount = document.getElementById('selectedCount');
-        const productsList = document.getElementById('productsList');
-        const loadingState = document.getElementById('loadingState');
-        const emptyState = document.getElementById('emptyState');
-        const selectAllBtn = document.getElementById('selectAll');
-        const deselectAllBtn = document.getElementById('deselectAll');
-        
-        let selectedProducts = new Set();
-        let currentPage = Number('{{ page }}');
-        let pageSize = Number('{{ page_size }}');
-        let debounceTimer;
+    // Функция для безопасной загрузки скрипта с учетом протокола
+    function loadScript(src) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            // Проверяем, работаем ли мы по HTTPS
+            if (window.location.protocol === 'https:' && src.startsWith('http:')) {
+                src = src.replace('http:', 'https:');
+            }
+            script.src = src;
+            script.onload = resolve;
+            script.onerror = () => reject(new Error(`Ошибка загрузки скрипта ${src}`));
+            document.body.appendChild(script);
+        });
+    }
 
-        function updateExportButton() {
-            const count = selectedProducts.size;
-            exportButton.disabled = count === 0;
-            exportCount.textContent = count > 0 ? `(${count})` : '';
-            exportCount.classList.toggle('hidden', count === 0);
-            selectedCount.textContent = count;
-        }
-
-        function handleCheckboxChange(event) {
-            const checkbox = event.target;
-            const productId = checkbox.dataset.productId;
+    // Функция для инициализации модального окна
+    function initTransferModal() {
+        window.openTransferModal = function(button) {
+            const sku = button.dataset.productSku;
+            const name = button.dataset.productName;
             
-            if (checkbox.checked) {
-                selectedProducts.add(productId);
-            } else {
-                selectedProducts.delete(productId);
+            console.log('Открытие модального окна:', { sku, name });
+            
+            const modalTemplate = document.getElementById('transferModal');
+            if (!modalTemplate) {
+                console.error('Модальное окно не найдено');
+                return;
             }
             
-            updateExportButton();
-        }
-
-        // Добавляем делегирование событий для чекбоксов
-        productsList.addEventListener('change', (event) => {
-            if (event.target.matches('input[type="checkbox"]')) {
-                handleCheckboxChange(event);
-            }
-        });
-
-        function showLoading() {
-            loadingState.classList.remove('hidden');
-            productsList.classList.add('opacity-50');
-            emptyState.classList.add('hidden');
-        }
-
-        function hideLoading() {
-            loadingState.classList.add('hidden');
-            productsList.classList.remove('opacity-50');
-        }
-
-        function showEmptyState() {
-            emptyState.classList.remove('hidden');
-            productsList.classList.add('hidden');
-        }
-
-        function hideEmptyState() {
-            emptyState.classList.add('hidden');
-            productsList.classList.remove('hidden');
-        }
-
-        async function loadProducts(page = currentPage) {
-            showLoading();
-            try {
-                const params = new URLSearchParams({
-                    page: page,
-                    page_size: pageSize,
-                    search: searchInput.value
-                });
-
-                const response = await fetch(`/api/products?${params}`);
-                
-                if (!response.ok) {
-                    throw new Error('Не удалось загрузить товары');
-                }
-
-                const data = await response.json();
-                
-                if (!data.products || data.products.length === 0) {
-                    showEmptyState();
-                } else {
-                    hideEmptyState();
-                    productsList.innerHTML = '';
-                    data.products.forEach(item => {
-                        const template = document.createElement('template');
-                        template.innerHTML = item.html.trim();
-                        productsList.appendChild(template.content.firstChild);
-                    });
-
-                    // После загрузки новых товаров восстанавливаем состояние чекбоксов
-                    selectedProducts.forEach(productId => {
-                        const checkbox = productsList.querySelector(`input[data-product-id="${productId}"]`);
-                        if (checkbox) {
-                            checkbox.checked = true;
-                        }
-                    });
-                }
-
-                return data;
-            } catch (error) {
-                console.error('Ошибка при загрузке товаров:', error);
-                return null;
-            } finally {
-                hideLoading();
-            }
-        }
-
-        async function exportProducts(productIds) {
-            const exportButton = document.getElementById('exportSelected');
-            const originalButtonHTML = `
-                <svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                <span>Экспортировать</span>
-                <span class="ml-1.5 hidden" id="exportCount"></span>
-            `;
+            // Заполняем данные в модальном окне
+            document.getElementById('transferSku').value = sku;
+            document.getElementById('productName').textContent = name;
             
-            try {
-                exportButton.disabled = true;
-                exportButton.innerHTML = `
-                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Экспортируем...
-                `;
-                
-                const params = new URLSearchParams();
-                Array.from(productIds).forEach(sku => params.append('skus', sku));
-                
-                const response = await fetch(`/api/warehouse/export/stock/?${params}`, {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
+            // Показываем модальное окно
+            modalTemplate.classList.remove('hidden');
+            window.currentModal = modalTemplate;
+            
+            // Сбрасываем форму
+            document.getElementById('transferForm').reset();
+        };
 
-                if (!response.ok) {
-                    throw new Error('Не удалось экспортировать товары');
-                }
-
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'products_export.xlsx';
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                a.remove();
-            } catch (error) {
-                console.error('Ошибка при экспорте товаров:', error);
-                alert('Не удалось экспортировать товары. Пожалуйста, попробуйте еще раз.');
-            } finally {
-                exportButton.disabled = false;
-                exportButton.innerHTML = originalButtonHTML;
-                // Обновляем счетчик после восстановления HTML кнопки
-                const exportCount = document.getElementById('exportCount');
-                if (exportCount) {
-                    exportCount.textContent = productIds.size > 0 ? `(${productIds.size})` : '';
-                    exportCount.classList.toggle('hidden', productIds.size === 0);
-                }
+        window.closeTransferModal = function() {
+            const modalTemplate = document.getElementById('transferModal');
+            if (modalTemplate) {
+                modalTemplate.classList.add('hidden');
+                document.getElementById('transferForm').reset();
+                window.currentModal = null;
             }
+        };
+    }
+
+    // Загружаем inventory.js и инициализируем функциональность
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            // Инициализируем базовые функции модального окна
+            initTransferModal();
+            
+            // Загружаем основной скрипт
+            await loadScript("{{ url_for('static', path='js/inventory.js') }}");
+            console.log('inventory.js успешно загружен');
+        } catch (error) {
+            console.error('Ошибка при загрузке inventory.js:', error);
+            alert('Произошла ошибка при загрузке скрипта. Пожалуйста, обновите страницу.');
         }
-
-        function debounce(func, wait) {
-            return function executedFunction(...args) {
-                const later = () => {
-                    clearTimeout(debounceTimer);
-                    func(...args);
-                };
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(later, wait);
-            };
-        }
-
-        // Event Listeners
-        searchInput.addEventListener('input', debounce(() => {
-            currentPage = 1;
-            loadProducts();
-        }, 300));
-
-        pageSizeSelect.addEventListener('change', () => {
-            pageSize = Number(pageSizeSelect.value);
-            currentPage = 1;
-            loadProducts();
-        });
-
-        exportButton.addEventListener('click', () => {
-            if (selectedProducts.size > 0) {
-                exportProducts(selectedProducts);
-            }
-        });
-
-        function selectAllProducts() {
-            const checkboxes = productsList.querySelectorAll('input[type="checkbox"]');
-            checkboxes.forEach(checkbox => {
-                if (!checkbox.checked) {
-                    checkbox.checked = true;
-                    selectedProducts.add(checkbox.dataset.productId);
-                }
-            });
-            updateExportButton();
-        }
-
-        function deselectAllProducts() {
-            const checkboxes = productsList.querySelectorAll('input[type="checkbox"]');
-            checkboxes.forEach(checkbox => {
-                if (checkbox.checked) {
-                    checkbox.checked = false;
-                    selectedProducts.delete(checkbox.dataset.productId);
-                }
-            });
-            updateExportButton();
-        }
-
-        // Event Listeners для новых кнопок
-        selectAllBtn.addEventListener('click', selectAllProducts);
-        deselectAllBtn.addEventListener('click', deselectAllProducts);
-
-        // Initialize
-        updateExportButton();
-
-        // Устанавливаем начальное значение
-        pageSizeSelect.value = pageSize;
     });
 </script>
 {% endblock %}
