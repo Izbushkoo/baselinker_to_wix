@@ -288,6 +288,8 @@ function displayOrders(orders) {
         const orderElement = document.createElement('div');
         orderElement.className = 'bg-gray-800 rounded-lg shadow overflow-hidden';
         
+        const isCancelled = order.status === 'CANCELLED';
+        
         const mainInfo = `
             <div class="p-4 cursor-pointer" onclick="toggleOrderDetails('${order.id}')">
                 <div class="flex items-center justify-between">
@@ -295,16 +297,18 @@ function displayOrders(orders) {
                         <div class="flex items-center space-x-4 flex-wrap">
                             <span class="text-lg font-medium text-white">ID: ${order.id}</span>
                             <span class="text-sm text-gray-400">${new Date(order.updated_at).toLocaleString()}</span>
-                            ${getOrderStatus(order)}
-                            ${getShipmentStatus(order)}
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${order.is_stock_updated ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
-                                ${order.is_stock_updated ? 'Списано' : 'Не списано'}
-                            </span>
-                            ${!order.is_stock_updated ? `
-                                <button onclick="event.stopPropagation(); saleFromOrder('${order.id}')" 
-                                        class="ml-2 px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                    Списать
-                                </button>
+                            ${isCancelled ? getOrderStatus(order) : ''}
+                            ${!isCancelled ? `
+                                ${getShipmentStatus(order)}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${order.is_stock_updated ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                                    ${order.is_stock_updated ? 'Списано' : 'Не списано'}
+                                </span>
+                                ${!order.is_stock_updated ? `
+                                    <button onclick="event.stopPropagation(); saleFromOrder('${order.id}')" 
+                                            class="ml-2 px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        Списать
+                                    </button>
+                                ` : ''}
                             ` : ''}
                         </div>
                     </div>
