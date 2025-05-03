@@ -68,7 +68,7 @@ async def upload_incoming(
     ean_col: str = 'EAN',
     name_col: str = 'name',
     image_col: str = 'Foto',
-    header: int = 1,
+    header: int = 0,
     manager: manager.InventoryManager = Depends(manager.get_manager)
 ):
     if not file.filename.lower().endswith(('.xls', '.xlsx')):
