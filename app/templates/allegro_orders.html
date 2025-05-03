@@ -253,6 +253,30 @@ function formatAddress(buyer) {
     }
 }
 
+function getOrderStatus(order) {
+    const statusColors = {
+        'BOUGHT': 'bg-purple-100 text-purple-800',
+        'FILLED_IN': 'bg-yellow-100 text-yellow-800',
+        'READY_FOR_PROCESSING': 'bg-blue-100 text-blue-800',
+        'CANCELLED': 'bg-red-100 text-red-800'
+    };
+
+    const statusLabels = {
+        'BOUGHT': 'Оплачен',
+        'FILLED_IN': 'Заполнен',
+        'READY_FOR_PROCESSING': 'Готов к обработке',
+        'CANCELLED': 'Отменён'
+    };
+
+    const status = order.status || 'BOUGHT';
+    const colorClass = statusColors[status] || 'bg-gray-100 text-gray-800';
+    const label = statusLabels[status] || status;
+
+    return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorClass}">
+        ${label}
+    </span>`;
+}
+
 function displayOrders(orders) {
     const container = document.getElementById('orders-container');
     container.innerHTML = '';
@@ -271,6 +295,7 @@ function displayOrders(orders) {
                         <div class="flex items-center space-x-4 flex-wrap">
                             <span class="text-lg font-medium text-white">ID: ${order.id}</span>
                             <span class="text-sm text-gray-400">${new Date(order.updated_at).toLocaleString()}</span>
+                            ${getOrderStatus(order)}
                             ${getShipmentStatus(order)}
                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${order.is_stock_updated ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
                                 ${order.is_stock_updated ? 'Списано' : 'Не списано'}
