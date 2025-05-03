@@ -93,7 +93,8 @@ class AllegroStockService:
         
         try:
             # Проверяем статус и флаг списания
-            if order.is_stock_updated:
+            fulfillment_status = order.fulfillment.get('status')
+            if fulfillment_status != 'SENT' or order.is_stock_updated:
                 return False
 
             # Помечаем заказ как обработанный
