@@ -143,3 +143,6 @@ async def check_auth_status(device_code: str, account_name: str):
     except Exception as e:
         logging.error(f"Error checking auth status: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
