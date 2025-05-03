@@ -288,9 +288,9 @@ class InventoryManager:
         file_bytes: bytes,
         warehouse: str,
         sku_col: str = 'sku',
-        qty_col: str = 'quantity',
-        ean_col: str = 'ean',
-        name_col: str = 'name',
+        qty_col: str = 'Кол-во',
+        ean_col: str = 'EAN',
+        name_col: str = 'Name',
         image_col: str = 'Foto',
         header: int = 0
     ):
@@ -313,7 +313,7 @@ class InventoryManager:
                 'name': headers.index(name_col)
             }
         except ValueError as e:
-            raise ValueError(f"Не найдена одна из обязательных колонок. Требуются: {sku_col}, {qty_col}, {ean_col}, {name_col}")
+            raise ValueError(f"Не найдена одна из обязательных колонок. Требуются: {sku_col}, {qty_col}, {ean_col}, {name_col}, {image_col}")
 
         # Создаем словарь изображений по номерам строк
         images_by_row = {}
