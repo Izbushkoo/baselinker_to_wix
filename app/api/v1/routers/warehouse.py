@@ -64,9 +64,9 @@ async def upload_incoming(
     file: UploadFile = File(...),
     warehouse: Warehouses = Query(..., description="Склад для импорта товаров"),
     sku_col: str = 'sku',
-    qty_col: str = 'Кол-во',
+    qty_col: str = 'quantity',
     ean_col: str = 'EAN',
-    name_col: str = 'Name',
+    name_col: str = 'name',
     image_col: str = 'Foto',
     header: int = 1,
     manager: manager.InventoryManager = Depends(manager.get_manager)
