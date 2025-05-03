@@ -303,7 +303,7 @@ class InventoryManager:
         
         # Получаем заголовки и их индексы
         headers = [str(cell.value) for cell in ws[header + 1]]
-        
+        logging.info(f"Найдены заголовки: {headers}")
         # Находим индексы нужных колонок
         try:
             col_indices = {
