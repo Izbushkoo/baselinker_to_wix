@@ -730,21 +730,20 @@ def _sync_orders_core(
         redis_client = get_redis_client()
 
         # 1) Определяем время с которого синхроним
-        if from_date is not None:
-            last_sync_time = _parse_date_val(from_date)
-            logging.info(f"Начинаем синхронизацию с переданной даты {last_sync_time}")
-        else:
-            raw = redis_client.get(f"last_sync_time_{token_id}")
-            if raw:
-                try:
-                    last_sync_time = datetime.fromisoformat(raw.decode())
-                    logging.info(f"Начинаем с последней точки: {last_sync_time}")
-                except ValueError:
-                    last_sync_time = datetime.utcnow() - timedelta(days=30)
-                    logging.warning(f"Не смогли парсить Redis, берём 30 дней назад: {last_sync_time}")
-            else:
+        raw = redis_client.get(f"last_sync_time_{token_id}")
+        if raw:
+            try:
+                # Если есть время последней синхронизации, берем его минус 10 дней
+                last_sync_time = datetime.fromisoformat(raw.decode()) - timedelta(days=10)
+                logging.info(f"Начинаем с последней точки минус 10 дней: {last_sync_time}")
+            except ValueError:
+                # При ошибке парсинга - 30 дней
                 last_sync_time = datetime.utcnow() - timedelta(days=30)
-                logging.info(f"Нет записи в Redis, берём 30 дней назад: {last_sync_time}")
+                logging.warning(f"Не смогли парсить Redis, берём 30 дней назад: {last_sync_time}")
+        else:
+            # Если нет записи - 30 дней
+            last_sync_time = datetime.utcnow() - timedelta(days=30)
+            logging.info(f"Нет записи в Redis, берём 30 дней назад: {last_sync_time}")
 
         session: Session = SessionLocal()
         try:
@@ -778,31 +777,44 @@ def _sync_orders_core(
                 if not forms:
                     break
 
-                to_update = []
-                for f in forms:
-                    oid = f["id"]
-                    upd = datetime.fromisoformat(f["updatedAt"].replace("Z", "+00:00"))
-                    if oid not in existing or upd.replace(tzinfo=None) > existing[oid].replace(tzinfo=None):
-                        to_update.append(oid)
-
-                for oid in to_update:
+                # Обрабатываем все заказы на странице
+                for form in forms:
+                    order_id = form["id"]
                     allegro_rate_limiter.wait_if_needed()
+                    
+                    # Получаем детали заказа
                     details = order_service.api_service.get_order_details(
-                        token.access_token, oid
+                        token.access_token, order_id
                     )
-                    # обновляем или создаём
-                    if oid in existing:
-                        order = order_service.repository.update_order(token_id, oid, details)
-                    else:
-                        order = order_service.repository.add_order(token_id, details)
-                    synced += 1
+                    
+                    try:
+                        # Обновляем существующий или создаем новый заказ
+                        if order_id in existing:
+                            order = order_service.repository.update_order(token_id, order_id, details)
+                        else:
+                            order = order_service.repository.add_order(token_id, details)
+                        synced += 1
 
-                    # вызываем тот метод, что передали
-                    if updater(order, warehouse=Warehouses.A):
-                        stock_updates += 1
+                        # Обновляем статус склада
+                        if updater(order, warehouse=Warehouses.A):
+                            stock_updates += 1
+                            
+                    except Exception as e:
+                        if "duplicate key value violates unique constraint" in str(e):
+                            # Если это дублирование покупателя, получаем существующего и пробуем снова
+                            logger.info(f"Найден существующий покупатель для заказа {order_id}, используем его")
+                            order = order_service.repository.add_order_with_existing_buyer(token_id, details)
+                            if updater(order, warehouse=Warehouses.A):
+                                stock_updates += 1
+                            synced += 1
+                        else:
+                            logger.error(f"Ошибка при обработке заказа {order_id}: {str(e)}")
+                            continue
 
+                # Если получили меньше заказов чем limit, значит это последняя страница
                 if len(forms) < limit:
                     break
+                    
                 offset += limit
 
             # сохраняем точку
