@@ -12,7 +12,7 @@ async function handleFilterChange() {
     searchTimeout = setTimeout(async () => {
         try {
             // Получаем значения фильтров
-            const search = document.getElementById('searchQuery').value;
+            const search = document.getElementById('searchInput').value;
             const pageSize = document.getElementById('pageSize').value;
             
             // Формируем URL с параметрами
@@ -110,7 +110,7 @@ function updatePagination(currentPage, totalPages) {
 
 // Функция для перехода на страницу
 async function goToPage(page) {
-    const search = document.getElementById('searchQuery').value;
+    const search = document.getElementById('searchInput').value;
     const pageSize = document.getElementById('pageSize').value;
     
     const params = new URLSearchParams({
@@ -162,7 +162,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const modalTemplate = document.getElementById('transferModal');
     
     // Добавляем обработчики для поиска и изменения количества товаров
-    const searchInput = document.getElementById('searchQuery');
+    const searchInput = document.getElementById('searchInput');
     const pageSizeSelect = document.getElementById('pageSize');
     
     console.log('Инициализация обработчиков:', { searchInput, pageSizeSelect });
