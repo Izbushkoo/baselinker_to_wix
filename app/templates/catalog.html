@@ -8,6 +8,9 @@
     window.location.href = '{{ url_for("login", next=request.path) }}';
 </script>
 {% else %}
+<!-- Подключаем inventory.js в начале -->
+<script src="{{ url_for('static', path='js/inventory.js').__str__().replace('http://', 'https://') }}"></script>
+
 <div class="min-h-screen bg-gray-50">
     <!-- Фиксированный хедер каталога -->
     <div class="sticky top-16 left-0 right-0 bg-white z-10 border-b border-gray-200 shadow-sm">
