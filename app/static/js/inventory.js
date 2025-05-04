@@ -161,6 +161,26 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentModal = null;
     const modalTemplate = document.getElementById('transferModal');
     
+    // Добавляем обработчики для поиска и изменения количества товаров
+    const searchInput = document.getElementById('searchQuery');
+    const pageSizeSelect = document.getElementById('pageSize');
+    
+    console.log('Инициализация обработчиков:', { searchInput, pageSizeSelect });
+    
+    if (searchInput) {
+        console.log('Добавляем обработчик поиска');
+        searchInput.addEventListener('input', () => {
+            console.log('Поиск:', searchInput.value);
+            handleFilterChange();
+        });
+    } else {
+        console.error('Элемент поиска не найден!');
+    }
+    
+    if (pageSizeSelect) {
+        pageSizeSelect.addEventListener('change', handleFilterChange);
+    }
+    
     if (!modalTemplate) {
         console.error('Модальное окно не найдено');
         return;
@@ -246,17 +266,5 @@ document.addEventListener('DOMContentLoaded', function() {
         modalContent.addEventListener('click', function(event) {
             event.stopPropagation();
         });
-    }
-
-    // Добавляем обработчики для поиска и изменения количества товаров
-    const searchInput = document.getElementById('searchQuery');
-    const pageSizeSelect = document.getElementById('pageSize');
-    
-    if (searchInput) {
-        searchInput.addEventListener('input', handleFilterChange);
-    }
-    
-    if (pageSizeSelect) {
-        pageSizeSelect.addEventListener('change', handleFilterChange);
     }
 }); 
