@@ -106,7 +106,22 @@ class RedisScheduler(PersistentScheduler):
             # 3) Обрабатываем разные типы raw_sched
             if isinstance(raw_sched, (schedule, crontab)):
                 entry_schedule = raw_sched
-
+            elif isinstance(raw_sched, str) and "crontab" in raw_sched:
+                # Преобразуем строковое представление crontab обратно в объект
+                try:
+                    # Извлекаем параметры из строки
+                    import re
+                    pattern = r"crontab\(([^)]+)\)"
+                    match = re.search(pattern, raw_sched)
+                    if match:
+                        params = match.group(1)
+                        # Безопасное выполнение crontab с извлеченными параметрами
+                        entry_schedule = eval(f"crontab({params})")
+                    else:
+                        entry_schedule = crontab()
+                except Exception as e:
+                    logger.error(f"Ошибка при парсинге crontab: {str(e)}")
+                    entry_schedule = crontab()
             else:
                 # Пытаемся привести к числу секунд
                 try:
@@ -155,18 +170,50 @@ celery.conf.update(
     broker_connection_retry_on_startup=True  # Добавляем эту настройку для устранения предупреждения
 )
 
-celery.conf.beat_scheduler = "app.celery_app.RedisScheduler"
-# Настройка периодических задач
-celery.conf.beat_schedule = {
+# Определяем расписание по умолчанию
+DEFAULT_BEAT_SCHEDULE = {
     'backup-base-daily': {
         'task': 'app.backup_base',
-        'schedule': crontab(hour="3", minute="10"),
+        'schedule': crontab(hour="3", minute="10").__repr__(),
     },
     'check-and-update-stock': {
         'task': 'app.celery_app.check_and_update_stock',
         'schedule': 1200.0,  # 20 минут = 1200 секунд
     },
 }
+
+def initialize_beat_schedule():
+    """Инициализирует расписание в Redis, если оно отсутствует"""
+    try:
+        redis_client = get_redis_client()
+        schedule_raw = redis_client.get("celery_beat_schedule")
+        
+        if not schedule_raw:
+            logger.info("Инициализация начального расписания в Redis")
+            redis_client.set("celery_beat_schedule", json.dumps(DEFAULT_BEAT_SCHEDULE))
+            logger.info("Начальное расписание успешно установлено")
+        else:
+            # Проверяем наличие задач по умолчанию в существующем расписании
+            current_schedule = json.loads(schedule_raw.decode("utf-8"))
+            schedule_updated = False
+            
+            for task_name, task_config in DEFAULT_BEAT_SCHEDULE.items():
+                if task_name not in current_schedule:
+                    current_schedule[task_name] = task_config
+                    schedule_updated = True
+            
+            if schedule_updated:
+                logger.info("Добавление отсутствующих задач по умолчанию в существующее расписание")
+                redis_client.set("celery_beat_schedule", json.dumps(current_schedule))
+                logger.info("Расписание успешно обновлено")
+            
+    except Exception as e:
+        logger.error(f"Ошибка при инициализации расписания: {str(e)}")
+
+celery.conf.beat_scheduler = "app.celery_app.RedisScheduler"
+
+# Инициализируем расписание
+initialize_beat_schedule()
 
 celery.conf.timezone = 'UTC'
 celery.conf.worker_pool = 'threads'
