@@ -336,5 +336,8 @@
     </script>
         
     {% block extra_js %}{% endblock %}
+    
+    <!-- Подключаем inventory.js в самом конце -->
+    <script src="{{ url_for('static', path='js/inventory.js').__str__().replace('http://', 'https://') }}"></script>
 </body>
 </html> 

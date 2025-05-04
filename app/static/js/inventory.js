@@ -12,8 +12,8 @@ async function handleFilterChange() {
     searchTimeout = setTimeout(async () => {
         try {
             // Получаем значения фильтров
-            const search = document.getElementById('searchInput').value;
-            const pageSize = document.getElementById('pageSizeSelect').value;
+            const search = document.getElementById('searchQuery').value;
+            const pageSize = document.getElementById('pageSize').value;
             
             // Формируем URL с параметрами
             const params = new URLSearchParams({
@@ -23,7 +23,7 @@ async function handleFilterChange() {
             });
             
             // Делаем запрос к API
-            const response = await fetch(`/api/v1/products?${params.toString()}`);
+            const response = await fetch(`/api/products?${params.toString()}`);
             if (!response.ok) {
                 throw new Error('Ошибка при получении данных');
             }
@@ -110,8 +110,8 @@ function updatePagination(currentPage, totalPages) {
 
 // Функция для перехода на страницу
 async function goToPage(page) {
-    const search = document.getElementById('searchInput').value;
-    const pageSize = document.getElementById('pageSizeSelect').value;
+    const search = document.getElementById('searchQuery').value;
+    const pageSize = document.getElementById('pageSize').value;
     
     const params = new URLSearchParams({
         search: search,
@@ -124,7 +124,7 @@ async function goToPage(page) {
     document.getElementById('productsList').classList.add('hidden');
     
     try {
-        const response = await fetch(`/api/v1/products?${params.toString()}`);
+        const response = await fetch(`/api/products?${params.toString()}`);
         if (!response.ok) {
             throw new Error('Ошибка при получении данных');
         }
@@ -249,8 +249,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Добавляем обработчики для поиска и изменения количества товаров
-    const searchInput = document.getElementById('searchInput');
-    const pageSizeSelect = document.getElementById('pageSizeSelect');
+    const searchInput = document.getElementById('searchQuery');
+    const pageSizeSelect = document.getElementById('pageSize');
     
     if (searchInput) {
         searchInput.addEventListener('input', handleFilterChange);
