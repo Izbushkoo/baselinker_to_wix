@@ -172,13 +172,13 @@ celery.conf.update(
 
 # Определяем расписание по умолчанию
 DEFAULT_BEAT_SCHEDULE = {
-    'backup-base-daily': {
-        'task': 'app.backup_base',
-        'schedule': crontab(hour="3", minute="10").__repr__(),
-    },
+    # 'backup-base-daily': {
+    #     'task': 'app.backup_base',
+    #     'schedule': crontab(hour="3", minute="10").__repr__(),
+    # },
     'check-and-update-stock': {
         'task': 'app.celery_app.check_and_update_stock',
-        'schedule': 1200.0,  # 20 минут = 1200 секунд
+        'schedule': 500,  # 20 минут = 1200 секунд
     },
 }
 
