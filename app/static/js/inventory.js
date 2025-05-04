@@ -1,60 +1,51 @@
 let searchTimeout;
 
-// Делаем функцию доступной глобально
+// Глобальная функция для фильтрации
 window.handleFilterChange = async function() {
-    // Очищаем предыдущий таймаут, чтобы избежать частых запросов
+    console.log('handleFilterChange вызвана');
     clearTimeout(searchTimeout);
     
-    // Показываем состояние загрузки
-    document.getElementById('loadingState').classList.remove('hidden');
-    document.getElementById('productsList').classList.add('hidden');
-    
-    // Ждем немного перед отправкой запроса (300ms)
     searchTimeout = setTimeout(async () => {
         try {
-            // Получаем значения фильтров
-            const search = document.getElementById('searchInput').value;
-            const pageSize = document.getElementById('pageSize').value;
+            const search = document.getElementById('searchInput').value || '';
+            const pageSize = document.getElementById('pageSize').value || '50';
             
-            // Формируем URL с параметрами
+            console.log('Параметры поиска:', { search, pageSize });
+            
             const params = new URLSearchParams({
                 search: search,
                 page_size: pageSize,
-                page: 1 // Сбрасываем на первую страницу при поиске
+                page: 1
             });
             
-            // Делаем запрос к API
             const response = await fetch(`/api/products?${params.toString()}`);
             if (!response.ok) {
                 throw new Error('Ошибка при получении данных');
             }
             
             const data = await response.json();
+            console.log('Получены данные:', data);
             
-            // Обновляем список товаров
             const productsList = document.getElementById('productsList');
-            productsList.innerHTML = data.products.map(item => item.html).join('');
-            
-            // Обновляем пагинацию
-            updatePagination(data.page, Math.ceil(data.total / data.page_size));
-            
-            // Показываем пустое состояние, если нет результатов
-            const emptyState = document.getElementById('emptyState');
-            if (data.products.length === 0) {
-                emptyState.classList.remove('hidden');
-                productsList.classList.add('hidden');
-            } else {
-                emptyState.classList.add('hidden');
-                productsList.classList.remove('hidden');
+            if (productsList) {
+                productsList.innerHTML = data.products.map(item => item.html).join('');
             }
             
+            updatePagination(data.page, Math.ceil(data.total / data.page_size));
+            
+            const emptyState = document.getElementById('emptyState');
+            if (emptyState) {
+                if (data.products.length === 0) {
+                    emptyState.classList.remove('hidden');
+                    productsList?.classList.add('hidden');
+                } else {
+                    emptyState.classList.add('hidden');
+                    productsList?.classList.remove('hidden');
+                }
+            }
         } catch (error) {
             console.error('Ошибка при фильтрации:', error);
             alert('Произошла ошибка при фильтрации товаров');
-        } finally {
-            // Скрываем состояние загрузки
-            document.getElementById('loadingState').classList.add('hidden');
-            document.getElementById('productsList').classList.remove('hidden');
         }
     }, 300);
 };
@@ -157,30 +148,36 @@ async function goToPage(page) {
     }
 }
 
-// Функции для работы с модальным окном перемещения
+// Инициализация всех обработчиков при загрузке страницы
 document.addEventListener('DOMContentLoaded', function() {
-    let currentModal = null;
-    const modalTemplate = document.getElementById('transferModal');
+    console.log('DOMContentLoaded event fired');
     
-    // Добавляем обработчики для поиска и изменения количества товаров
+    // Инициализация поиска
     const searchInput = document.getElementById('searchInput');
-    const pageSizeSelect = document.getElementById('pageSize');
-    
-    console.log('Инициализация обработчиков:', { searchInput, pageSizeSelect });
-    
     if (searchInput) {
-        console.log('Добавляем обработчик поиска');
-        searchInput.addEventListener('input', () => {
-            console.log('Поиск:', searchInput.value);
-            handleFilterChange();
+        console.log('Найден элемент поиска');
+        searchInput.addEventListener('input', function(e) {
+            console.log('Событие input:', e.target.value);
+            window.handleFilterChange();
         });
     } else {
         console.error('Элемент поиска не найден!');
     }
     
+    // Инициализация выбора количества товаров
+    const pageSizeSelect = document.getElementById('pageSize');
     if (pageSizeSelect) {
-        pageSizeSelect.addEventListener('change', handleFilterChange);
+        console.log('Найден элемент выбора количества');
+        pageSizeSelect.addEventListener('change', function(e) {
+            console.log('Событие change:', e.target.value);
+            window.handleFilterChange();
+        });
+    } else {
+        console.error('Элемент выбора количества не найден!');
     }
+    
+    let currentModal = null;
+    const modalTemplate = document.getElementById('transferModal');
     
     if (!modalTemplate) {
         console.error('Модальное окно не найдено');
