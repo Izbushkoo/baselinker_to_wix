@@ -1,6 +1,6 @@
 let searchTimeout;
 
-// Глобальная функция для фильтрации
+// Глобальные функции для поиска и фильтрации
 window.handleFilterChange = async function() {
     console.log('handleFilterChange вызвана');
     clearTimeout(searchTimeout);
@@ -50,8 +50,8 @@ window.handleFilterChange = async function() {
     }, 300);
 };
 
-// Функция для обновления пагинации
-function updatePagination(currentPage, totalPages) {
+// Глобальная функция для обновления пагинации
+window.updatePagination = function(currentPage, totalPages) {
     const nav = document.querySelector('[aria-label="Pagination"]');
     if (!nav) return;
     
@@ -98,10 +98,10 @@ function updatePagination(currentPage, totalPages) {
     
     html += '</ul>';
     nav.innerHTML = html;
-}
+};
 
-// Функция для перехода на страницу
-async function goToPage(page) {
+// Глобальная функция для перехода на страницу
+window.goToPage = async function(page) {
     const search = document.getElementById('searchInput').value;
     const pageSize = document.getElementById('pageSize').value;
     
@@ -111,10 +111,6 @@ async function goToPage(page) {
         page: page
     });
     
-    // Показываем состояние загрузки
-    document.getElementById('loadingState').classList.remove('hidden');
-    document.getElementById('productsList').classList.add('hidden');
-    
     try {
         const response = await fetch(`/api/products?${params.toString()}`);
         if (!response.ok) {
@@ -123,14 +119,11 @@ async function goToPage(page) {
         
         const data = await response.json();
         
-        // Обновляем список товаров
         const productsList = document.getElementById('productsList');
         productsList.innerHTML = data.products.map(item => item.html).join('');
         
-        // Обновляем пагинацию
         updatePagination(data.page, Math.ceil(data.total / data.page_size));
         
-        // Показываем пустое состояние, если нет результатов
         const emptyState = document.getElementById('emptyState');
         if (data.products.length === 0) {
             emptyState.classList.remove('hidden');
@@ -142,13 +135,10 @@ async function goToPage(page) {
     } catch (error) {
         console.error('Ошибка при переходе на страницу:', error);
         alert('Произошла ошибка при загрузке страницы');
-    } finally {
-        document.getElementById('loadingState').classList.add('hidden');
-        document.getElementById('productsList').classList.remove('hidden');
     }
-}
+};
 
-// Инициализация всех обработчиков при загрузке страницы
+// Инициализация обработчиков событий при загрузке страницы
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOMContentLoaded event fired');
     
@@ -175,94 +165,59 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         console.error('Элемент выбора количества не найден!');
     }
+});
+
+// Функции для работы с модальным окном перемещения
+window.openTransferModal = function(button) {
+    const sku = button.dataset.productSku;
+    const name = button.dataset.productName;
     
-    let currentModal = null;
-    const modalTemplate = document.getElementById('transferModal');
+    console.log('Открытие модального окна:', { sku, name });
     
-    if (!modalTemplate) {
-        console.error('Модальное окно не найдено');
-        return;
-    }
+    document.getElementById('transferSku').value = sku;
+    document.getElementById('productName').textContent = name;
+    
+    document.getElementById('transferModal').classList.remove('hidden');
+};
 
-    // Глобальная функция для открытия модального окна
-    window.openTransferModal = function(button) {
-        const sku = button.dataset.productSku;
-        const name = button.dataset.productName;
-        
-        console.log('Открытие модального окна:', { sku, name });
-        
-        // Заполняем данные в модальном окне
-        document.getElementById('transferSku').value = sku;
-        document.getElementById('productName').textContent = name;
-        
-        // Показываем модальное окно
-        modalTemplate.classList.remove('hidden');
-        currentModal = modalTemplate;
-        
-        // Сбрасываем форму
-        document.getElementById('transferForm').reset();
-    };
+window.closeTransferModal = function() {
+    document.getElementById('transferModal').classList.add('hidden');
+    document.getElementById('transferForm').reset();
+};
 
-    window.closeTransferModal = function() {
-        if (currentModal) {
-            currentModal.classList.add('hidden');
-            document.getElementById('transferForm').reset();
-            currentModal = null;
-        }
-    };
+// Обработчик отправки формы перемещения
+document.getElementById('transferForm')?.addEventListener('submit', async function(event) {
+    console.log('Форма отправлена');
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    
+    try {
+        const requestData = {
+            sku: formData.get('sku'),
+            from_warehouse: formData.get('from_warehouse'),
+            to_warehouse: formData.get('to_warehouse'),
+            quantity: parseInt(formData.get('quantity'))
+        };
 
-    // Обработчик отправки формы
-    document.getElementById('transferForm').addEventListener('submit', async function(event) {
-        console.log('Форма отправлена');
-        event.preventDefault();
-        const formData = new FormData(event.target);
-        
-        try {
-            const requestData = {
-                sku: formData.get('sku'),
-                from_warehouse: formData.get('from_warehouse'),
-                to_warehouse: formData.get('to_warehouse'),
-                quantity: parseInt(formData.get('quantity'))
-            };
-
-            const response = await fetch('/api/warehouse/transfer-item/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestData)
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.detail || 'Ошибка при перемещении товара');
-            }
-
-            // Показываем сообщение об успехе
-            alert(data.message || 'Товар успешно перемещен');
-
-            // Закрываем модальное окно и обновляем страницу
-            window.closeTransferModal();
-            window.location.reload();
-        } catch (error) {
-            console.error('Ошибка:', error);
-            alert(error.message);
-        }
-    });
-
-    // Закрытие модального окна при клике вне его области
-    document.addEventListener('click', function(event) {
-        if (currentModal && event.target === currentModal) {
-            closeTransferModal();
-        }
-    });
-
-    // Предотвращаем закрытие при клике на содержимое модального окна
-    const modalContent = modalTemplate.querySelector('.bg-white');
-    if (modalContent) {
-        modalContent.addEventListener('click', function(event) {
-            event.stopPropagation();
+        const response = await fetch('/api/warehouse/transfer-item/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestData)
         });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.detail || 'Ошибка при перемещении товара');
+        }
+
+        alert(data.message || 'Товар успешно перемещен');
+        window.closeTransferModal();
+        window.location.reload();
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert(error.message);
     }
 }); 
