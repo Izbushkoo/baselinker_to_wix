@@ -8,8 +8,175 @@
     window.location.href = '{{ url_for("login", next=request.path) }}';
 </script>
 {% else %}
-<!-- Подключаем inventory.js в начале -->
-<script src="{{ url_for('static', path='js/inventory.js').__str__().replace('http://', 'https://') }}"></script>
+
+<!-- Скрипт для поиска и фильтрации -->
+<script>
+let searchTimeout;
+
+async function handleFilterChange() {
+    console.log('handleFilterChange вызвана');
+    clearTimeout(searchTimeout);
+    
+    searchTimeout = setTimeout(async () => {
+        try {
+            const search = document.getElementById('searchInput').value || '';
+            const pageSize = document.getElementById('pageSize').value || '50';
+            
+            console.log('Параметры поиска:', { search, pageSize });
+            
+            const params = new URLSearchParams({
+                search: search,
+                page_size: pageSize,
+                page: 1
+            });
+            
+            const response = await fetch(`/api/products?${params.toString()}`);
+            if (!response.ok) {
+                throw new Error('Ошибка при получении данных');
+            }
+            
+            const data = await response.json();
+            console.log('Получены данные:', data);
+            
+            const productsList = document.getElementById('productsList');
+            if (productsList) {
+                productsList.innerHTML = data.products.map(item => item.html).join('');
+            }
+            
+            updatePagination(data.page, Math.ceil(data.total / data.page_size));
+            
+            const emptyState = document.getElementById('emptyState');
+            if (emptyState) {
+                if (data.products.length === 0) {
+                    emptyState.classList.remove('hidden');
+                    productsList?.classList.add('hidden');
+                } else {
+                    emptyState.classList.add('hidden');
+                    productsList?.classList.remove('hidden');
+                }
+            }
+        } catch (error) {
+            console.error('Ошибка при фильтрации:', error);
+            alert('Произошла ошибка при фильтрации товаров');
+        }
+    }, 300);
+}
+
+function updatePagination(currentPage, totalPages) {
+    const nav = document.querySelector('[aria-label="Pagination"]');
+    if (!nav) return;
+    
+    let html = '<ul class="inline-flex items-center -space-x-px rounded-md shadow-sm">';
+    
+    // Кнопка "Назад"
+    if (currentPage > 1) {
+        html += `
+            <li>
+                <a href="javascript:void(0)" onclick="goToPage(${currentPage - 1})"
+                   class="relative inline-flex items-center rounded-l-md px-3 py-2 text-sm font-medium text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0">
+                    <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    </svg>
+                </a>
+            </li>`;
+    }
+    
+    // Номера страниц
+    for (let i = 1; i <= totalPages; i++) {
+        html += `
+            <li>
+                <a href="javascript:void(0)" onclick="goToPage(${i})"
+                   class="relative inline-flex items-center px-4 py-2 text-sm font-medium ${i === currentPage 
+                       ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
+                       : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'}">
+                    ${i}
+                </a>
+            </li>`;
+    }
+    
+    // Кнопка "Вперед"
+    if (currentPage < totalPages) {
+        html += `
+            <li>
+                <a href="javascript:void(0)" onclick="goToPage(${currentPage + 1})"
+                   class="relative inline-flex items-center rounded-r-md px-3 py-2 text-sm font-medium text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0">
+                    <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                    </svg>
+                </a>
+            </li>`;
+    }
+    
+    html += '</ul>';
+    nav.innerHTML = html;
+}
+
+async function goToPage(page) {
+    const search = document.getElementById('searchInput').value;
+    const pageSize = document.getElementById('pageSize').value;
+    
+    const params = new URLSearchParams({
+        search: search,
+        page_size: pageSize,
+        page: page
+    });
+    
+    try {
+        const response = await fetch(`/api/products?${params.toString()}`);
+        if (!response.ok) {
+            throw new Error('Ошибка при получении данных');
+        }
+        
+        const data = await response.json();
+        
+        const productsList = document.getElementById('productsList');
+        productsList.innerHTML = data.products.map(item => item.html).join('');
+        
+        updatePagination(data.page, Math.ceil(data.total / data.page_size));
+        
+        const emptyState = document.getElementById('emptyState');
+        if (data.products.length === 0) {
+            emptyState.classList.remove('hidden');
+            productsList.classList.add('hidden');
+        } else {
+            emptyState.classList.add('hidden');
+            productsList.classList.remove('hidden');
+        }
+    } catch (error) {
+        console.error('Ошибка при переходе на страницу:', error);
+        alert('Произошла ошибка при загрузке страницы');
+    }
+}
+
+// Инициализация обработчиков при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOMContentLoaded event fired');
+    
+    // Инициализация поиска
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        console.log('Найден элемент поиска');
+        searchInput.addEventListener('input', function(e) {
+            console.log('Событие input:', e.target.value);
+            handleFilterChange();
+        });
+    } else {
+        console.error('Элемент поиска не найден!');
+    }
+    
+    // Инициализация выбора количества товаров
+    const pageSizeSelect = document.getElementById('pageSize');
+    if (pageSizeSelect) {
+        console.log('Найден элемент выбора количества');
+        pageSizeSelect.addEventListener('change', function(e) {
+            console.log('Событие change:', e.target.value);
+            handleFilterChange();
+        });
+    } else {
+        console.error('Элемент выбора количества не найден!');
+    }
+});
+</script>
 
 <div class="min-h-screen bg-gray-50">
     <!-- Фиксированный хедер каталога -->
