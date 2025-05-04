@@ -1,6 +1,7 @@
 let searchTimeout;
 
-async function handleFilterChange() {
+// Делаем функцию доступной глобально
+window.handleFilterChange = async function() {
     // Очищаем предыдущий таймаут, чтобы избежать частых запросов
     clearTimeout(searchTimeout);
     
@@ -56,7 +57,7 @@ async function handleFilterChange() {
             document.getElementById('productsList').classList.remove('hidden');
         }
     }, 300);
-}
+};
 
 // Функция для обновления пагинации
 function updatePagination(currentPage, totalPages) {

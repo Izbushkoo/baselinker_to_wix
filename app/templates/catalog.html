@@ -53,8 +53,9 @@
                     </div>
 
                     <div class="relative w-40">
-                        <select id="pageSizeSelect" 
-                                class="w-full rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm py-2.5 pl-4 pr-8">
+                        <select id="pageSize" 
+                                class="w-full rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm py-2.5 pl-4 pr-8"
+                                onchange="handleFilterChange()">
                             <option value="50">50 товаров</option>
                             <option value="100">100 товаров</option>
                             <option value="500">500 товаров</option>
