@@ -377,6 +377,46 @@ class InventoryManager:
             return df
         return pd.DataFrame()
 
+    def compress_all_product_images(self) -> Dict[str, bool]:
+        """
+        Сжимает все изображения продуктов в базе данных.
+        
+        Returns:
+            Dict[str, bool]: Словарь с результатами сжатия для каждого SKU
+                           {sku: True/False}, где True означает успешное сжатие
+        """
+        results = {}
+        
+        with Session(self.engine) as session:
+            # Получаем все продукты с изображениями
+            products = session.exec(select(Product).where(Product.image != None)).all()
+            
+            for product in products:
+                try:
+                    if not product.image:
+                        results[product.sku] = False
+                        continue
+                        
+                    # Сжимаем изображение
+                    compressed_image = self.compress_image(product.image)
+                    
+                    if compressed_image:
+                        # Обновляем изображение в базе
+                        product.image = compressed_image
+                        session.add(product)
+                        results[product.sku] = True
+                    else:
+                        results[product.sku] = False
+                        
+                except Exception as e:
+                    logging.error(f"Ошибка при сжатии изображения для SKU {product.sku}: {str(e)}")
+                    results[product.sku] = False
+            
+            # Сохраняем все изменения
+            session.commit()
+            
+        return results
+
     def get_stock_report(self) -> Tuple[pd.DataFrame, List[bytes]]:
         """
         Возвращает кортеж:

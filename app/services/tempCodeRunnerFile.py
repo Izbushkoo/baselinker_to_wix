@@ -4,6 +4,9 @@ from typing import Optional, Dict, Any, List
 
 import httpx
 
+# from app.utils.logging_config import logger
+
+os.environ["NOTIFICATOR_BOT_TOKEN"] = "5840984074:AAHGD_MDpEKuli8DFjcEZL0lZYZKIaoSKJM"
 
 class TelegramManager:
     """
