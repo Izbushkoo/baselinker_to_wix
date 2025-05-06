@@ -54,7 +54,12 @@ async function handleFilterChange() {
                 sort_order: sortOrder
             });
             
-            const response = await fetch(`/api/products?${params.toString()}`);
+            const response = await fetch(`/catalog?${params.toString()}`, {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                }
+            });
             if (!response.ok) {
                 throw new Error('Ошибка при получении данных');
             }
@@ -148,15 +153,24 @@ function updatePagination(currentPage, totalPages) {
 async function goToPage(page) {
     const search = document.getElementById('searchInput').value;
     const pageSize = document.getElementById('pageSize').value;
+    const stockFilterValue = document.getElementById('stockFilter').value;
+    const sortOrder = document.getElementById('sortOrder').value || '';
     
     const params = new URLSearchParams({
         search: search,
         page_size: pageSize,
-        page: page
+        page: page,
+        stock_filter: stockFilterValue.trim() === '' ? -1 : parseInt(stockFilterValue),
+        sort_order: sortOrder
     });
     
     try {
-        const response = await fetch(`/api/products?${params.toString()}`);
+        const response = await fetch(`/catalog?${params.toString()}`, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        });
         if (!response.ok) {
             throw new Error('Ошибка при получении данных');
         }
@@ -178,7 +192,7 @@ async function goToPage(page) {
         }
     } catch (error) {
         console.error('Ошибка при переходе на страницу:', error);
-        alert('Произошла ошибка при загрузке страницы');
+        showNotification('Произошла ошибка при загрузке страницы', 'error');
     }
 }
 
