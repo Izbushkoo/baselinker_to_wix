@@ -155,31 +155,31 @@ function getShipmentStatus(order) {
             : order.fulfillment;
             
         if (!fulfillment || !fulfillment.shipmentSummary) {
-            return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                Новый
-            </span>`;
+            return '';
         }
 
         const statusColors = {
             'SENT': 'bg-green-100 text-green-800',
             'PICKED_UP': 'bg-teal-100 text-teal-800',
             'CANCELLED': 'bg-red-100 text-red-800',
-            'RETURNED': 'bg-gray-100 text-gray-800'
+            'RETURNED': 'bg-gray-100 text-gray-800',
+            'NEW': 'bg-blue-100 text-blue-800'
         };
 
         const statusLabels = {
             'SENT': 'Отправлен',
             'PICKED_UP': 'Получен',
             'CANCELLED': 'Отменён продавцом',
-            'RETURNED': 'Возвращён'
+            'RETURNED': 'Возвращён',
+            'NEW': 'Новый'
         };
 
         const status = fulfillment.status || fulfillment.shipmentSummary.status;
         
         // Показываем статус только если он есть в нашем списке разрешенных статусов
         if (status && statusLabels[status]) {
-            const colorClass = statusColors[status];
-            const label = statusLabels[status];
+            const colorClass = statusColors[status] || statusColors['NEW'];
+            const label = statusLabels[status] || 'Новый';
 
             return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorClass}">
                 ${label}
@@ -280,13 +280,12 @@ function displayOrders(orders) {
         orderElement.className = 'bg-gray-800 rounded-lg shadow overflow-hidden';
         
         // Получаем статус отправки
-        const shipmentStatusHtml = getShipmentStatus(order);
+        const shipmentStatus = getShipmentStatus(order);
         
         // Определяем, можно ли показывать кнопку списания
-        const canShowWriteOff = !order.is_stock_updated && 
-                              order.status !== 'CANCELLED' && 
-                              (!shipmentStatusHtml.includes('Отменён продавцом')) &&
-                              (shipmentStatusHtml.includes('Отправлен') || shipmentStatusHtml.includes('Новый'));
+        const canShowWriteOff = order.status !== 'CANCELLED' && // не отменен покупателем
+                               !shipmentStatus.includes('Отменён продавцом') && // не отменен продавцом
+                               (shipmentStatus.includes('Отправлен') || shipmentStatus.includes('Новый')); // только для отправленных или новых
         
         const mainInfo = `
             <div class="p-4 cursor-pointer" onclick="toggleOrderDetails('${order.id}')">
@@ -296,22 +295,22 @@ function displayOrders(orders) {
                             <span class="text-lg font-medium text-white">ID: ${order.id}</span>
                             <span class="text-sm text-gray-400">${new Date(order.updated_at).toLocaleString()}</span>
                             ${order.status === 'CANCELLED' ? getOrderStatus(order) : `
-                                ${shipmentStatusHtml}
-                                ${order.is_stock_updated ? `
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                        Списано
-                                    </span>
-                                ` : `
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                        Не списано
-                                    </span>
-                                    ${canShowWriteOff ? `
+                                ${shipmentStatus}
+                                ${canShowWriteOff ? `
+                                    ${order.is_stock_updated ? `
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                            Списано
+                                        </span>
+                                    ` : `
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                            Не списано
+                                        </span>
                                         <button onclick="event.stopPropagation(); saleFromOrder('${order.id}')" 
                                                 class="ml-2 px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
                                             Списать
                                         </button>
-                                    ` : ''}
-                                `}
+                                    `}
+                                ` : ''}
                             `}
                         </div>
                     </div>
