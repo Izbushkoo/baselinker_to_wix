@@ -295,7 +295,7 @@ function displayOrders(orders) {
                         <div class="flex items-center space-x-4 flex-wrap">
                             <span class="text-lg font-medium text-white">ID: ${order.id}</span>
                             <span class="text-sm text-gray-400">${new Date(order.updated_at).toLocaleString()}</span>
-                            ${getOrderStatus(order)}
+                            ${order.status === 'CANCELLED' ? getOrderStatus(order) : ''}
                             ${order.status !== 'CANCELLED' ? `
                                 ${getShipmentStatus(order)}
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${order.is_stock_updated ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">

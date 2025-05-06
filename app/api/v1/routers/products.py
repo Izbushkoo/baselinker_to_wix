@@ -80,10 +80,10 @@ async def catalog(
 
     # Применяем сортировку
     if sort_order == 'desc':
-        query = query.order_by(subquery.c.total_stock.desc(), Product.sku.asc())
+        query = query.order_by(func.coalesce(subquery.c.total_stock, 0).desc(), Product.sku.asc())
     else:
         # По умолчанию и для sort_order == 'asc' сортируем по возрастанию остатков
-        query = query.order_by(subquery.c.total_stock.asc(), Product.sku.asc())
+        query = query.order_by(func.coalesce(subquery.c.total_stock, 0).asc(), Product.sku.asc())
 
     # Применяем пагинацию
     query = query.offset((page - 1) * page_size).limit(page_size)
