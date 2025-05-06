@@ -1,7 +1,7 @@
 from sqlmodel import SQLModel, Field, Session, create_engine, select
 from sqlalchemy import Column, JSON, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Any, Union
 import pandas as pd
 from io import BytesIO
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Query
@@ -10,6 +10,8 @@ from datetime import datetime, date, timedelta
 from enum import Enum
 import logging
 import openpyxl
+from PIL import Image
+import io
 
 from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.core.config import settings
@@ -178,110 +180,55 @@ class InventoryManager:
         '''Списание одной единицы с указанного склада.'''
         self.remove_from_warehouse(sku, warehouse, 1)
 
-    def import_incoming_from_excel_depricated(
-        self,
-        file_bytes: bytes,
-        warehouse: str,
-        sku_col: str = 'sku',
-        qty_col: str = 'quantity',
-        ean_col: str = 'ean',
-        name_col: str = 'name',
-        image_col: str = 'Foto',
-        header: int = 0
-    ):
-        '''Импорт прихода из XLSX (bytes): SKU, количество, EAN, название и изображение.'''
-        logging.info(f"Начало импорта Excel файла. Размер: {len(file_bytes)} байт")
+    def compress_image(self, image_data: bytes) -> Optional[bytes]:
+        """
+        Сжимает изображение до размера 150x150 пикселей.
+        Поддерживает форматы: JPEG, PNG, GIF, WEBP и другие, которые поддерживает Pillow.
         
-        # Загружаем Excel файл
-        wb = openpyxl.load_workbook(BytesIO(file_bytes))
-        ws = wb.active
-        logging.info(f"Excel файл загружен. Активный лист: {ws.title}")
-        
-        # Получаем заголовки и их индексы
-        headers = [str(cell.value) for cell in ws[header + 1]]
-        logging.info(f"Найдены заголовки: {headers}")
-        
-        # Находим индексы нужных колонок
+        Args:
+            image_data: Байты исходного изображения
+            
+        Returns:
+            bytes: Сжатые байты изображения или None в случае ошибки
+        """
+        if not image_data:
+            return None
+            
         try:
-            col_indices = {
-                'sku': headers.index(sku_col),
-                'qty': headers.index(qty_col),
-                'ean': headers.index(ean_col),
-                'name': headers.index(name_col)
-            }
-            logging.info(f"Индексы колонок: {col_indices}")
-        except ValueError as e:
-            logging.error(f"Ошибка при поиске колонок: {str(e)}")
-            raise ValueError(f"Не найдена одна из обязательных колонок. Требуются: {sku_col}, {qty_col}, {ean_col}, {name_col}")
-
-        # Создаем словарь изображений по номерам строк
-        images_by_row = {}
-        logging.info(f"Всего изображений в документе: {len(ws._images)}")
-        
-        for img in ws._images:
-            coords = img.anchor._from
-            row = coords.row + 1  # Преобразуем в 1-based индекс
-            if row > (header + 1):  # Пропускаем строку с заголовками
-                try:
-                    logging.info(f"Обработка изображения: тип={type(img)}, тип ref={type(img.ref)}")
-                    # Получаем байты изображения
-                    if hasattr(img.ref, 'getvalue'):
-                        img_bytes = img.ref.getvalue()  # Используем getvalue() для BytesIO
-                        images_by_row[row] = img_bytes
-                        logging.info(f"Найдено изображение для строки {row}. Размер: {len(img_bytes)} байт")
-                    elif hasattr(img.ref, '_data'):
-                        img_bytes = img.ref._data()
-                        images_by_row[row] = img_bytes
-                        logging.info(f"Найдено изображение (метод _data) для строки {row}. Размер: {len(img_bytes)} байт")
-                    elif hasattr(img.ref, 'content'):
-                        img_bytes = img.ref.content
-                        images_by_row[row] = img_bytes
-                        logging.info(f"Найдено изображение (через content) для строки {row}. Размер: {len(img_bytes)} байт")
-                    else:
-                        available_attrs = dir(img.ref)
-                        logging.error(f"Не найден метод для извлечения данных изображения. Доступные атрибуты: {available_attrs}")
-                except Exception as e:
-                    logging.error(f"Ошибка при извлечении изображения из строки {row}: {str(e)}")
-
-        # Обрабатываем каждую строку данных
-        for row_idx, row in enumerate(ws.iter_rows(min_row=header + 2), start=header + 2):
-            try:
-                sku = str(row[col_indices['sku']].value)
-                qty = int(row[col_indices['qty']].value)
-                ean = str(row[col_indices['ean']].value)
-                name = str(row[col_indices['name']].value)
-                
-                logging.info(f"Обработка строки {row_idx}. SKU: {sku}, Name: {name}")
-                
-                # Получаем изображение для текущей строки
-                image_data = images_by_row.get(row_idx)
-                if image_data:
-                    logging.info(f"Найдено изображение для SKU {sku}")
-                
-                with Session(self.engine) as session:
-                    product = session.get(Product, sku)
-                    if not product:
-                        product = Product(sku=sku, eans=[ean], name=name, image=image_data)
-                        session.add(product)
-                        logging.info(f"Создан новый продукт: {sku}")
-                    else:
-                        # Обновляем все поля продукта, кроме SKU
-                        if ean not in product.eans:
-                            product.eans.append(ean)
-                        product.name = name
-                        if image_data:
-                            product.image = image_data
-                            logging.info(f"Обновлено изображение для продукта: {sku}")
-                        session.add(product)
-                    session.commit()
-                
-                # Добавляем или обновляем остатки на складе
-                self.restock(sku, warehouse, qty)
-            except Exception as e:
-                logging.error(f"Ошибка при обработке строки {row_idx}: {str(e)}")
-                continue
-        
-        logging.info("Импорт Excel файла завершен")
+            # Открываем изображение из байтов
+            img = Image.open(io.BytesIO(image_data))
+            
+            # Конвертируем в RGB если изображение в RGBA
+            if img.mode in ('RGBA', 'LA'):
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[-1])
+                img = background
+            
+            # Определяем размеры для сохранения пропорций
+            target_size = (150, 150)
+            img.thumbnail(target_size, Image.Resampling.LANCZOS)
+            
+            # Сохраняем в буфер
+            output = io.BytesIO()
+            
+            # Сохраняем в исходном формате с оптимизацией
+            format = img.format or 'JPEG'
+            
+            if format == 'JPEG':
+                img.save(output, format=format, quality=85, optimize=True)
+            elif format == 'PNG':
+                img.save(output, format=format, optimize=True)
+            elif format == 'WEBP':
+                img.save(output, format=format, quality=85, method=6)
+            else:
+                # Для других форматов конвертируем в JPEG
+                img.save(output, format='JPEG', quality=85, optimize=True)
+            
+            return output.getvalue()
+            
+        except Exception as e:
+            logging.error(f"Ошибка при сжатии изображения: {str(e)}")
+            return None
 
     def import_incoming_from_excel(
         self,
@@ -324,11 +271,18 @@ class InventoryManager:
             if row > (header + 1):
                 try:
                     if hasattr(img.ref, 'getvalue'):
-                        images_by_row[row] = img.ref.getvalue()
+                        image_data = img.ref.getvalue()
                     elif hasattr(img.ref, '_data'):
-                        images_by_row[row] = img.ref._data()
+                        image_data = img.ref._data()
                     elif hasattr(img.ref, 'content'):
-                        images_by_row[row] = img.ref.content
+                        image_data = img.ref.content
+                    else:
+                        continue
+                        
+                    # Сжимаем изображение перед сохранением
+                    compressed_image = self.compress_image(image_data)
+                    if compressed_image:
+                        images_by_row[row] = compressed_image
                 except Exception:
                     continue
 
