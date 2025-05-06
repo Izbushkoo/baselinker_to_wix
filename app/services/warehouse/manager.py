@@ -1,6 +1,7 @@
 from sqlmodel import SQLModel, Field, Session, create_engine, select
-from sqlalchemy import Column, JSON, text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import Column, JSON, text, func
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List, Optional, Tuple, Dict, Any, Union
 import pandas as pd
 from io import BytesIO
@@ -34,20 +35,20 @@ class Warehouses(str, Enum):
 
 def get_manager() -> 'InventoryManager':
     dsn = settings.SQLALCHEMY_DATABASE_URI.unicode_string()
-    return InventoryManager(dsn)
+    async_dsn = settings.SQLALCHEMY_DATABASE_URI_ASYNC.unicode_string()
+    return InventoryManager(dsn, async_dsn)
 
 class InventoryManager:
-    def __init__(self, dsn: str):
+    def __init__(self, dsn: str, async_dsn: str):
         '''Менеджер инвентаря через PostgreSQL / SQLModel.'''
         self.engine = create_engine(dsn)
-        # SQLModel.metadata.create_all(self.engine)
+        self.async_engine = create_async_engine(async_dsn)
 
     def restock(self, sku: str, warehouse: str, quantity: int):
         '''Пополнение остатков на указанном складе.'''
         if quantity <= 0:
             raise ValueError('Количество пополнения должно быть положительным.')
-            
-        # Используем значение склада как есть, без преобразования в ключ
+            # Используем значение склада как есть, без преобразования в ключ
         with Session(self.engine) as session:
             key = (sku, warehouse)
             stock = session.get(Stock, key)
@@ -57,6 +58,32 @@ class InventoryManager:
                 stock.quantity += quantity
             session.add(stock)
             session.commit()
+
+    async def count_products(self) -> int:
+        '''Подсчитывает общее количество уникальных товаров в базе данных.'''
+        async with AsyncSession(self.async_engine) as session:
+            query = select(func.count()).select_from(Product)
+            result = await session.exec(query)
+            return result.first()
+
+    async def get_low_stock_products(self) -> int:
+        '''Подсчитывает количество товаров с суммарным остатком от 1 до 5 штук.'''
+        async with AsyncSession(self.async_engine) as session:
+            query = (
+                select(func.count())
+                .select_from(
+                    select(Product.sku)
+                    .outerjoin(Stock, Stock.sku == Product.sku)
+                    .group_by(Product.sku)
+                    .having(
+                        func.coalesce(func.sum(Stock.quantity), 0) > 0,
+                        func.coalesce(func.sum(Stock.quantity), 0) < 6
+                    )
+                    .subquery()
+                )
+            )
+            result = await session.exec(query)
+            return result.first()
 
     def transfer(
         self,

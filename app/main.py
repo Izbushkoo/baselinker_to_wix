@@ -14,6 +14,7 @@ from app.api import deps
 from app.models.user import User as UserModel
 from sqlalchemy.orm import Session
 from app.core import security
+from app.services.warehouse import manager
 
 
 # Настраиваем логирование при запуске приложения
@@ -44,18 +45,19 @@ logger = logging.getLogger(__name__)
 @app.get("/")
 async def home(
     request: Request,
-    current_user: Optional[UserModel] = Depends(deps.get_current_user_optional)
+    current_user: Optional[UserModel] = Depends(deps.get_current_user_optional),
+    inventory_manager: manager.InventoryManager = Depends(manager.get_manager)
 ):
-    # logger.info(f"request: {request.headers}")
-    # logger.info(f"Current user: {current_user.email if current_user else 'Not authenticated'}")
-    
+    total_items = await inventory_manager.count_products()
+    low_stock = await inventory_manager.get_low_stock_products()
+    logger.info(f"Total items: {total_items}")
+    logger.info(f"Low stock: {low_stock}")
     return templates.TemplateResponse("index.html", {
         "request": request,
         "user": current_user,
         "stats": {
-            "total_items": 0,  # Здесь должны быть реальные данные
-            "pending_items": 0,
-            "low_stock": 0,
+            "total_items": total_items,
+            "low_stock": low_stock,
             "today_operations": 0
         },
         "recent_operations": []  # Здесь должны быть реальные данные
