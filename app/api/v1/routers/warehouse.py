@@ -759,3 +759,11 @@ async def sale_from_order(
                 'message': f'Ошибка при обработке заказа: {str(e)}'
             }
         )
+
+
+@router.get('/compress-images/', summary='Сжатие изображений')
+async def compress_images(
+    manager: manager.InventoryManager = Depends(manager.get_manager)
+):
+    manager.compress_all_product_images()
+    return JSONResponse({'status': 'success', 'message': 'Изображения сжаты'})

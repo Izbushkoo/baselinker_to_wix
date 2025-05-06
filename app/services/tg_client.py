@@ -161,12 +161,3 @@ class TelegramManager:
 
         return list(found_groups)
 
-
-
-def test():
-    client = TelegramManager()
-    data = client.discover_admin_groups()
-    print(data)
-    client.send_message(text="Test", chat_id=-4649962838)
-
-test()
