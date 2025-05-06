@@ -168,8 +168,9 @@ function getShipmentStatus(order) {
         const statusLabels = {
             'SENT': 'Отправлен',
             'PICKED_UP': 'Получен',
-            'CANCELLED': 'Отменён',
-            'RETURNED': 'Возвращён'
+            'CANCELLED': 'Отменён продавцом',
+            'RETURNED': 'Возвращён',
+            'NEW': 'Новый',
         };
 
         const status = fulfillment.status || fulfillment.shipmentSummary.status;
@@ -254,7 +255,7 @@ function getOrderStatus(order) {
         'BOUGHT': 'Оплачен',
         'FILLED_IN': 'Заполнен',
         'READY_FOR_PROCESSING': 'Готов к обработке',
-        'CANCELLED': 'Отменён'
+        'CANCELLED': 'Отменён покупателем'
     };
 
     const status = order.status || 'BOUGHT';
