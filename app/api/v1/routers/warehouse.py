@@ -570,9 +570,16 @@ async def export_stock_with_sales(
     # вставляем пустую колонку-«держатель» под изображения
     df.insert(1, "Изображение", "")
 
-    # порядок колонок
+    # порядок колонок - сначала склад B, потом остальные
     cols = ["SKU", "Изображение", "Наименование", "EAN коды"]
-    cols.extend([f"Склад {wh.value}" for wh in Warehouses])
+    
+    # Сначала добавляем склад B
+    cols.append(f"Склад {Warehouses.B.value}")
+    # Затем добавляем все остальные склады
+    for wh in Warehouses:
+        if wh != Warehouses.B:
+            cols.append(f"Склад {wh.value}")
+            
     cols.extend(["Общий остаток", "Продажи за 15 дней", "Продажи за 30 дней", "Продажи за 60 дней"])
     df = df[cols]
 
@@ -661,9 +668,16 @@ async def export_stock_with_sales_no_images(
     
     df = df.rename(columns=column_renames)
     
-    # порядок колонок
+    # порядок колонок - сначала склад B, потом остальные
     cols = ["SKU", "Наименование", "EAN коды"]
-    cols.extend([f"Склад {wh.value}" for wh in Warehouses])
+    
+    # Сначала добавляем склад B
+    cols.append(f"Склад {Warehouses.B.value}")
+    # Затем добавляем все остальные склады
+    for wh in Warehouses:
+        if wh != Warehouses.B:
+            cols.append(f"Склад {wh.value}")
+            
     cols.extend(["Общий остаток", "Продажи за 15 дней", "Продажи за 30 дней", "Продажи за 60 дней"])
     df = df[cols]
     

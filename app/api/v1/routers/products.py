@@ -27,7 +27,7 @@ async def catalog(
     stock_filter: Optional[int] = None,
     sort_order: Optional[str] = None,
     db: AsyncSession = Depends(deps.get_async_session),
-    current_user: User = Depends(deps.get_current_user_from_cookie)
+    current_user: User = Depends(deps.get_current_user_optional)
 ):
     """
     Универсальный роут для отображения каталога товаров.
@@ -72,19 +72,18 @@ async def catalog(
     total_count = result.first()
     total_pages = (total_count + page_size - 1) // page_size
 
-    # Применяем сортировку по остаткам и пагинацию
+    # Основной запрос с сортировкой
     query = (
         select(Product, subquery.c.total_stock)
         .join(subquery, Product.sku == subquery.c.sku)
     )
 
     # Применяем сортировку
-    if sort_order == 'asc':
-        query = query.order_by(subquery.c.total_stock.asc())
-    elif sort_order == 'desc':
-        query = query.order_by(subquery.c.total_stock.desc())
+    if sort_order == 'desc':
+        query = query.order_by(subquery.c.total_stock.desc(), Product.sku.asc())
     else:
-        query = query.order_by(subquery.c.total_stock)
+        # По умолчанию и для sort_order == 'asc' сортируем по возрастанию остатков
+        query = query.order_by(subquery.c.total_stock.asc(), Product.sku.asc())
 
     # Применяем пагинацию
     query = query.offset((page - 1) * page_size).limit(page_size)
