@@ -115,11 +115,20 @@ async def list_products(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=1000),
     search: Optional[str] = None,
+    stock_filter: Optional[int] = None,
+    sort_order: Optional[str] = None,
     db: AsyncSession = Depends(deps.get_async_session),
     current_user: User = Depends(deps.get_current_user_from_cookie)
 ):
     """
     Получение списка товаров с фильтрацией и пагинацией
+    
+    Args:
+        page: номер страницы
+        page_size: количество товаров на странице
+        search: поисковый запрос (SKU, название или EAN)
+        stock_filter: фильтр по количеству (показать товары с остатком меньше указанного)
+        sort_order: порядок сортировки по остаткам ('asc' или 'desc')
     """
     # Базовый запрос для товаров с подсчетом остатков
     base_query = (
@@ -142,6 +151,12 @@ async def list_products(
             )
         )
 
+    # Фильтр по количеству
+    if stock_filter is not None and stock_filter >= 0:  # Применяем фильтр только если значение >= 0
+        base_query = base_query.having(
+            func.coalesce(func.sum(Stock.quantity), 0) < stock_filter
+        )
+
     # Создаем подзапрос для корректного подсчета общего количества
     subquery = base_query.subquery()
     
@@ -154,10 +169,18 @@ async def list_products(
     query = (
         select(Product, subquery.c.total_stock)
         .join(subquery, Product.sku == subquery.c.sku)
-        .order_by(subquery.c.total_stock)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
     )
+
+    # Применяем сортировку
+    if sort_order == 'asc':
+        query = query.order_by(subquery.c.total_stock.asc())
+    elif sort_order == 'desc':
+        query = query.order_by(subquery.c.total_stock.desc())
+    else:
+        query = query.order_by(subquery.c.total_stock)  # По умолчанию по возрастанию
+
+    # Применяем пагинацию
+    query = query.offset((page - 1) * page_size).limit(page_size)
     
     # Получаем товары
     result = await db.exec(query)

@@ -3,6 +3,9 @@
     <div class="pt-1">
         <label class="inline-flex items-center">
             <input type="checkbox" 
+                   name="selected_products"
+                   value="{{ product['sku'] }}"
+                   onchange="handleCheckboxChange(this)"
                    class="form-checkbox h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                    data-product-id="{{ product['id'] }}"
                    {% if product['id'] in selected_products %}checked{% endif %}>

@@ -31,16 +31,27 @@ async function handleFilterChange() {
         try {
             const search = document.getElementById('searchInput').value || '';
             const pageSize = document.getElementById('pageSize').value || '50';
+            const stockFilterValue = document.getElementById('stockFilter').value;
+            const sortOrder = document.getElementById('sortOrder').value || '';
+            
+            // Сохраняем выбранные товары перед обновлением
+            const selectedSkus = Array.from(document.querySelectorAll('input[name="selected_products"]:checked'))
+                .map(checkbox => checkbox.value);
             
             // Сохраняем размер страницы при каждом изменении
             savePageSize(pageSize);
             
-            console.log('Параметры поиска:', { search, pageSize });
+            // Если поле фильтра пустое, отправляем -1 для отключения фильтрации
+            const stockFilter = stockFilterValue.trim() === '' ? -1 : parseInt(stockFilterValue);
+            
+            console.log('Параметры поиска:', { search, pageSize, stockFilter, sortOrder });
             
             const params = new URLSearchParams({
                 search: search,
                 page_size: pageSize,
-                page: 1
+                page: 1,
+                stock_filter: stockFilter,
+                sort_order: sortOrder
             });
             
             const response = await fetch(`/api/products?${params.toString()}`);
@@ -54,9 +65,19 @@ async function handleFilterChange() {
             const productsList = document.getElementById('productsList');
             if (productsList) {
                 productsList.innerHTML = data.products.map(item => item.html).join('');
+                
+                // Восстанавливаем выбранные товары
+                selectedSkus.forEach(sku => {
+                    const checkbox = productsList.querySelector(`input[name="selected_products"][value="${sku}"]`);
+                    if (checkbox) {
+                        checkbox.checked = true;
+                        handleCheckboxChange(checkbox);
+                    }
+                });
             }
             
             updatePagination(data.page, Math.ceil(data.total / data.page_size));
+            updateExportButton(); // Обновляем состояние кнопки экспорта
             
             const emptyState = document.getElementById('emptyState');
             if (emptyState) {
@@ -70,7 +91,7 @@ async function handleFilterChange() {
             }
         } catch (error) {
             console.error('Ошибка при фильтрации:', error);
-            alert('Произошла ошибка при фильтрации товаров');
+            showNotification('Произошла ошибка при фильтрации товаров', 'error');
         }
     }, 300);
 }
@@ -161,21 +182,153 @@ async function goToPage(page) {
     }
 }
 
+// Функция для обновления состояния кнопки экспорта
+function updateExportButton() {
+    const selectedProducts = document.querySelectorAll('input[name="selected_products"]:checked');
+    const exportButton = document.getElementById('exportSelected');
+    const exportCount = document.getElementById('exportCount');
+    
+    if (selectedProducts.length > 0) {
+        exportButton.disabled = false;
+        exportCount.textContent = `(${selectedProducts.length})`;
+        exportCount.classList.remove('hidden');
+    } else {
+        exportButton.disabled = true;
+        exportCount.classList.add('hidden');
+    }
+}
+
+// Функция выбора всех товаров
+function selectAllProducts() {
+    const checkboxes = document.querySelectorAll('input[name="selected_products"]');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = true;
+        // Обновляем стили родительского элемента
+        const card = checkbox.closest('.product-card');
+        if (card) {
+            card.classList.add('selected');
+        }
+    });
+    updateExportButton();
+}
+
+// Функция снятия выделения со всех товаров
+function deselectAllProducts() {
+    const checkboxes = document.querySelectorAll('input[name="selected_products"]');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = false;
+        // Обновляем стили родительского элемента
+        const card = checkbox.closest('.product-card');
+        if (card) {
+            card.classList.remove('selected');
+        }
+    });
+    updateExportButton();
+}
+
+// Функция для экспорта выбранных товаров
+async function exportSelectedProducts(event) {
+    // Предотвращаем стандартное поведение и двойное срабатывание
+    if (event) {
+        event.preventDefault();
+    }
+    
+    const exportButton = document.getElementById('exportSelected');
+    if (exportButton.disabled) {
+        return; // Предотвращаем повторный запрос, если кнопка уже отключена
+    }
+    
+    const selectedProducts = document.querySelectorAll('input[name="selected_products"]:checked');
+    const skus = Array.from(selectedProducts).map(checkbox => checkbox.value);
+    
+    if (skus.length === 0) {
+        showNotification('Выберите товары для экспорта', 'warning');
+        return;
+    }
+    
+    try {
+        // Отключаем кнопку на время экспорта
+        exportButton.disabled = true;
+        
+        const queryParams = new URLSearchParams();
+        skus.forEach(sku => queryParams.append('skus', sku));
+        const response = await fetch(`/api/warehouse/export/stock-with-sales/?${queryParams.toString()}`, {
+            method: 'GET'
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка при экспорте товаров');
+        }
+        
+        // Создаем ссылку для скачивания файла
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'products_export.xlsx';
+        
+        // Добавляем, кликаем и сразу удаляем ссылку
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        // Освобождаем URL
+        setTimeout(() => {
+            window.URL.revokeObjectURL(url);
+        }, 100);
+        
+        showNotification('Экспорт успешно завершен', 'success');
+    } catch (error) {
+        console.error('Ошибка при экспорте:', error);
+        showNotification('Произошла ошибка при экспорте товаров', 'error');
+    } finally {
+        // Включаем кнопку обратно
+        exportButton.disabled = false;
+    }
+}
+
+// Функция для обработки изменения состояния чекбокса
+function handleCheckboxChange(checkbox) {
+    const card = checkbox.closest('.product-card');
+    if (card) {
+        if (checkbox.checked) {
+            card.classList.add('selected');
+        } else {
+            card.classList.remove('selected');
+        }
+    }
+    updateExportButton();
+}
+
 // Инициализация обработчиков при загрузке страницы
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOMContentLoaded event fired');
     
-    // Очищаем поле поиска и снимаем все выделения при загрузке страницы
-    const searchInput = document.getElementById('searchInput');
-    if (searchInput) {
-        searchInput.value = '';
+    // Добавляем обработчики для кнопок выбора
+    const selectAllBtn = document.getElementById('selectAll');
+    const deselectAllBtn = document.getElementById('deselectAll');
+    const exportBtn = document.getElementById('exportSelected');
+    
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('click', selectAllProducts);
+    }
+    if (deselectAllBtn) {
+        deselectAllBtn.addEventListener('click', deselectAllProducts);
+    }
+    if (exportBtn) {
+        exportBtn.addEventListener('click', exportSelectedProducts);
     }
     
-    // Снимаем все выделения товаров
-    const checkboxes = document.querySelectorAll('input[type="checkbox"]');
-    checkboxes.forEach(checkbox => {
-        checkbox.checked = false;
+    // Добавляем обработчики для чекбоксов
+    document.addEventListener('change', function(e) {
+        if (e.target.matches('input[name="selected_products"]')) {
+            handleCheckboxChange(e.target);
+        }
     });
+    
+    // Инициализация состояния при загрузке
+    deselectAllProducts();
+    updateExportButton();
     
     // Устанавливаем сохраненное значение количества товаров
     const pageSizeSelect = document.getElementById('pageSize');
@@ -183,50 +336,57 @@ document.addEventListener('DOMContentLoaded', function() {
         const savedPageSize = getSavedPageSize();
         pageSizeSelect.value = savedPageSize;
         
-        // Если значение отличается от дефолтного, запускаем фильтрацию
         if (savedPageSize !== '50') {
             handleFilterChange();
         }
         
-        pageSizeSelect.addEventListener('change', function(e) {
-            console.log('Событие change:', e.target.value);
-            handleFilterChange();
-        });
+        pageSizeSelect.addEventListener('change', handleFilterChange);
     }
     
-    // Инициализация поиска
+    // Инициализация поиска и фильтров
+    const searchInput = document.getElementById('searchInput');
+    const stockFilter = document.getElementById('stockFilter');
+    const sortOrder = document.getElementById('sortOrder');
+    
     if (searchInput) {
-        searchInput.addEventListener('input', function(e) {
-            console.log('Событие input:', e.target.value);
-            handleFilterChange();
-        });
+        searchInput.addEventListener('input', handleFilterChange);
     }
-    
-    // Обновляем состояние кнопки экспорта
-    const exportButton = document.getElementById('exportSelected');
-    if (exportButton) {
-        exportButton.disabled = true;
-        document.getElementById('exportCount')?.classList.add('hidden');
+    if (stockFilter) {
+        stockFilter.addEventListener('input', handleFilterChange);
+    }
+    if (sortOrder) {
+        sortOrder.addEventListener('change', handleFilterChange);
     }
 });
+
+// Добавляем стили для выделенных карточек товаров
+const style = document.createElement('style');
+style.textContent = `
+    .product-card.selected {
+        background-color: rgba(59, 130, 246, 0.1);
+        border-color: #3b82f6;
+    }
+`;
+document.head.appendChild(style);
 </script>
 
 <div class="min-h-screen bg-gray-50">
     <!-- Фиксированный хедер каталога -->
     <div class="sticky top-16 left-0 right-0 bg-white z-10 border-b border-gray-200 shadow-sm">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+            <!-- Первая строка: заголовок и кнопки управления -->
+            <div class="flex items-center justify-between mb-4">
                 <div class="flex items-center gap-4">
                     <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Склад товаров</h1>
                     <div class="flex items-center gap-2">
-                        <button id="selectAll" 
+                        <button onclick="selectAllProducts(); return false;" 
                                 class="inline-flex items-center justify-center px-2 py-1 rounded-lg bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
                             <svg class="w-3 h-3 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                             </svg>
                             Выбрать все
                         </button>
-                        <button id="deselectAll" 
+                        <button onclick="deselectAllProducts(); return false;" 
                                 class="inline-flex items-center justify-center px-2 py-1 rounded-lg bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
                             <svg class="w-3 h-3 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -242,30 +402,64 @@ document.addEventListener('DOMContentLoaded', function() {
                         </a>
                     </div>
                 </div>
-                
-                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
-                    <div class="relative flex-grow lg:w-80">
+            </div>
+
+            <!-- Вторая строка: поиск, фильтры и экспорт -->
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                <!-- Поле поиска -->
+                <div class="relative md:col-span-4">
+                    <input type="text" 
+                           id="searchInput" 
+                           placeholder="Поиск по названию, SKU или EAN" 
+                           class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm"
+                           oninput="handleFilterChange()">
+                    <svg class="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </div>
+
+                <!-- Фильтры -->
+                <div class="md:col-span-6 grid grid-cols-3 gap-3">
+                    <!-- Фильтр по количеству -->
+                    <div class="relative">
                         <input type="text" 
-                               id="searchInput" 
-                               placeholder="Поиск по названию, SKU или EAN" 
-                               class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm">
-                        <svg class="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
+                               id="stockFilter" 
+                               placeholder="Остаток меньше чем" 
+                               class="w-full rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm py-2.5 px-4"
+                               pattern="[0-9]*"
+                               inputmode="numeric"
+                               oninput="handleFilterChange()">
                     </div>
 
-                    <div class="relative w-40">
+                    <!-- Сортировка по количеству -->
+                    <div class="relative">
+                        <select id="sortOrder" 
+                                class="w-full rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm py-2.5 pl-4 pr-8"
+                                onchange="handleFilterChange()">
+                            <option value="">Сортировка по умолчанию</option>
+                            <option value="asc">По возрастанию остатков</option>
+                            <option value="desc">По убыванию остатков</option>
+                        </select>
+                    </div>
+
+                    <!-- Количество товаров на странице -->
+                    <div class="relative">
                         <select id="pageSize" 
-                                class="w-full rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm py-2.5 pl-4 pr-8">
+                                class="w-full rounded-xl border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm py-2.5 pl-4 pr-8"
+                                onchange="handleFilterChange()">
                             <option value="50">50 товаров</option>
                             <option value="100">100 товаров</option>
                             <option value="500">500 товаров</option>
                             <option value="1000">1000 товаров</option>
                         </select>
                     </div>
-                    
-                    <button id="exportSelected" 
-                            class="inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-blue-600 text-white font-medium shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 min-w-[200px] sm:min-w-[180px]" 
+                </div>
+
+                <!-- Кнопка экспорта -->
+                <div class="md:col-span-2">
+                    <button onclick="exportSelectedProducts(event)" 
+                            id="exportSelected" 
+                            class="w-full inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-blue-600 text-white font-medium shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                             disabled>
                         <svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
