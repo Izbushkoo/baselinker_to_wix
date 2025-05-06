@@ -35,9 +35,9 @@
                             <div class="mt-2">
                                 <div class="flex items-center space-x-2">
                                     <span class="text-sm text-gray-400">Статус синхронизации:</span>
-                                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-700 text-gray-300">
-                                        <span class="h-2 w-2 rounded-full bg-gray-500 mr-1"></span>
-                                        Неактивна
+                                    <span id="sync-status-{{ token.id_ }}" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium">
+                                        <span class="h-2 w-2 rounded-full mr-1"></span>
+                                        <span class="status-text">Проверка...</span>
                                     </span>
                                 </div>
                             </div>
@@ -85,6 +85,15 @@ async function startSync(tokenId) {
         });
         if (response.ok) {
             showNotification('Синхронизация запущена', 'success');
+            
+            // Сразу обновляем статус на активный
+            const statusElement = document.getElementById(`sync-status-${tokenId}`);
+            const dotElement = statusElement.querySelector('.rounded-full');
+            const textElement = statusElement.querySelector('.status-text');
+            
+            statusElement.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800';
+            dotElement.className = 'h-2 w-2 rounded-full bg-green-500 mr-1';
+            textElement.textContent = 'Активна';
         } else {
             const data = await response.json();
             showNotification(`Ошибка: ${data.detail}`, 'error');
@@ -101,6 +110,15 @@ async function stopSync(tokenId) {
         });
         if (response.ok) {
             showNotification('Синхронизация остановлена', 'success');
+            
+            // Сразу обновляем статус на неактивный
+            const statusElement = document.getElementById(`sync-status-${tokenId}`);
+            const dotElement = statusElement.querySelector('.rounded-full');
+            const textElement = statusElement.querySelector('.status-text');
+            
+            statusElement.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-700 text-gray-300';
+            dotElement.className = 'h-2 w-2 rounded-full bg-gray-500 mr-1';
+            textElement.textContent = 'Неактивна';
         } else {
             const data = await response.json();
             showNotification(`Ошибка: ${data.detail}`, 'error');
@@ -164,6 +182,41 @@ async function checkStocks() {
         showNotification('Ошибка при запуске проверки стоков', 'error');
     }
 }
+
+async function updateSyncStatus(tokenId) {
+    try {
+        const response = await fetch(`/api/allegro_sync/status/${tokenId}`);
+        if (response.ok) {
+            const data = await response.json();
+            const statusElement = document.getElementById(`sync-status-${tokenId}`);
+            const dotElement = statusElement.querySelector('.rounded-full');
+            const textElement = statusElement.querySelector('.status-text');
+            
+            if (data.status === 'active') {
+                statusElement.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800';
+                dotElement.className = 'h-2 w-2 rounded-full bg-green-500 mr-1';
+                textElement.textContent = 'Активна';
+            } else {
+                statusElement.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-700 text-gray-300';
+                dotElement.className = 'h-2 w-2 rounded-full bg-gray-500 mr-1';
+                textElement.textContent = 'Неактивна';
+            }
+        }
+    } catch (error) {
+        console.error('Ошибка при проверке статуса:', error);
+    }
+}
+
+function initStatusUpdates() {
+    const tokenElements = document.querySelectorAll('[id^="sync-status-"]');
+    tokenElements.forEach(element => {
+        const tokenId = element.id.replace('sync-status-', '');
+        updateSyncStatus(tokenId);
+        setInterval(() => updateSyncStatus(tokenId), 30000);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', initStatusUpdates);
 
 function showNotification(message, type = 'info') {
     const colors = {

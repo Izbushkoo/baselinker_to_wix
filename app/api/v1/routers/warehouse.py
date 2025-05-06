@@ -765,5 +765,5 @@ async def sale_from_order(
 async def compress_images(
     manager: manager.InventoryManager = Depends(manager.get_manager)
 ):
-    manager.compress_all_product_images()
-    return JSONResponse({'status': 'success', 'message': 'Изображения сжаты'})
+    result = manager.compress_all_product_images()
+    return JSONResponse({'status': 'success', 'result': result})
