@@ -13,6 +13,16 @@
 <script>
 let searchTimeout;
 
+// Функция для сохранения размера страницы в localStorage
+function savePageSize(size) {
+    localStorage.setItem('catalogPageSize', size);
+}
+
+// Функция для получения сохраненного размера страницы
+function getSavedPageSize() {
+    return localStorage.getItem('catalogPageSize') || '50';
+}
+
 async function handleFilterChange() {
     console.log('handleFilterChange вызвана');
     clearTimeout(searchTimeout);
@@ -21,6 +31,9 @@ async function handleFilterChange() {
         try {
             const search = document.getElementById('searchInput').value || '';
             const pageSize = document.getElementById('pageSize').value || '50';
+            
+            // Сохраняем размер страницы при каждом изменении
+            savePageSize(pageSize);
             
             console.log('Параметры поиска:', { search, pageSize });
             
@@ -152,28 +165,48 @@ async function goToPage(page) {
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOMContentLoaded event fired');
     
-    // Инициализация поиска
+    // Очищаем поле поиска и снимаем все выделения при загрузке страницы
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
-        console.log('Найден элемент поиска');
-        searchInput.addEventListener('input', function(e) {
-            console.log('Событие input:', e.target.value);
-            handleFilterChange();
-        });
-    } else {
-        console.error('Элемент поиска не найден!');
+        searchInput.value = '';
     }
     
-    // Инициализация выбора количества товаров
+    // Снимаем все выделения товаров
+    const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    
+    // Устанавливаем сохраненное значение количества товаров
     const pageSizeSelect = document.getElementById('pageSize');
     if (pageSizeSelect) {
-        console.log('Найден элемент выбора количества');
+        const savedPageSize = getSavedPageSize();
+        pageSizeSelect.value = savedPageSize;
+        
+        // Если значение отличается от дефолтного, запускаем фильтрацию
+        if (savedPageSize !== '50') {
+            handleFilterChange();
+        }
+        
         pageSizeSelect.addEventListener('change', function(e) {
             console.log('Событие change:', e.target.value);
             handleFilterChange();
         });
-    } else {
-        console.error('Элемент выбора количества не найден!');
+    }
+    
+    // Инициализация поиска
+    if (searchInput) {
+        searchInput.addEventListener('input', function(e) {
+            console.log('Событие input:', e.target.value);
+            handleFilterChange();
+        });
+    }
+    
+    // Обновляем состояние кнопки экспорта
+    const exportButton = document.getElementById('exportSelected');
+    if (exportButton) {
+        exportButton.disabled = true;
+        document.getElementById('exportCount')?.classList.add('hidden');
     }
 });
 </script>
