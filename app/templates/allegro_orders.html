@@ -154,51 +154,40 @@ function getShipmentStatus(order) {
             ? JSON.parse(order.fulfillment) 
             : order.fulfillment;
             
-        if (!fulfillment || !fulfillment.shipmentSummary || !fulfillment.shipmentSummary.lineItemsSent) {
-            return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                Новый
-            </span>`;
+        if (!fulfillment || !fulfillment.shipmentSummary) {
+            return '';
         }
 
         const statusColors = {
-            'NEW': 'bg-blue-100 text-blue-800',
-            'PROCESSING': 'bg-yellow-100 text-yellow-800',
-            'READY_FOR_SHIPMENT': 'bg-indigo-100 text-indigo-800',
-            'READY_FOR_PICKUP': 'bg-purple-100 text-purple-800',
             'SENT': 'bg-green-100 text-green-800',
             'PICKED_UP': 'bg-teal-100 text-teal-800',
             'CANCELLED': 'bg-red-100 text-red-800',
-            'SUSPENDED': 'bg-orange-100 text-orange-800',
             'RETURNED': 'bg-gray-100 text-gray-800'
         };
 
         const statusLabels = {
-            'NEW': 'Новый',
-            'PROCESSING': 'В обработке',
-            'READY_FOR_SHIPMENT': 'Готов к отправке',
-            'READY_FOR_PICKUP': 'Готов к получению',
             'SENT': 'Отправлен',
             'PICKED_UP': 'Получен',
             'CANCELLED': 'Отменён',
-            'SUSPENDED': 'Приостановлен',
             'RETURNED': 'Возвращён'
         };
 
-        // Для отладки
-        console.log('Fulfillment:', fulfillment);
+        const status = fulfillment.status || fulfillment.shipmentSummary.status;
+        
+        // Показываем статус только если он есть в нашем списке разрешенных статусов
+        if (status && statusLabels[status]) {
+            const colorClass = statusColors[status];
+            const label = statusLabels[status];
 
-        const status = fulfillment.status || fulfillment.shipmentSummary.status || 'NEW';
-        const colorClass = statusColors[status] || 'bg-gray-100 text-gray-800';
-        const label = statusLabels[status] || status;
-
-        return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorClass}">
-            ${label}
-        </span>`;
+            return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorClass}">
+                ${label}
+            </span>`;
+        }
+        
+        return '';
     } catch (e) {
         console.error('Ошибка парсинга статуса отправки:', e);
-        return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-            Ошибка статуса
-        </span>`;
+        return '';
     }
 }
 
@@ -295,19 +284,22 @@ function displayOrders(orders) {
                         <div class="flex items-center space-x-4 flex-wrap">
                             <span class="text-lg font-medium text-white">ID: ${order.id}</span>
                             <span class="text-sm text-gray-400">${new Date(order.updated_at).toLocaleString()}</span>
-                            ${order.status === 'CANCELLED' ? getOrderStatus(order) : ''}
-                            ${order.status !== 'CANCELLED' ? `
+                            ${order.status === 'CANCELLED' ? getOrderStatus(order) : `
                                 ${getShipmentStatus(order)}
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${order.is_stock_updated ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
-                                    ${order.is_stock_updated ? 'Списано' : 'Не списано'}
-                                </span>
-                                ${!order.is_stock_updated ? `
+                                ${order.is_stock_updated ? `
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        Списано
+                                    </span>
+                                ` : `
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                        Не списано
+                                    </span>
                                     <button onclick="event.stopPropagation(); saleFromOrder('${order.id}')" 
                                             class="ml-2 px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
                                         Списать
                                     </button>
-                                ` : ''}
-                            ` : ''}
+                                `}
+                            `}
                         </div>
                     </div>
                     <svg id="arrow-${order.id}" class="w-5 h-5 text-gray-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
