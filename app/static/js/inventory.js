@@ -1,7 +1,3 @@
-let searchTimeout;
-
-
-// Инициализация обработчиков событий при загрузке страницы
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOMContentLoaded event fired');
     
