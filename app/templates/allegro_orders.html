@@ -308,50 +308,61 @@ function displayOrders(orders) {
         
         // Кнопки действий
         let actionButtons = '';
-
-        if (!canShowWriteOff) {
-            actionButtons += `<button onclick="event.stopPropagation(); saleFromOrder('${order.id}')"
-                class="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">Списать</button>`;
-        }
-
         if (!order.is_stock_updated) {
+            // Кнопка "Списать" — только если заказ не отменён и не отменён продавцом
+            const shipmentStatusText = getShipmentStatus(order);
+            const isCancelled = order.status === 'CANCELLED' || shipmentStatusText.includes('Отменен продавцом');
+            if (!isCancelled) {
+                actionButtons += `<button onclick="event.stopPropagation(); saleFromOrder('${order.id}')"
+                    class="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">Списать</button>`;
+            }
+            // Кнопка "Пометить списанным" — всегда, если не списан
             actionButtons += `<button onclick="event.stopPropagation(); markOrderStockUpdated('${order.id}')"
                 class="px-3 py-1 bg-yellow-600 text-white text-sm rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500">Пометить списанным</button>`;
-            actionButtons += `<button onclick="event.stopPropagation(); saleFromOrder('${order.id}')"
-                class="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">Списать</button>`;
         }
         
         // Статус списания
         let stockStatus = '';
         if (order.status !== 'CANCELLED') {
             stockStatus = order.is_stock_updated ?
-                `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Списано</span>` :
-                `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Не списано</span>`;
+                `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">Списано</span>` :
+                `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">Не списано</span>`;
         }
-        
         // Верхняя строка: ID (слева, кликабельно), статусы (справа)
         const mainInfo = `
             <div class="flex flex-col gap-2 p-4 cursor-pointer" onclick="toggleOrderDetails('${order.id}')">
-                <div class="flex items-center justify-between w-full">
-                    <button onclick="event.stopPropagation(); copyToClipboard('${order.id}', this)" class="font-mono text-base text-blue-400 hover:text-blue-600 focus:outline-none bg-transparent relative group" onmouseenter="showTooltip(this, 'Скопировать ID')" onmouseleave="hideTooltip(this)">
-                        ID: ${order.id}
-                        <span class="tooltip-text hidden absolute left-1/2 -translate-x-1/2 top-full mt-1 px-2 py-1 rounded bg-gray-800 text-xs text-white z-10 whitespace-nowrap">Скопировать ID</span>
-                    </button>
+                <div class="flex items-center w-full">
+                    <span class="text-sm text-gray-400">${new Date(order.updated_at).toLocaleString()}</span>
+                    <div class="flex-1 flex justify-center">
+                        <button onclick="event.stopPropagation(); copyToClipboard('${order.id}', this)" class="font-mono text-base text-blue-400 hover:text-blue-600 focus:outline-none bg-transparent relative group" onmouseenter="showTooltip(this, 'Скопировать ID')" onmouseleave="hideTooltip(this)">
+                            ID: ${order.id}
+                            <span class="tooltip-text hidden absolute left-1/2 -translate-x-1/2 top-full mt-1 px-2 py-1 rounded bg-gray-800 text-xs text-white z-10 whitespace-nowrap">Скопировать ID</span>
+                        </button>
+                    </div>
                     <div class="flex items-center gap-2 flex-wrap">
-                        <span class="text-sm text-gray-400">${new Date(order.updated_at).toLocaleString()}</span>
-                        ${orderStatus}
-                        ${order.status !== 'CANCELLED' ? shipmentStatus : ''}
+                        ${(function() {
+                            const shipmentStatusText = getShipmentStatus(order);
+                            if (
+                                shipmentStatusText.includes('Отправлен') ||
+                                shipmentStatusText.includes('Отменен продавцом') ||
+                                shipmentStatusText.includes('Возвращен')
+                            ) {
+                                return shipmentStatusText;
+                            }
+                            return '';
+                        })()}
+                        ${getOrderStatus(order)}
                     </div>
                 </div>
                 <div class="flex items-center justify-end w-full mt-2 gap-2">
-                    ${stockStatus}
                     ${actionButtons}
+                    ${stockStatus}
                 </div>
             </div>
         `;
 
-        const details = `pdated_at).toLocaleString()}</span>
-            </div>d="details-${order.id}" class="hidden border-t border-gray-700 p-4">
+        const details = `
+            <div id="details-${order.id}" class="hidden border-t border-gray-700 p-4">
                 ${order.buyer ? `
                     <div class="mb-4">
                         <h3 class="text-sm font-medium text-gray-400 mb-2">Информация о покупателе</h3>
