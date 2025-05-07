@@ -6,7 +6,8 @@ def operation_type_label(operation_type: str) -> str:
         'stock_in': 'Поступление',
         'stock_in_file': 'Поступление из файла',
         'transfer_file': 'Перемещение из файла',
-        'stock_out_manual': "Списание товара без продажи",
+        'stock_out_manual': "Списание товара",
+        'stock_out_order': "Списание по заказу",
         'transfer': 'Перемещение',
         'product_create': 'Создание товара',
         'product_delete': 'Удаление товара'

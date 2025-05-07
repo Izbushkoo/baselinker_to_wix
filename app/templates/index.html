@@ -157,6 +157,14 @@
                                 </div>
                             </div>
                             {% endif %}
+                            {% if operation.operation_type == 'stock_out_order' and operation.order_id %}
+                            <div>
+                                <div class="text-sm text-gray-500">ID заказа</div>
+                                <button onclick="copyToClipboard('{{ operation.order_id }}', this)" class="font-mono text-base hover:text-blue-600 focus:outline-none">
+                                    {{ operation.order_id }}
+                                </button>
+                            </div>
+                            {% endif %}
                         </div>
                         <div class="flex items-center justify-between mt-4 text-sm text-gray-500">
                             <span>

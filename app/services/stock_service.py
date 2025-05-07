@@ -6,6 +6,8 @@ from app.models.warehouse import Sale
 import logging
 from app.services.warehouse.manager import Warehouses
 from app.services.tg_client import TelegramManager
+from app.services.operations_service import get_operations_service
+from app.models.operations import OperationType
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,23 @@ class AllegroStockService:
             order.is_stock_updated = True
             self.db.add(order)
             self.db.commit()
+
+            # Создаем операцию списания для заказа
+            operations_service = get_operations_service()
+            products_data = [
+                {
+                    "sku": item.line_item.external_id,
+                    "quantity": 1,
+                    "name": item.line_item.offer_name
+                } for item in order_items
+            ]
+            
+            operation = operations_service.create_order_operation(
+                warehouse_id=warehouse,
+                products_data=products_data,
+                order_id=order.id,
+                comment=f"Списание по заказу Allegro {order.id}"
+            )
             
             logger.info(f"Успешно обработано списание для заказа {order.id}")
             return True

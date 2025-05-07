@@ -62,16 +62,17 @@ class OperationsService:
         operation_type: OperationType,
         warehouse_id: str,
         products: List[Dict[str, Union[str, int]]],
-        file_name: str,
-        user_email: str,
+        file_name: Optional[str] = None,
+        user_email: Optional[str] = None,
         target_warehouse_id: Optional[str] = None,
+        order_id: Optional[str] = None,
         comment: Optional[str] = None,
         session: Optional[Session] = None
     ) -> Operation:
         """Создание операции на основе файла"""
         session = self._get_session(session)
 
-        if operation_type not in [OperationType.STOCK_IN_FILE, OperationType.TRANSFER_FILE]:
+        if operation_type not in [OperationType.STOCK_IN_FILE, OperationType.TRANSFER_FILE, OperationType.STOCK_OUT_ORDER]:
             raise ValueError("Неверный тип операции для файловой обработки")
 
         products_data = {"products": products}
@@ -85,6 +86,7 @@ class OperationsService:
             user_email=user_email,
             target_warehouse_id=target_warehouse_id,
             file_name=file_name,
+            order_id=order_id,
             comment=comment
         )
         
@@ -96,18 +98,16 @@ class OperationsService:
     def create_order_operation(
         self,
         warehouse_id: str,
-        sku: str,
-        quantity: int,
         order_id: str,
+        products_data: List[Dict[str, Union[str, int]]],
         comment: Optional[str] = None,
         session: Optional[Session] = None
     ) -> Operation:
         """Создание операции списания по заказу"""
-        return self.create_single_operation(
+        return self.create_file_operation(
             operation_type=OperationType.STOCK_OUT_ORDER,
             warehouse_id=warehouse_id,
-            sku=sku,
-            quantity=quantity,
+            products=products_data,
             order_id=order_id,
             comment=comment,
             session=session
