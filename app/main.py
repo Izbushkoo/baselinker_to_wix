@@ -18,6 +18,8 @@ from app.services.warehouse import manager
 from datetime import datetime, timedelta
 from app.models.operations import Operation, OperationType
 from uuid import uuid4
+from app.services.operations_service import get_operations_service
+from app.templates.filters import operation_type_label
 
 
 # Настраиваем логирование при запуске приложения
@@ -38,6 +40,7 @@ app.add_middleware(
 
 # Настройка шаблонов и статических файлов
 templates = Jinja2Templates(directory="app/templates")
+templates.env.filters["operation_type_label"] = operation_type_label
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Настройка логирования
@@ -56,112 +59,16 @@ async def home(
     logger.info(f"Total items: {total_items}")
     logger.info(f"Low stock: {low_stock}")
 
-    # Тестовые данные
-    test_operations = [
-        Operation(
-            id=1,
-            operation_type=OperationType.PRODUCT_CREATE,
-            created_at=datetime.now() - timedelta(hours=2),
-            warehouse_id="WH001",
-            user_email="admin@example.com",
-            products_data={
-                "sku": "TEST-SKU-001",
-                "name": "Новый тестовый товар",
-                "initial_quantity": 100
-            },
-        ),
-        Operation(
-            id=2,
-            operation_type=OperationType.PRODUCT_DELETE,
-            created_at=datetime.now() - timedelta(hours=1),
-            user_email="admin@example.com",
-            products_data={
-                "sku": "TEST-SKU-002"
-            },
-            comment="Удаление устаревшего товара"
-        ),
-        # Приход товара
-        Operation(
-            id=uuid4(),
-            operation_type=OperationType.STOCK_IN.value,
-            created_at=datetime.now() - timedelta(hours=1),
-            warehouse_id="main",
-            products_data={"sku": "TEST-SKU-001", "quantity": 10},
-            user_email="user@example.com",
-            comment="Тестовый приход товара"
-        ),
-        
-        # Массовый приход через файл
-        Operation(
-            id=uuid4(),
-            operation_type=OperationType.STOCK_IN_FILE.value,
-            created_at=datetime.now() - timedelta(hours=2),
-            warehouse_id="main",
-            products_data={
-                "products": [
-                    {"sku": "TEST-SKU-001", "quantity": 5},
-                    {"sku": "TEST-SKU-002", "quantity": 3},
-                    {"sku": "TEST-SKU-003", "quantity": 7}
-                ]
-            },
-            user_email="admin@example.com",
-            file_name="import_20240306.xlsx",
-            comment="Массовый импорт товаров"
-        ),
-        
-        # Списание по заказу
-        Operation(
-            id=uuid4(),
-            operation_type=OperationType.STOCK_OUT_ORDER.value,
-            created_at=datetime.now() - timedelta(hours=3),
-            warehouse_id="main",
-            products_data={"sku": "TEST-SKU-002", "quantity": 1},
-            order_id="ORDER-123",
-            comment="Списание по заказу"
-        ),
-        
-        # Ручное списание
-        Operation(
-            id=uuid4(),
-            operation_type=OperationType.STOCK_OUT_MANUAL.value,
-            created_at=datetime.now() - timedelta(hours=4),
-            warehouse_id="main",
-            products_data={"sku": "TEST-SKU-003", "quantity": 2},
-            user_email="manager@example.com",
-            comment="Списание брака"
-        ),
-        
-        # Перемещение между складами
-        Operation(
-            id=uuid4(),
-            operation_type=OperationType.TRANSFER.value,
-            created_at=datetime.now() - timedelta(hours=5),
-            warehouse_id="main",
-            target_warehouse_id="secondary",
-            products_data={"sku": "TEST-SKU-001", "quantity": 3},
-            user_email="warehouse@example.com",
-            comment="Перемещение на другой склад"
-        ),
-        
-        # Массовое перемещение через файл
-        Operation(
-            id=uuid4(),
-            operation_type=OperationType.TRANSFER_FILE.value,
-            created_at=datetime.now() - timedelta(hours=6),
-            warehouse_id="main",
-            target_warehouse_id="secondary",
-            products_data={
-                "products": [
-                    {"sku": "TEST-SKU-001", "quantity": 2},
-                    {"sku": "TEST-SKU-002", "quantity": 4},
-                    {"sku": "TEST-SKU-003", "quantity": 1}
-                ]
-            },
-            user_email="admin@example.com",
-            file_name="transfer_20240306.xlsx",
-            comment="Массовое перемещение товаров"
-        )
-    ]
+    # Получаем сервис операций
+    operations_service = get_operations_service()
+    
+    # Получаем последние 10 операций
+    recent_operations = operations_service.get_latest_operations(limit=50)
+    
+    # Получаем статистику операций за сегодня
+    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = datetime.now()
+    today_stats = operations_service.get_operations_stats(today_start, today_end)
 
     return templates.TemplateResponse("index.html", {
         "request": request,
@@ -169,9 +76,9 @@ async def home(
         "stats": {
             "total_items": total_items,
             "low_stock": low_stock,
-            "today_operations": len(test_operations)
+            "today_operations": today_stats["total"]
         },
-        "recent_operations": test_operations
+        "recent_operations": recent_operations
     })
 
 @app.get("/status")

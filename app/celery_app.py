@@ -609,6 +609,9 @@ def process_allegro_order_events(token_id: str):
                 if not last_event_id:
                     logger.warning(f"Не удалось получить ID последнего события для токена {token_id}")
                     return {"status": "error", "message": "Не удалось получить ID последнего события"}
+
+                redis_client.set(f"last_allegro_event_{token_id}", last_event_id)
+                logger.info(f"Сохранен ID последнего события: {last_event_id}")
             
             # Получаем новые события
             allegro_rate_limiter.wait_if_needed()
@@ -642,9 +645,7 @@ def process_allegro_order_events(token_id: str):
             if last_processed_id:
                 redis_client.set(f"last_allegro_event_{token_id}", last_processed_id)
                 logger.info(f"Сохранен ID последнего обработанного события: {last_processed_id}")
-            else:
-                redis_client.set(f"last_allegro_event_{token_id}", last_event_id)
-
+            
             return {
                 "status": "success",
                 "processed_events": processed_count,

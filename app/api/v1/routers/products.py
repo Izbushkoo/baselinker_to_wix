@@ -26,6 +26,7 @@ async def catalog(
     page_size: int = Query(50, ge=1, le=1000),
     search: Optional[str] = None,
     stock_filter: Optional[int] = None,
+    min_stock_filter: Optional[int] = None,
     sort_order: Optional[str] = None,
     db: AsyncSession = Depends(deps.get_async_session),
     current_user: User = Depends(deps.get_current_user_optional)
@@ -58,10 +59,16 @@ async def catalog(
             )
         )
 
-    # Фильтр по количеству
+    # Фильтр по максимальному количеству
     if stock_filter is not None and stock_filter >= 0:
         base_query = base_query.having(
             func.coalesce(func.sum(Stock.quantity), 0) < stock_filter
+        )
+
+    # Фильтр по минимальному количеству
+    if min_stock_filter is not None and min_stock_filter >= 0:
+        base_query = base_query.having(
+            func.coalesce(func.sum(Stock.quantity), 0) >= min_stock_filter
         )
 
     # Создаем подзапрос для корректного подсчета общего количества
