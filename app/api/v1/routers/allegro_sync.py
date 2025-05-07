@@ -700,3 +700,28 @@ async def get_order_by_id(
         logger.error(f"Ошибка при получении заказа по id: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.patch("/orders/{token_id}/{order_id}/mark_stock_updated")
+async def mark_order_stock_updated(
+    token_id: str,
+    order_id: str,
+    database: AsyncSession = Depends(deps.get_async_session)
+):
+    """
+    Пометить заказ как списанный (is_stock_updated=True) по token_id и order_id.
+    """
+    try:
+        query = select(AllegroOrder).where(AllegroOrder.token_id == token_id, AllegroOrder.id == order_id)
+        result = await database.exec(query)
+        order = result.first()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if order.is_stock_updated:
+            return {"status": "already_marked"}
+        order.is_stock_updated = True
+        database.add(order)
+        await database.commit()
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Ошибка при пометке заказа как списанного: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+

@@ -295,48 +295,51 @@ function displayOrders(orders) {
 
     orders.forEach(order => {
         const orderElement = document.createElement('div');
-        orderElement.className = 'bg-gray-800 rounded-lg shadow overflow-hidden';
+        orderElement.className = 'bg-gray-800 rounded-lg shadow overflow-hidden relative';
         
         // Получаем статусы
         const orderStatus = getOrderStatus(order);
         const shipmentStatus = getShipmentStatus(order);
         
         // Определяем, можно ли показывать кнопку списания
-        const canShowWriteOff = order.status !== 'CANCELLED' && // не отменен покупателем
-                               !shipmentStatus.includes('Отменен продавцом') && // не отменен продавцом
-                               (shipmentStatus.includes('Отправлен') || order.status === 'READY_FOR_PROCESSING'); // только для отправленных или готовых к отправке
+        const canShowWriteOff = order.status !== 'CANCELLED' &&
+                               !shipmentStatus.includes('Отменен продавцом') &&
+                               (shipmentStatus.includes('Отправлен') || order.status === 'READY_FOR_PROCESSING');
         
+        // Кнопки действий
+        let actionButtons = '';
+        if (!order.is_stock_updated && canShowWriteOff) {
+            actionButtons += `<button onclick="event.stopPropagation(); saleFromOrder('${order.id}')"
+                class="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">Списать</button>`;
+            actionButtons += `<button onclick="event.stopPropagation(); markOrderStockUpdated('${order.id}')"
+                class="px-3 py-1 bg-yellow-600 text-white text-sm rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500">Пометить списанным</button>`;
+        }
+        
+        // Статус списания
+        let stockStatus = '';
+        if (canShowWriteOff) {
+            stockStatus = order.is_stock_updated ?
+                `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Списано</span>` :
+                `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Не списано</span>`;
+        }
+        
+        // Верхняя строка: ID (слева, кликабельно), статусы (справа)
         const mainInfo = `
-            <div class="p-4 cursor-pointer" onclick="toggleOrderDetails('${order.id}')">
-                <div class="flex items-center justify-between">
-                    <div class="flex-1">
-                        <div class="flex items-center space-x-4 flex-wrap">
-                            <span class="text-lg font-medium text-white">ID: ${order.id}</span>
-                            <span class="text-sm text-gray-400">${new Date(order.updated_at).toLocaleString()}</span>
-                            ${orderStatus}
-                            ${order.status !== 'CANCELLED' ? `
-                                ${shipmentStatus}
-                                ${canShowWriteOff ? `
-                                    ${order.is_stock_updated ? `
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                            Списано
-                                        </span>
-                                    ` : `
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                            Не списано
-                                        </span>
-                                        <button onclick="event.stopPropagation(); saleFromOrder('${order.id}')" 
-                                                class="ml-2 px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                            Списать
-                                        </button>
-                                    `}
-                                ` : ''}
-                            ` : ''}
-                        </div>
+            <div class="flex flex-col gap-2 p-4 cursor-pointer" onclick="toggleOrderDetails('${order.id}')">
+                <div class="flex items-center justify-between w-full">
+                    <button onclick="event.stopPropagation(); copyToClipboard('${order.id}', this)" class="font-mono text-base text-blue-400 hover:text-blue-600 focus:outline-none bg-transparent relative group" onmouseenter="showTooltip(this, 'Скопировать ID')" onmouseleave="hideTooltip(this)">
+                        ID: ${order.id}
+                        <span class="tooltip-text hidden absolute left-1/2 -translate-x-1/2 top-full mt-1 px-2 py-1 rounded bg-gray-800 text-xs text-white z-10 whitespace-nowrap">Скопировать ID</span>
+                    </button>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-sm text-gray-400">${new Date(order.updated_at).toLocaleString()}</span>
+                        ${orderStatus}
+                        ${order.status !== 'CANCELLED' ? shipmentStatus : ''}
                     </div>
-                    <svg id="arrow-${order.id}" class="w-5 h-5 text-gray-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                    </svg>
+                </div>
+                <div class="flex items-center justify-end w-full mt-2 gap-2">
+                    ${stockStatus}
+                    ${actionButtons}
                 </div>
             </div>
         `;
@@ -470,6 +473,43 @@ async function saleFromOrder(orderId) {
     } catch (error) {
         showNotification('Ошибка при списании товаров: ' + error.message, 'error');
     }
+}
+
+// Добавить функцию markOrderStockUpdated
+async function markOrderStockUpdated(orderId) {
+    try {
+        const response = await fetch(`/api/allegro_sync/orders/{{ token_id }}/${orderId}/mark_stock_updated`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        if (response.ok) {
+            showNotification('Заказ помечен как списанный', 'success');
+            // Обновить заказы (можно перерисовать текущий список)
+            fetchOrders(currentPage);
+        } else {
+            showNotification('Ошибка при пометке заказа', 'error');
+        }
+    } catch (e) {
+        showNotification('Ошибка при пометке заказа: ' + e.message, 'error');
+    }
+}
+
+function copyToClipboard(text, button) {
+    navigator.clipboard.writeText(text).then(() => {
+        // Показываем уведомление об успешном копировании
+        const originalText = button.innerHTML;
+        button.innerHTML = 'Скопировано!';
+        button.classList.add('text-green-400');
+        
+        // Возвращаем исходный текст через 2 секунды
+        setTimeout(() => {
+            button.innerHTML = originalText;
+            button.classList.remove('text-green-400');
+        }, 2000);
+    }).catch(err => {
+        console.error('Ошибка при копировании:', err);
+        showNotification('Ошибка при копировании ID', 'error');
+    });
 }
 
 // Загружаем заказы при загрузке страницы
