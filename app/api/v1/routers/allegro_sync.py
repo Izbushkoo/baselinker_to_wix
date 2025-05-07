@@ -632,3 +632,71 @@ def get_events_status(token_id: str, db: Session = Depends(get_db)) -> Dict[str,
         }
     }
 
+@router.get("/orders/{token_id}/{order_id}")
+async def get_order_by_id(
+    token_id: str,
+    order_id: str,
+    database: AsyncSession = Depends(deps.get_async_session)
+):
+    """
+    Получить один заказ по его order_id и token_id.
+    Возвращает заказ в том же формате, что и основной роут.
+    """
+    try:
+        query = select(AllegroOrder).where(AllegroOrder.token_id == token_id, AllegroOrder.id == order_id)
+        result = await database.exec(query)
+        order = result.first()
+        if not order:
+            return {"orders": [], "total": 0, "offset": 0, "limit": 1}
+
+        # Загружаем связанные данные
+        buyer = await database.get(AllegroBuyer, order.buyer_id) if order.buyer_id else None
+        order_items_query = select(OrderLineItem).where(OrderLineItem.order_id == order.id)
+        order_items_result = await database.exec(order_items_query)
+        order_items = order_items_result.all()
+        line_items = []
+        for item in order_items:
+            line_item = await database.get(AllegroLineItem, item.line_item_id)
+            if line_item:
+                line_items.append({
+                    "id": line_item.id,
+                    "offer_id": line_item.offer_id,
+                    "offer_name": line_item.offer_name,
+                    "external_id": line_item.external_id,
+                    "original_price": line_item.original_price,
+                    "price": line_item.price
+                })
+        order_dict = {
+            "id": order.id,
+            "status": order.status,
+            "is_stock_updated": order.is_stock_updated,
+            "updated_at": order.updated_at.isoformat() if order.updated_at else None,
+            "belongs_to": order.belongs_to,
+            "token_id": order.token_id,
+            "buyer": None,
+            "payment": order.payment,
+            "fulfillment": order.fulfillment,
+            "delivery": order.delivery,
+            "line_items": line_items
+        }
+        if buyer:
+            order_dict["buyer"] = {
+                "id": buyer.id,
+                "email": buyer.email,
+                "login": buyer.login,
+                "first_name": buyer.first_name,
+                "last_name": buyer.last_name,
+                "company_name": buyer.company_name,
+                "phone_number": buyer.phone_number,
+                "address": buyer.address
+            }
+        return {
+            "orders": [order_dict],
+            "total": 1,
+            "offset": 0,
+            "limit": 1
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при получении заказа по id: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+

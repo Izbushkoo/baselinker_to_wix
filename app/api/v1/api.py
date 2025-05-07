@@ -11,7 +11,6 @@ api_router.include_router(baselinker_info.router, prefix="/baselinker", tags=["B
 api_router.include_router(allegro_sync.router, prefix="/allegro_sync", tags=["Allegro sync"])
 api_router.include_router(warehouse.router, prefix="/warehouse", tags=["Warehouse"])
 api_router.include_router(products.router, prefix="/products", tags=["Products"])
-
 # Веб-маршруты (без API префикса)
 web_router = APIRouter()
 web_router.include_router(auth.web_router, tags=["Auth Pages"])
