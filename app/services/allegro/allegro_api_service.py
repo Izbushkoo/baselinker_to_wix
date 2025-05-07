@@ -165,6 +165,133 @@ class SyncAllegroApiService(BaseAllegroApiService):
         except httpx.HTTPError as e:
             raise ValueError(f"Ошибка при получении событий заказов: {str(e)}")
 
+    def get_order_events_v2(
+        self,
+        token: str,
+        from_event_id: Optional[str] = None,
+        types: Optional[List[str]] = None,
+        limit: int = 100
+    ) -> Dict[str, Any]:
+        """
+        Получает события заказов с расширенными параметрами фильтрации.
+        
+        Args:
+            token: Токен доступа
+            from_event_id: ID события, начиная с которого нужно получить события
+            types: Список типов событий для фильтрации
+            limit: Максимальное количество событий в ответе (1-1000)
+            
+        Returns:
+            Dict[str, Any]: Ответ от API с событиями заказов
+        """
+        params = {"limit": min(limit, 1000)}  # Ограничиваем максимальное значение
+        
+        if from_event_id:
+            params["from"] = from_event_id
+        if types:
+            params["type"] = types
+
+        try:
+            response = self.client.get(
+                "/order/events",
+                headers=self._get_headers(token),
+                params=params
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise ValueError(f"Ошибка при получении событий заказов: {str(e)}")
+
+    def get_orders_v2(
+        self,
+        token: str,
+        offset: int = 0,
+        limit: int = 100,
+        status: Optional[str] = None,
+        fulfillment_status: Optional[str] = None,
+        items_sent_status: Optional[str] = None,
+        bought_at_gte: Optional[datetime] = None,
+        bought_at_lte: Optional[datetime] = None,
+        buyer_login: Optional[str] = None,
+        sort: Optional[str] = None,
+        updated_at_gte: Optional[datetime] = None,
+        updated_at_lte: Optional[datetime] = None,
+        payment_id: Optional[str] = None,
+        surcharge_id: Optional[str] = None,
+        delivery_method_id: Optional[str] = None,
+        marketplace_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Получает список заказов с расширенными параметрами фильтрации.
+        
+        Args:
+            token: Токен доступа
+            offset: Смещение для пагинации
+            limit: Количество заказов на странице
+            status: Статус заказа
+            fulfillment_status: Статус выполнения
+            items_sent_status: Статус отправки товаров
+            bought_at_gte: Минимальная дата покупки
+            bought_at_lte: Максимальная дата покупки
+            buyer_login: Логин покупателя
+            sort: Параметр сортировки
+            updated_at_gte: Минимальная дата обновления
+            updated_at_lte: Максимальная дата обновления
+            payment_id: ID платежа
+            surcharge_id: ID доплаты
+            delivery_method_id: ID метода доставки
+            marketplace_id: ID маркетплейса
+            
+        Returns:
+            Dict[str, Any]: Ответ от API с заказами
+        """
+        params = self._prepare_order_params(
+            offset, limit, status, fulfillment_status, items_sent_status,
+            bought_at_gte, bought_at_lte, buyer_login, sort,
+            updated_at_gte, updated_at_lte
+        )
+
+        # Добавляем новые параметры
+        if payment_id:
+            params["payment.id"] = payment_id
+        if surcharge_id:
+            params["surcharges.id"] = surcharge_id
+        if delivery_method_id:
+            params["delivery.method.id"] = delivery_method_id
+        if marketplace_id:
+            params["marketplace.id"] = marketplace_id
+
+        try:
+            response = self.client.get(
+                "/order/checkout-forms",
+                headers=self._get_headers(token),
+                params=params
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise ValueError(f"Ошибка при получении заказов: {str(e)}")
+
+    def get_order_events_statistics(self, token: str) -> Dict[str, Any]:
+        """
+        Получает статистику событий заказов, включая ID последнего события.
+        
+        Args:
+            token: Токен доступа
+            
+        Returns:
+            Dict[str, Any]: Ответ от API со статистикой событий
+        """
+        try:
+            response = self.client.get(
+                "/order/events/statistics",
+                headers=self._get_headers(token)
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise ValueError(f"Ошибка при получении статистики событий: {str(e)}")
+
 class AsyncAllegroApiService(BaseAllegroApiService):
     def __init__(self, base_url: str = "https://api.allegro.pl"):
         super().__init__(base_url)
@@ -242,4 +369,113 @@ class AsyncAllegroApiService(BaseAllegroApiService):
                 return response.json()
         except httpx.HTTPError as e:
             raise ValueError(f"Ошибка при получении событий заказов: {str(e)}")
+
+    async def get_order_events_v2(
+        self,
+        token: str,
+        from_event_id: Optional[str] = None,
+        types: Optional[List[str]] = None,
+        limit: int = 100
+    ) -> Dict[str, Any]:
+        """
+        Получает события заказов с расширенными параметрами фильтрации.
+        
+        Args:
+            token: Токен доступа
+            from_event_id: ID события, начиная с которого нужно получить события
+            types: Список типов событий для фильтрации
+            limit: Максимальное количество событий в ответе (1-1000)
+            
+        Returns:
+            Dict[str, Any]: Ответ от API с событиями заказов
+        """
+        params = {"limit": min(limit, 1000)}  # Ограничиваем максимальное значение
+        
+        if from_event_id:
+            params["from"] = from_event_id
+        if types:
+            params["type"] = types
+
+        try:
+            async with self.client as client:
+                response = await client.get(
+                    "/order/events",
+                    headers=self._get_headers(token),
+                    params=params
+                )
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPError as e:
+            raise ValueError(f"Ошибка при получении событий заказов: {str(e)}")
+
+    async def get_orders_v2(
+        self,
+        token: str,
+        offset: int = 0,
+        limit: int = 100,
+        status: Optional[str] = None,
+        fulfillment_status: Optional[str] = None,
+        items_sent_status: Optional[str] = None,
+        bought_at_gte: Optional[datetime] = None,
+        bought_at_lte: Optional[datetime] = None,
+        buyer_login: Optional[str] = None,
+        sort: Optional[str] = None,
+        updated_at_gte: Optional[datetime] = None,
+        updated_at_lte: Optional[datetime] = None,
+        payment_id: Optional[str] = None,
+        surcharge_id: Optional[str] = None,
+        delivery_method_id: Optional[str] = None,
+        marketplace_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Получает список заказов с расширенными параметрами фильтрации.
+        
+        Args:
+            token: Токен доступа
+            offset: Смещение для пагинации
+            limit: Количество заказов на странице
+            status: Статус заказа
+            fulfillment_status: Статус выполнения
+            items_sent_status: Статус отправки товаров
+            bought_at_gte: Минимальная дата покупки
+            bought_at_lte: Максимальная дата покупки
+            buyer_login: Логин покупателя
+            sort: Параметр сортировки
+            updated_at_gte: Минимальная дата обновления
+            updated_at_lte: Максимальная дата обновления
+            payment_id: ID платежа
+            surcharge_id: ID доплаты
+            delivery_method_id: ID метода доставки
+            marketplace_id: ID маркетплейса
+            
+        Returns:
+            Dict[str, Any]: Ответ от API с заказами
+        """
+        params = self._prepare_order_params(
+            offset, limit, status, fulfillment_status, items_sent_status,
+            bought_at_gte, bought_at_lte, buyer_login, sort,
+            updated_at_gte, updated_at_lte
+        )
+
+        # Добавляем новые параметры
+        if payment_id:
+            params["payment.id"] = payment_id
+        if surcharge_id:
+            params["surcharges.id"] = surcharge_id
+        if delivery_method_id:
+            params["delivery.method.id"] = delivery_method_id
+        if marketplace_id:
+            params["marketplace.id"] = marketplace_id
+
+        try:
+            async with self.client as client:
+                response = await client.get(
+                    "/order/checkout-forms",
+                    headers=self._get_headers(token),
+                    params=params
+                )
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPError as e:
+            raise ValueError(f"Ошибка при получении заказов: {str(e)}")
 

@@ -1,8 +1,9 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from sqlmodel import Session, select, delete
 from sqlalchemy.orm import selectinload
 from datetime import datetime
 from app.utils.logging_config import logger
+from app.services.allegro.allegro_api_service import SyncAllegroApiService
 
 from app.models.allegro_order import (
     AllegroOrder,
@@ -384,4 +385,122 @@ class AllegroOrderRepository:
             
         except Exception as e:
             self.session.rollback()
-            raise ValueError(f"Ошибка при создании заказа: {str(e)}") 
+            raise ValueError(f"Ошибка при создании заказа: {str(e)}")
+
+    def process_order_event(self, token_id: str, event_data: Dict[str, Any], api_service: SyncAllegroApiService) -> Optional[AllegroOrder]:
+        """
+        Обрабатывает событие заказа и обновляет данные в базе.
+        
+        Args:
+            token_id: ID токена Allegro
+            event_data: Данные события заказа
+            api_service: Синхронный сервис для работы с API Allegro
+            
+        Returns:
+            Optional[AllegroOrder]: Обновленный заказ или None
+        """
+        try:
+            # Получаем ID заказа из checkoutForm
+            order_id = self._safe_get(event_data, "order", "checkoutForm", "id")
+            if not order_id:
+                logger.warning("В событии отсутствует ID заказа в checkoutForm")
+                return None
+
+            # Получаем тип события
+            event_type = self._safe_get(event_data, "type")
+            if not event_type:
+                logger.warning("В событии отсутствует тип события")
+                return None
+
+            logger.info(f"Обработка события типа {event_type} для заказа {order_id}")
+
+            # Получаем детали заказа через API
+            try:
+                order_details = api_service.get_order_details(token_id, order_id)
+            except Exception as e:
+                logger.error(f"Ошибка при получении деталей заказа {order_id}: {str(e)}")
+                return None
+
+            # Обрабатываем разные типы событий
+            if event_type == "BOUGHT":
+                try:
+                    # Пытаемся создать новый заказ
+                    return self.add_order(token_id, order_details)
+                except Exception as e:
+                    if "duplicate key" in str(e).lower():
+                        # Если возникла ошибка дубликата покупателя, используем существующего
+                        logger.info(f"Покупатель уже существует, создаем заказ с существующим покупателем")
+                        return self.add_order_with_existing_buyer(token_id, order_details)
+                    raise
+
+            elif event_type in ["FILLED_IN", "READY_FOR_PROCESSING", "BUYER_CANCELLED", 
+                              "FULFILLMENT_STATUS_CHANGED", "AUTO_CANCELLED"]:
+                # Для всех остальных типов событий обновляем заказ
+                return self.update_order(token_id, order_id, order_details)
+
+            else:
+                logger.warning(f"Неизвестный тип события: {event_type}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Ошибка при обработке события заказа: {str(e)}")
+            raise ValueError(f"Ошибка при обработке события заказа: {str(e)}")
+
+    def get_orders_by_status(self, token_id: str, status: str) -> List[AllegroOrder]:
+        """
+        Получает список заказов по статусу.
+        
+        Args:
+            token_id: ID токена Allegro
+            status: Статус заказа
+            
+        Returns:
+            List[AllegroOrder]: Список заказов
+        """
+        try:
+            statement = (
+                select(AllegroOrder)
+                .where(
+                    AllegroOrder.token_id == token_id,
+                    AllegroOrder.status == status
+                )
+                .options(
+                    selectinload(AllegroOrder.buyer),
+                    selectinload(AllegroOrder.token),
+                    selectinload(AllegroOrder.order_items).selectinload(OrderLineItem.line_item)
+                )
+            )
+            return self.session.exec(statement).all()
+        except Exception as e:
+            logger.error(f"Ошибка при получении заказов по статусу: {str(e)}")
+            raise ValueError(f"Ошибка при получении заказов по статусу: {str(e)}")
+
+    def get_orders_by_fulfillment_status(self, token_id: str, fulfillment_status: str) -> List[AllegroOrder]:
+        """
+        Получает список заказов по статусу выполнения.
+        
+        Args:
+            token_id: ID токена Allegro
+            fulfillment_status: Статус выполнения
+            
+        Returns:
+            List[AllegroOrder]: Список заказов
+        """
+        try:
+            # Используем JSON-оператор для поиска в JSON-поле
+            statement = (
+                select(AllegroOrder)
+                .where(
+                    AllegroOrder.token_id == token_id,
+                    AllegroOrder.fulfillment["status"].astext == fulfillment_status
+                )
+                .options(
+                    selectinload(AllegroOrder.buyer),
+                    selectinload(AllegroOrder.token),
+                    selectinload(AllegroOrder.order_items).selectinload(OrderLineItem.line_item)
+                )
+            )
+            return self.session.exec(statement).all()
+        except Exception as e:
+            logger.error(f"Ошибка при получении заказов по статусу выполнения: {str(e)}")
+            raise ValueError(f"Ошибка при получении заказов по статусу выполнения: {str(e)}") 

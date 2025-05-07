@@ -576,3 +576,83 @@ def check_and_update_stock():
         }
 
 
+@celery.task(name="app.celery_app.process_allegro_order_events")
+def process_allegro_order_events(token_id: str):
+    """
+    Обрабатывает события заказов Allegro.
+    
+    Args:
+        token_id: ID токена Allegro
+    """
+    try:
+        redis_client = get_redis_client()
+        session = SessionLocal()
+        
+        try:
+            # Получаем и проверяем токен
+            token = get_allegro_token(session, token_id)
+            
+            # Создаем необходимые сервисы
+            api_service = SyncAllegroApiService()
+            order_service = SyncAllegroOrderService(session)
+            
+            # Получаем ID последнего обработанного события из Redis
+            last_event_id = redis_client.get(f"last_allegro_event_{token_id}")
+            
+            if not last_event_id:
+                # Если нет сохраненного события, получаем статистику
+                logger.info(f"Нет сохраненного события для токена {token_id}, получаем статистику")
+                stats = api_service.get_order_events_statistics(token.access_token)
+                last_event_id = stats.get("latestEvent", {}).get("id")
+                
+                if not last_event_id:
+                    logger.warning(f"Не удалось получить ID последнего события для токена {token_id}")
+                    return {"status": "error", "message": "Не удалось получить ID последнего события"}
+            
+            # Получаем новые события
+            allegro_rate_limiter.wait_if_needed()
+            events = api_service.get_order_events_v2(
+                token=token.access_token,
+                from_event_id=last_event_id.decode() if isinstance(last_event_id, bytes) else last_event_id,
+                limit=100
+            )
+            
+            events_list = events.get("events", [])
+            if not events_list:
+                logger.info(f"Нет новых событий для токена {token_id}")
+                return {"status": "success", "message": "Нет новых событий"}
+            
+            # Обрабатываем каждое событие
+            processed_count = 0
+            last_processed_id = None
+            
+            for event in events_list:
+                try:
+                    # Обрабатываем событие
+                    order = order_service.repository.process_order_event(token_id, event, api_service)
+                    if order:
+                        processed_count += 1
+                        last_processed_id = event.get("id")
+                except Exception as e:
+                    logger.error(f"Ошибка при обработке события {event.get('id')}: {str(e)}")
+                    continue
+            
+            # Сохраняем ID последнего обработанного события
+            if last_processed_id:
+                redis_client.set(f"last_allegro_event_{token_id}", last_processed_id)
+                logger.info(f"Сохранен ID последнего обработанного события: {last_processed_id}")
+            
+            return {
+                "status": "success",
+                "processed_events": processed_count,
+                "last_event_id": last_processed_id
+            }
+            
+        finally:
+            session.close()
+            
+    except Exception as e:
+        logger.error(f"Ошибка при обработке событий заказов: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+

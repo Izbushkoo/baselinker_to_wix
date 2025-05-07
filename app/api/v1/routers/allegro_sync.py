@@ -511,3 +511,124 @@ async def get_synchronization_page(
         {"request": request, "tokens": tokens, "user": user}
     )
 
+@router.post("/start-events/{token_id}")
+def start_events_task(token_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Запускает периодическую задачу обработки событий заказов для указанного токена.
+    """
+    # Проверяем существование токена
+    token = get_token_by_id_sync(db, token_id)
+    if not token:
+        raise HTTPException(status_code=404, detail="Токен не найден")
+
+    try:
+        # Формируем новое расписание для задачи
+        events_entry = {
+            "task": "app.celery_app.process_allegro_order_events",
+            "schedule": 300,  # 300 секунд = 5 минут
+            "args": [token_id]
+        }
+
+        client = get_redis_client()
+        schedule_raw = client.get("celery_beat_schedule")
+        if schedule_raw:
+            schedule = json.loads(schedule_raw.decode("utf-8"))
+        else:
+            schedule = {}
+
+        # Обновляем расписание для задачи
+        schedule[f"process-allegro-order-events-{token_id}"] = events_entry
+
+        client.set("celery_beat_schedule", json.dumps(schedule))
+        
+        # Запускаем первую обработку немедленно
+        events_task = celery.send_task(
+            'app.celery_app.process_allegro_order_events',
+            args=[token_id]
+        )
+        
+        logger.info(f"Запущена задача обработки событий для токена {token_id}, task_id: {events_task.id}")
+        
+        return {
+            "status": "success",
+            "message": "Задача обработки событий успешно запущена",
+            "tasks": {
+                "events": {
+                    "task_id": events_task.id,
+                    "schedule": {
+                        "name": "process_allegro_order_events",
+                        "interval": "Каждые 5 минут",
+                        "next_run": (datetime.now() + timedelta(minutes=5)).isoformat()
+                    }
+                }
+            }
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при запуске задачи обработки событий для токена {token_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при запуске задачи обработки событий: {str(e)}"
+        )
+
+@router.post("/stop-events/{token_id}")
+def stop_events_task(token_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Останавливает периодическую задачу обработки событий заказов для указанного токена.
+    """
+    # Проверяем существование токена
+    token = get_token_by_id_sync(db, token_id)
+    if not token:
+        raise HTTPException(status_code=404, detail="Токен не найден")
+
+    try:
+        client = get_redis_client()
+        schedule_raw = client.get("celery_beat_schedule")
+        if schedule_raw:
+            schedule = json.loads(schedule_raw.decode("utf-8"))
+        else:
+            schedule = {}
+
+        events_key = f"process-allegro-order-events-{token_id}"
+        if events_key in schedule:
+            del schedule[events_key]
+
+        client.set("celery_beat_schedule", json.dumps(schedule))
+        return {
+            "status": "success",
+            "message": "Задача обработки событий успешно остановлена"
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при остановке задачи обработки событий: {str(e)}"
+        )
+
+@router.get("/status-events/{token_id}")
+def get_events_status(token_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Получает статус задачи обработки событий для указанного токена.
+    """
+    # Проверяем существование токена
+    token = get_token_by_id_sync(db, token_id)
+    if not token:
+        raise HTTPException(status_code=404, detail="Токен не найден")
+        
+    client = get_redis_client()
+    schedule_raw = client.get("celery_beat_schedule")
+    if schedule_raw:
+        schedule = json.loads(schedule_raw.decode("utf-8"))
+    else:
+        schedule = {}
+
+    events_task = f"process-allegro-order-events-{token_id}" in schedule
+
+    return {
+        "status": "active" if events_task else "inactive",
+        "tasks": {
+            "process_allegro_order_events": {
+                "active": events_task,
+                "schedule": "Каждые 5 минут" if events_task else None
+            }
+        }
+    }
+
