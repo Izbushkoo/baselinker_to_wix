@@ -80,7 +80,7 @@
 <script>
 async function startSync(tokenId) {
     try {
-        const response = await fetch(`/api/allegro_sync/start/${tokenId}`, {
+        const response = await fetch(`/api/allegro_sync/start-events/${tokenId}`, {
             method: 'POST'
         });
         if (response.ok) {
@@ -105,7 +105,7 @@ async function startSync(tokenId) {
 
 async function stopSync(tokenId) {
     try {
-        const response = await fetch(`/api/allegro_sync/stop/${tokenId}`, {
+        const response = await fetch(`/api/allegro_sync/stop-events/${tokenId}`, {
             method: 'POST'
         });
         if (response.ok) {
@@ -185,7 +185,7 @@ async function checkStocks() {
 
 async function updateSyncStatus(tokenId) {
     try {
-        const response = await fetch(`/api/allegro_sync/status/${tokenId}`);
+        const response = await fetch(`/api/allegro_sync/status-events/${tokenId}`);
         if (response.ok) {
             const data = await response.json();
             const statusElement = document.getElementById(`sync-status-${tokenId}`);
