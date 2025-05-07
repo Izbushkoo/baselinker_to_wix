@@ -1,7 +1,7 @@
 import os
 import time
 from typing import Optional, Dict, Any, List
-
+import logging 
 import httpx
 
 
@@ -66,13 +66,15 @@ class TelegramManager:
 
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
+                if status == 400:
+                    print('Telegram 400 error:', exc.response.text)
                 if status == 429 and attempts < max_retries:
                     attempts += 1
                     # попытаться прочитать retry_after из тела или заголовков
                     retry_after = None
                     try:
                         body = exc.response.json()
-                        logger.info(f"Retry after: {body}")
+                        logging.info(f"Retry after: {body}")
                         retry_after = body.get("parameters", {}).get("retry_after")
 
                     except Exception:
