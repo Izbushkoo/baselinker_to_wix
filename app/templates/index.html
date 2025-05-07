@@ -59,36 +59,237 @@
         <div class="mt-8 bg-white rounded-lg shadow">
             <div class="px-6 py-8">
                 <h2 class="text-2xl font-bold text-gray-900 mb-6">Последние операции</h2>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Дата</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Тип</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Товар</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Количество</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Склад</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
+                <div class="space-y-4">
                             {% for operation in recent_operations %}
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ operation.date }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ operation.type }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ operation.product }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ operation.quantity }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ operation.warehouse }}</td>
-                            </tr>
+                    <div class="bg-white border rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200">
+                        <div class="p-4">
+                            <!-- Общий заголовок операции -->
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="flex items-center space-x-2">
+                                    {% if operation.operation_type == 'stock_in' %}
+                                    <span class="bg-green-100 text-green-800 px-2.5 py-0.5 rounded-full text-sm font-medium">
+                                        Приход товара
+                                    </span>
+                                    {% elif operation.operation_type == 'stock_in_file' %}
+                                    <span class="bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded-full text-sm font-medium">
+                                        Массовый приход
+                                    </span>
+                                    {% elif operation.operation_type == 'stock_out_order' %}
+                                    <span class="bg-purple-100 text-purple-800 px-2.5 py-0.5 rounded-full text-sm font-medium">
+                                        Списание по заказу
+                                    </span>
+                                    {% elif operation.operation_type == 'stock_out_manual' %}
+                                    <span class="bg-yellow-100 text-yellow-800 px-2.5 py-0.5 rounded-full text-sm font-medium">
+                                        Ручное списание
+                                    </span>
+                                    {% elif operation.operation_type == 'transfer' %}
+                                    <span class="bg-indigo-100 text-indigo-800 px-2.5 py-0.5 rounded-full text-sm font-medium">
+                                        Перемещение
+                                    </span>
+                                    {% elif operation.operation_type == 'transfer_file' %}
+                                    <span class="bg-pink-100 text-pink-800 px-2.5 py-0.5 rounded-full text-sm font-medium">
+                                        Массовое перемещение
+                                    </span>
+                                    {% elif operation.operation_type == 'product_create' %}
+                                    <span class="bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full text-sm font-medium">
+                                        Создание товара
+                                    </span>
+                                    {% elif operation.operation_type == 'product_delete' %}
+                                    <span class="bg-red-100 text-red-800 px-2.5 py-0.5 rounded-full text-sm font-medium">
+                                        Удаление товара
+                                    </span>
+                                    {% endif %}
+                                </div>
+                                <span class="text-sm text-gray-500">{{ operation.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
+                            </div>
+
+                            <!-- Содержимое карточки в зависимости от типа операции -->
+                            {% if operation.operation_type == 'product_create' %}
+                            <!-- Создание товара -->
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <p class="text-sm text-gray-500">Товар</p>
+                                    <p class="font-medium cursor-pointer hover:text-blue-600 flex items-center" 
+                                       onclick="copyToClipboard('{{ operation.products_data.sku }}', this)">
+                                        {{ operation.products_data.sku }}
+                                        <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                        </svg>
+                                    </p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Название</p>
+                                    <p class="font-medium">{{ operation.products_data.name }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Начальное количество</p>
+                                    <p class="font-medium">{{ operation.products_data.initial_quantity }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Склад</p>
+                                    <p class="font-medium">{{ operation.warehouse_id }}</p>
+                                </div>
+                            </div>
+
+                            {% elif operation.operation_type == 'product_delete' %}
+                            <!-- Удаление товара -->
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <p class="text-sm text-gray-500">Товар</p>
+                                    <p class="font-medium cursor-pointer hover:text-blue-600 flex items-center" 
+                                       onclick="copyToClipboard('{{ operation.products_data.sku }}', this)">
+                                        {{ operation.products_data.sku }}
+                                        <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                        </svg>
+                                    </p>
+                                </div>
+                            </div>
+
+                            {% elif operation.operation_type in ['stock_in', 'stock_out_manual', 'stock_out_order'] %}
+                            <!-- Одиночная операция -->
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <p class="text-sm text-gray-500">Товар</p>
+                                    <p class="font-medium cursor-pointer hover:text-blue-600 flex items-center" 
+                                       onclick="copyToClipboard('{{ operation.products_data.sku }}', this)">
+                                        {{ operation.products_data.sku }}
+                                        <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                        </svg>
+                                    </p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Количество</p>
+                                    <p class="font-medium">{{ operation.products_data.quantity }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Склад</p>
+                                    <p class="font-medium">{{ operation.warehouse_id }}</p>
+                                </div>
+                                {% if operation.operation_type == 'stock_out_order' %}
+                                <div>
+                                    <p class="text-sm text-gray-500">Номер заказа</p>
+                                    <p class="font-medium cursor-pointer hover:text-blue-600 flex items-center" 
+                                       onclick="copyToClipboard('{{ operation.order_id }}', this)">
+                                        {{ operation.order_id }}
+                                        <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                        </svg>
+                                    </p>
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            {% elif operation.operation_type in ['stock_in_file', 'transfer_file'] %}
+                            <!-- Массовая операция -->
+                            <div class="space-y-3">
+                                <div>
+                                    <p class="text-sm text-gray-500">Файл</p>
+                                    <p class="font-medium cursor-pointer hover:text-blue-600 flex items-center" 
+                                       onclick="copyToClipboard('{{ operation.file_name }}', this)">
+                                        {{ operation.file_name }}
+                                        <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                        </svg>
+                                    </p>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Количество позиций</p>
+                                        <p class="font-medium">{{ operation.products_data.products|length }}</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm text-gray-500">Склад</p>
+                                        <p class="font-medium">{{ operation.warehouse_id }}</p>
+                                    </div>
+                                    {% if operation.operation_type == 'transfer_file' %}
+                                    <div>
+                                        <p class="text-sm text-gray-500">Склад назначения</p>
+                                        <p class="font-medium">{{ operation.target_warehouse_id }}</p>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                
+                                <!-- Кнопка раскрытия списка товаров -->
+                                <div class="mt-4">
+                                    <button onclick="toggleProductList('{{ operation.id }}')" 
+                                            class="text-sm text-blue-600 hover:text-blue-800 flex items-center">
+                                        <span id="button-text-{{ operation.id }}">Показать товары</span>
+                                        <svg id="button-icon-{{ operation.id }}" class="w-4 h-4 ml-1 transform transition-transform duration-200" 
+                                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                
+                                <!-- Раскрывающийся список товаров -->
+                                <div id="product-list-{{ operation.id }}" class="hidden mt-4 space-y-2 bg-gray-50 p-4 rounded-lg">
+                                    {% for product in operation.products_data.products %}
+                                    <div class="flex justify-between items-center py-2 border-b border-gray-200 last:border-0">
+                                        <p class="font-medium cursor-pointer hover:text-blue-600 flex items-center" 
+                                           onclick="copyToClipboard('{{ product.sku }}', this)">
+                                            {{ product.sku }}
+                                            <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                            </svg>
+                                        </p>
+                                        <span class="text-gray-600">{{ product.quantity }} шт.</span>
+                                    </div>
                             {% endfor %}
-                            {% if not recent_operations %}
-                            <tr>
-                                <td colspan="5" class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                                    Нет операций для отображения
-                                </td>
-                            </tr>
+                                </div>
+                            </div>
+
+                            {% elif operation.operation_type == 'transfer' %}
+                            <!-- Перемещение -->
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <p class="text-sm text-gray-500">Товар</p>
+                                    <p class="font-medium cursor-pointer hover:text-blue-600 flex items-center" 
+                                       onclick="copyToClipboard('{{ operation.products_data.sku }}', this)">
+                                        {{ operation.products_data.sku }}
+                                        <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                        </svg>
+                                    </p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Количество</p>
+                                    <p class="font-medium">{{ operation.products_data.quantity }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">Со склада</p>
+                                    <p class="font-medium">{{ operation.warehouse_id }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">На склад</p>
+                                    <p class="font-medium">{{ operation.target_warehouse_id }}</p>
+                                </div>
+                            </div>
                             {% endif %}
-                        </tbody>
-                    </table>
+
+                            <!-- Нижняя часть карточки -->
+                            <div class="mt-4 flex items-center justify-between text-sm">
+                                {% if operation.user_email %}
+                                <span class="text-gray-500">
+                                    Выполнил: {{ operation.user_email }}
+                                </span>
+                                {% endif %}
+                                {% if operation.comment %}
+                                <span class="text-gray-500">
+                                    Комментарий: {{ operation.comment }}
+                                </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    
+                    {% if not recent_operations %}
+                    <div class="text-center py-8 text-gray-500">
+                        Нет операций для отображения
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -98,4 +299,48 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+function copyToClipboard(text, element) {
+    // Копируем текст в буфер обмена
+    navigator.clipboard.writeText(text).then(() => {
+        // Показываем уведомление
+        const originalText = element.innerHTML;
+        const checkIcon = `
+            <span class="flex items-center text-green-600">
+                Скопировано
+                <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+            </span>
+        `;
+        
+        element.innerHTML = checkIcon;
+        
+        // Возвращаем оригинальный текст через 2 секунды
+        setTimeout(() => {
+            element.innerHTML = originalText;
+        }, 2000);
+    }).catch(err => {
+        console.error('Ошибка при копировании: ', err);
+    });
+}
+
+function toggleProductList(operationId) {
+    const productList = document.getElementById(`product-list-${operationId}`);
+    const buttonText = document.getElementById(`button-text-${operationId}`);
+    const buttonIcon = document.getElementById(`button-icon-${operationId}`);
+    
+    if (productList.classList.contains('hidden')) {
+        // Показываем список
+        productList.classList.remove('hidden');
+        buttonText.textContent = 'Скрыть товары';
+        buttonIcon.classList.add('rotate-180');
+    } else {
+        // Скрываем список
+        productList.classList.add('hidden');
+        buttonText.textContent = 'Показать товары';
+        buttonIcon.classList.remove('rotate-180');
+    }
+}
+</script>
 {% endblock %} 

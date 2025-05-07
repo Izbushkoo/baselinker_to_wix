@@ -75,7 +75,9 @@ class OperationsService:
             raise ValueError("Неверный тип операции для файловой обработки")
 
         products_data = {"products": products}
-        
+        if operation_type == OperationType.TRANSFER_FILE and target_warehouse_id is None:
+            raise ValueError("Необходимо указать target_warehouse_id для операции перемещения")
+
         operation = Operation(
             operation_type=operation_type,
             warehouse_id=warehouse_id,
@@ -222,3 +224,61 @@ class OperationsService:
                 stats["file_operations"] += 1
         
         return stats
+
+    def create_product_operation(
+        self,
+        sku: str,
+        name: str,
+        warehouse_id: str,
+        initial_quantity: int,
+        user_email: str,
+        comment: Optional[str] = None,
+        session: Optional[Session] = None
+    ) -> Operation:
+        """Создание операции добавления нового товара"""
+        session = self._get_session(session)
+        
+        products_data = {
+            "sku": sku,
+            "name": name,
+            "initial_quantity": initial_quantity
+        }
+        
+        operation = Operation(
+            operation_type=OperationType.PRODUCT_CREATE,
+            warehouse_id=warehouse_id,
+            products_data=products_data,
+            user_email=user_email,
+            comment=comment
+        )
+        
+        session.add(operation)
+        session.commit()
+        session.refresh(operation)
+        return operation
+
+    def create_product_delete_operation(
+        self,
+        sku: str,
+        user_email: str,
+        comment: Optional[str] = None,
+        session: Optional[Session] = None
+    ) -> Operation:
+        """Создание операции удаления товара"""
+        session = self._get_session(session)
+        
+        products_data = {
+            "sku": sku
+        }
+        
+        operation = Operation(
+            operation_type=OperationType.PRODUCT_DELETE,
+            products_data=products_data,
+            user_email=user_email,
+            comment=comment
+        )
+        
+        session.add(operation)
+        session.commit()
+        session.refresh(operation)
+        return operation

@@ -26,9 +26,7 @@ class AllegroStockService:
         """
         try:
             # Проверяем статус и флаг списания
-
-            fulfillment_status = order.fulfillment.get('status')
-            if fulfillment_status != 'SENT' or order.is_stock_updated:
+            if order.status != 'READY_FOR_PROCESSING' or order.is_stock_updated:
                 return False
 
             # Получаем товарные позиции заказа
@@ -93,8 +91,7 @@ class AllegroStockService:
         
         try:
             # Проверяем статус и флаг списания
-            fulfillment_status = order.fulfillment.get('status')
-            if fulfillment_status != 'SENT' or order.is_stock_updated:
+            if order.status != 'READY_FOR_PROCESSING' or order.is_stock_updated:
                 return False
 
             # Помечаем заказ как обработанный
