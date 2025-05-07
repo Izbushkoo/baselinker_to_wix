@@ -43,7 +43,7 @@ class OperationsService:
         products_data = {"sku": sku, "quantity": quantity}
         
         operation = Operation(
-            operation_type=operation_type,
+            operation_type=operation_type.value,
             warehouse_id=warehouse_id,
             products_data=products_data,
             user_email=user_email,
@@ -79,7 +79,7 @@ class OperationsService:
             raise ValueError("Необходимо указать target_warehouse_id для операции перемещения")
 
         operation = Operation(
-            operation_type=operation_type,
+            operation_type=operation_type.value,
             warehouse_id=warehouse_id,
             products_data=products_data,
             user_email=user_email,
@@ -136,7 +136,7 @@ class OperationsService:
         )
         
         if operation_type:
-            statement = statement.where(Operation.operation_type == operation_type)
+            statement = statement.where(Operation.operation_type == operation_type.value)
         if warehouse_id:
             statement = statement.where(Operation.warehouse_id == warehouse_id)
             
@@ -177,7 +177,7 @@ class OperationsService:
         statement = select(Operation).order_by(Operation.created_at.desc())
         
         if operation_type:
-            statement = statement.where(Operation.operation_type == operation_type)
+            statement = statement.where(Operation.operation_type == operation_type.value)
             
         statement = statement.limit(limit)
         result = session.exec(statement)
@@ -212,7 +212,7 @@ class OperationsService:
         
         for op in operations:
             # Подсчет по типам
-            op_type = op.operation_type.value
+            op_type = op.operation_type
             stats["by_type"][op_type] = stats["by_type"].get(op_type, 0) + 1
             
             # Подсчет по пользователям
@@ -245,7 +245,7 @@ class OperationsService:
         }
         
         operation = Operation(
-            operation_type=OperationType.PRODUCT_CREATE,
+            operation_type=OperationType.PRODUCT_CREATE.value,
             warehouse_id=warehouse_id,
             products_data=products_data,
             user_email=user_email,
@@ -272,7 +272,7 @@ class OperationsService:
         }
         
         operation = Operation(
-            operation_type=OperationType.PRODUCT_DELETE,
+            operation_type=OperationType.PRODUCT_DELETE.value,
             products_data=products_data,
             user_email=user_email,
             comment=comment

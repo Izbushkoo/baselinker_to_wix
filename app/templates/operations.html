@@ -39,7 +39,7 @@
             <!-- Импорт перемещения -->
             <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
                 <h2 class="text-lg font-semibold text-gray-900 mb-4">Перемещение между складами</h2>
-                <form id="transferForm" class="space-y-4">
+                <form id="transferImportForm" class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Файл Excel</label>
                         <input type="file" 
@@ -103,44 +103,53 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
         const formData = new FormData(incomingForm);
         const warehouseValue = formData.get('warehouse');
-        
         try {
             const url = `/api/warehouse/incoming/?warehouse=${encodeURIComponent(warehouseValue)}`;
             const response = await fetch(url, {
                 method: 'POST',
                 body: formData
             });
-            
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail || 'Ошибка при импорте прихода');
+
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
+                // Получили файл с ошибками
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = response.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'errors.xlsx';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+                alert('Импорт завершен с ошибками. Скачан файл с ошибками.');
+            } else {
+                if (!response.ok) {
+                    let errorText = 'Ошибка при импорте прихода';
+                    try {
+                        const error = await response.json();
+                        errorText = error.detail || errorText;
+                    } catch {}
+                    throw new Error(errorText);
+                }
+                alert('Приход успешно импортирован');
+                incomingForm.reset();
             }
-            
-            alert('Приход успешно импортирован');
-            incomingForm.reset();
         } catch (error) {
-            showError(error.message);
+            showError(error?.message || error?.toString() || 'Неизвестная ошибка');
         }
     });
 
     // Форма импорта перемещения
-    const transferForm = document.getElementById('transferForm');
-    transferForm.addEventListener('submit', async (e) => {
+    const transferImportForm = document.getElementById('transferImportForm');
+    transferImportForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const formData = new FormData(transferForm);
-        
+        const formData = new FormData(transferImportForm);
         try {
             const response = await fetch('/api/warehouse/transfer/', {
                 method: 'POST',
                 body: formData
             });
-            
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail || 'Ошибка при импорте перемещения');
-            }
-            
-            // Проверяем тип ответа
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
                 // Если получили файл с ошибками, скачиваем его
@@ -155,12 +164,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 a.remove();
                 alert('Импорт завершен с ошибками. Скачан файл с ошибками.');
             } else {
-                // Если все успешно
+                if (!response.ok) {
+                    let errorText = 'Ошибка при импорте перемещения';
+                    try {
+                        const error = await response.json();
+                        errorText = error.detail || errorText;
+                    } catch {}
+                    throw new Error(errorText);
+                }
                 alert('Перемещение успешно импортировано');
-                transferForm.reset();
+                transferImportForm.reset();
             }
         } catch (error) {
-            showError(error.message);
+            showError(error?.message || error?.toString() || 'Неизвестная ошибка');
         }
     });
 });

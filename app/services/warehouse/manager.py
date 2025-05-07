@@ -16,6 +16,7 @@ import io
 
 from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.core.config import settings
+from app.services.operations_service import OperationsService, get_operations_service
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +28,11 @@ class Warehouses(str, Enum):
     """Перечисление доступных складов в системе.
     
     Attributes:
-        A (str): Основной склад для хранения товаров
-        B (str): Вторичный склад для хранения товаров
+        A (str): Основной склад для списаний
+        B (str): Основной склад источник, первым отображается в файле остатков
     """
-    A = 'Ирина'  # Основной склад
-    B = 'Женя'  # Вторичный склад
+    A = 'Ирина'  # Основной склад для списаний
+    B = 'Женя'  # Основной склад источник, первым отображается в файле остатков
 
 def get_manager() -> 'InventoryManager':
     dsn = settings.SQLALCHEMY_DATABASE_URI.unicode_string()
@@ -43,6 +44,7 @@ class InventoryManager:
         '''Менеджер инвентаря через PostgreSQL / SQLModel.'''
         self.engine = create_engine(dsn)
         self.async_engine = create_async_engine(async_dsn)
+        self.operations_service: OperationsService = get_operations_service()
 
     def restock(self, sku: str, warehouse: str, quantity: int):
         '''Пополнение остатков на указанном складе.'''
@@ -257,6 +259,17 @@ class InventoryManager:
             logging.error(f"Ошибка при сжатии изображения: {str(e)}")
             return None
 
+    def find_header_row(self, file_bytes: bytes, required_cols: list, max_rows: int = 10) -> int:
+        """Автоматически определяет строку с заголовками по наличию нужных колонок."""
+        for header in range(max_rows):
+            df = pd.read_excel(BytesIO(file_bytes), header=header, nrows=1)
+            columns = [str(col).strip().lower() for col in df.columns]
+            if all(col.lower() in columns for col in required_cols):
+                return header
+        raise ValueError(
+            f"Не найдена строка с заголовками для колонок {required_cols}. В файле есть варианты: {columns}"
+        )
+
     def import_incoming_from_excel(
         self,
         file_bytes: bytes,
@@ -266,19 +279,19 @@ class InventoryManager:
         ean_col: str = 'EAN',
         name_col: str = 'Name',
         image_col: str = 'Foto',
-        header: int = 0
-    ):
+        header: int = None
+    ) -> List[Dict]:
         '''Импорт прихода из XLSX (bytes): SKU, количество, EAN, название и изображение.'''
         logging.info("Начало импорта Excel файла")
-        
+        # Автоопределение строки с заголовками
+        if header is None:
+            required_cols = [sku_col, qty_col, ean_col, name_col]
+            header = self.find_header_row(file_bytes, required_cols)
         # Загружаем Excel файл
         wb = openpyxl.load_workbook(BytesIO(file_bytes))
         ws = wb.active
-        
-        # Получаем заголовки и их индексы
         headers = [str(cell.value) for cell in ws[header + 1]]
         logging.info(f"Найдены заголовки: {headers}")
-        # Находим индексы нужных колонок
         try:
             col_indices = {
                 'sku': headers.index(sku_col),
@@ -313,6 +326,9 @@ class InventoryManager:
                 except Exception:
                     continue
 
+        # Список для хранения информации о обработанных товарах
+        processed_products = []
+
         # Обрабатываем каждую строку данных
         for row_idx, row in enumerate(ws.iter_rows(min_row=header + 2), start=header + 2):
             try:
@@ -343,10 +359,20 @@ class InventoryManager:
                 
                 # Добавляем или обновляем остатки на складе
                 self.restock(sku, warehouse, qty)
+                
+                # Добавляем информацию о обработанном товаре
+                processed_products.append({
+                    "sku": sku,
+                    "quantity": qty,
+                    "ean": ean,
+                    "name": name
+                })
+                
             except Exception:
                 continue
         
         logging.info("Импорт Excel файла завершен")
+        return processed_products
 
     def import_transfer_from_excel(
         self,
@@ -355,14 +381,13 @@ class InventoryManager:
         to_warehouse: str,
         sku_col: str = 'sku',
         qty_col: str = 'кол-во',
-        header: int = 1
-    ) -> pd.DataFrame:
-        '''Импорт перемещения из XLSX (bytes): SKU и количество.
-        
-        Returns:
-            pd.DataFrame: DataFrame с оставшимися строками и колонкой ошибок
-        '''
-        # Читаем исходный файл
+        header: int = None
+    ) -> Tuple[pd.DataFrame, List[Dict]]:
+        '''Импорт перемещения из XLSX (bytes): SKU и количество.'''
+        # Автоопределение строки с заголовками
+        if header is None:
+            required_cols = [sku_col, qty_col]
+            header = self.find_header_row(file_bytes, required_cols)
         df = pd.read_excel(BytesIO(file_bytes), header=header)
         
         # Создаем колонку для ошибок
@@ -370,6 +395,9 @@ class InventoryManager:
         
         # Создаем список для хранения индексов успешно обработанных строк
         successful_rows = []
+        
+        # Список для хранения информации о успешно обработанных товарах
+        processed_products = []
         
         # Обрабатываем каждую строку
         for idx, row in df.iterrows():
@@ -389,6 +417,12 @@ class InventoryManager:
                 self.transfer(sku, from_warehouse, to_warehouse, qty)
                 successful_rows.append(idx)
                 
+                # Добавляем информацию о успешно обработанном товаре
+                processed_products.append({
+                    "sku": sku,
+                    "quantity": qty
+                })
+                
             except KeyError as e:
                 df.at[idx, 'error'] = f'Колонка не найдена: {e}'
             except ValueError as e:
@@ -401,8 +435,8 @@ class InventoryManager:
         
         # Если есть строки с ошибками, возвращаем их
         if not df.empty:
-            return df
-        return pd.DataFrame()
+            return df, processed_products
+        return pd.DataFrame(), processed_products
 
     def compress_all_product_images(self) -> Dict[str, bool]:
         """
@@ -596,28 +630,6 @@ class InventoryManager:
                 for sale in sales
             ]
 
-    def add_to_warehouse(self, sku: str, warehouse: str, quantity: int) -> None:
-        '''Добавление количества на указанный склад.'''
-        if quantity <= 0:
-            raise ValueError('Количество должно быть положительным.')
-            
-        # Преобразуем значение склада в ключ перечисления
-        warehouse_key = None
-        for key, value in Warehouses.__members__.items():
-            if value.value == warehouse:
-                warehouse_key = key
-                break
-        if warehouse_key is None:
-            warehouse_key = warehouse  # Если передан ключ, используем его как есть
-            
-        with Session(self.engine) as session:
-            stock = session.get(Stock, (sku, warehouse_key))
-            if not stock:
-                stock = Stock(sku=sku, warehouse=warehouse_key, quantity=quantity)
-            else:
-                stock.quantity += quantity
-            session.add(stock)
-            session.commit()
 
     def add_to_warehouse(self, sku: str, warehouse: str, quantity: int) -> None:
         '''

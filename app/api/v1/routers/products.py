@@ -9,9 +9,10 @@ import base64
 from sqlalchemy import or_, text, bindparam
 from fastapi.templating import Jinja2Templates
 from app.api import deps
-from app.models.warehouse import Product, Stock, Sale
+from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.models.user import User
 from app.services.warehouse.manager import Warehouses
+from app.services.operations_service import OperationsService, OperationType, get_operations_service
 
 router = APIRouter()
 web_router = APIRouter()
@@ -243,7 +244,8 @@ async def create_product(
     quantity: int = Form(...),
     image: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(deps.get_async_session),
-    current_user: User = Depends(deps.get_current_user_from_cookie)
+    current_user: User = Depends(deps.get_current_user_optional),
+    operations_service: OperationsService = Depends(get_operations_service)
 ):
     """Создает новый товар в базе данных."""
     try:
@@ -298,6 +300,15 @@ async def create_product(
         await db.commit()
         await db.refresh(new_product)
         
+        # Создаем запись операции
+        operations_service.create_product_operation(
+            sku=sku,
+            name=name,
+            warehouse_id=warehouse,
+            initial_quantity=quantity,
+            user_email=current_user.email
+        )
+        
         return {"success": True, "sku": new_product.sku}
     except Exception as e:
         await db.rollback()
@@ -310,7 +321,8 @@ async def create_product(
 async def delete_product(
     sku: str,
     db: AsyncSession = Depends(deps.get_async_session),
-    current_user: User = Depends(deps.get_current_user_from_cookie)
+    current_user: User = Depends(deps.get_current_user_optional),
+    operations_service: OperationsService = Depends(get_operations_service)
 ):
     """
     Удаляет товар по его SKU
@@ -334,7 +346,23 @@ async def delete_product(
                 detail="Товар не найден"
             )
 
-        # Сначала удаляем все связанные продажи
+        # Получаем информацию о товаре перед удалением
+        product_info = {
+            "sku": product.sku,
+            "name": product.name,
+            "eans": product.eans
+        }
+
+        # Сначала удаляем все связанные перемещения
+        transfer_query = select(Transfer).where(Transfer.sku == sku)
+        transfers = await db.exec(transfer_query)
+        for transfer in transfers:
+            await db.delete(transfer)
+        
+        # Применяем удаление перемещений
+        await db.flush()
+
+        # Затем удаляем все связанные продажи
         sales_query = select(Sale).where(Sale.sku == sku)
         sales = await db.exec(sales_query)
         for sale in sales:
@@ -355,6 +383,12 @@ async def delete_product(
         # В конце удаляем сам товар
         await db.delete(product)
         await db.commit()
+        
+        # Создаем запись операции
+        operations_service.create_product_delete_operation(
+            sku=sku,
+            user_email=current_user.email
+        )
         
         return {"message": "Товар успешно удален"}
         

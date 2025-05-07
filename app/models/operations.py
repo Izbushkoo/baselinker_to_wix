@@ -19,7 +19,7 @@ class Operation(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     
     # Тип операции
-    operation_type: OperationType = Field(...)
+    operation_type: str = Field(...)
     
     # Временные метки
     created_at: datetime = Field(default_factory=datetime.utcnow)

@@ -18,6 +18,7 @@ from app.utils.logging_config import logger
 import os
 
 from app.services.allegro.order_service import SyncAllegroOrderService
+from app.services.allegro.allegro_api_service import SyncAllegroApiService
 from app.database import engine
 
 import time
@@ -641,11 +642,13 @@ def process_allegro_order_events(token_id: str):
             if last_processed_id:
                 redis_client.set(f"last_allegro_event_{token_id}", last_processed_id)
                 logger.info(f"Сохранен ID последнего обработанного события: {last_processed_id}")
-            
+            else:
+                redis_client.set(f"last_allegro_event_{token_id}", last_event_id)
+
             return {
                 "status": "success",
                 "processed_events": processed_count,
-                "last_event_id": last_processed_id
+                "last_event_id": last_processed_id if last_processed_id else last_event_id
             }
             
         finally:

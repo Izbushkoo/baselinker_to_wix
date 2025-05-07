@@ -312,7 +312,8 @@ def initialize_device_flow(account_name: str) -> Dict:
         response = requests.post(
             ALLEGRO_AUTH_URL,
             auth=(client_id, client_secret),
-            data={"client_id": client_id}
+            data={"client_id": client_id},
+            timeout=20
         )
         response.raise_for_status()
         auth_data = response.json()

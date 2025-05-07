@@ -284,7 +284,7 @@ class SyncAllegroApiService(BaseAllegroApiService):
         """
         try:
             response = self.client.get(
-                "/order/events/statistics",
+                "/order/event-stats",
                 headers=self._get_headers(token)
             )
             response.raise_for_status()

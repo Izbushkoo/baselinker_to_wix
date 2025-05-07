@@ -4,6 +4,8 @@ from sqlalchemy.orm import selectinload
 from datetime import datetime
 from app.utils.logging_config import logger
 from app.services.allegro.allegro_api_service import SyncAllegroApiService
+from app.services.stock_service import AllegroStockService
+from app.services.warehouse.manager import Warehouses
 
 from app.models.allegro_order import (
     AllegroOrder,
@@ -435,8 +437,13 @@ class AllegroOrderRepository:
 
             elif event_type in ["FILLED_IN", "READY_FOR_PROCESSING", "BUYER_CANCELLED", 
                               "FULFILLMENT_STATUS_CHANGED", "AUTO_CANCELLED"]:
+                allegro_order = self.update_order(token_id, order_id, order_details)
+
+                if event_type == "READY_FOR_PROCESSING":
+                    stock_service = AllegroStockService(self.session)
+                    stock_service.process_order_stock_update(allegro_order, Warehouses.A.value)
                 # Для всех остальных типов событий обновляем заказ
-                return self.update_order(token_id, order_id, order_details)
+                return allegro_order
 
             else:
                 logger.warning(f"Неизвестный тип события: {event_type}")

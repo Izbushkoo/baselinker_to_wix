@@ -24,6 +24,8 @@ from app.services.warehouse.manager import Warehouses
 from pydantic import BaseModel, Field
 from openpyxl.styles import Font, Alignment
 from urllib.parse import quote
+from app.services.operations_service import OperationsService, get_operations_service
+from app.models.operations import OperationType
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -69,13 +71,25 @@ async def upload_incoming(
     name_col: str = 'Name',
     image_col: str = 'Foto',
     header: int = 0,
-    manager: manager.InventoryManager = Depends(manager.get_manager)
+    manager: manager.InventoryManager = Depends(manager.get_manager),
+    current_user: User = Depends(deps.get_current_user_optional)
 ):
     if not file.filename.lower().endswith(('.xls', '.xlsx')):
         raise HTTPException(status_code=400, detail='Неверный формат файла. Ожидается XLS/XLSX.')
     content = await file.read()
     try:
-        manager.import_incoming_from_excel(content, warehouse.value, sku_col, qty_col, ean_col, name_col, image_col, header)
+        processed_products = manager.import_incoming_from_excel(content, warehouse.value, sku_col, qty_col, ean_col, name_col, image_col, header)
+        
+        # Создаем запись операции
+        operations_service = get_operations_service()
+        operations_service.create_file_operation(
+            operation_type=OperationType.STOCK_IN_FILE,
+            warehouse_id=warehouse.value,
+            user_email=current_user.email,
+            file_name=file.filename,
+            products=processed_products
+        )
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return JSONResponse({'status': 'success', 'file': file.filename, 'warehouse': warehouse.value})
@@ -86,9 +100,9 @@ async def upload_transfer(
     from_warehouse: str = Form(..., description="Склад-источник"),
     to_warehouse: str = Form(..., description="Склад-назначение"),
     sku_col: str = Form('sku'),
-    qty_col: str = Form('кол-во'),
-    header: int = Form(1),
-    manager: manager.InventoryManager = Depends(manager.get_manager)
+    qty_col: str = Form('Кол-во'),
+    manager: manager.InventoryManager = Depends(manager.get_manager),
+    current_user: User = Depends(deps.get_current_user_optional)
 ):
     if not file.filename.lower().endswith(('.xls', '.xlsx')):
         raise HTTPException(status_code=400, detail='Неверный формат файла. Ожидается XLS/XLSX.')
@@ -102,7 +116,18 @@ async def upload_transfer(
     
     content = await file.read()
     try:
-        errors_df = manager.import_transfer_from_excel(content, from_wh.value, to_wh.value, sku_col, qty_col, header)
+        errors_df, processed_products = manager.import_transfer_from_excel(content, from_wh.value, to_wh.value, sku_col, qty_col)
+        
+        # Создаем запись операции
+        operations_service = get_operations_service()
+        operations_service.create_file_operation(
+            operation_type=OperationType.TRANSFER_FILE,
+            warehouse_id=from_wh.value,
+            user_email=current_user.email,
+            file_name=file.filename,
+            target_warehouse_id=to_wh.value,
+            products=processed_products
+        )
         
         # Если есть ошибки, возвращаем файл с ошибками
         if not errors_df.empty:
@@ -380,7 +405,8 @@ async def clear_all_data(
 @router.post('/transfer-item/', summary='Перемещение товара между складами')
 async def transfer_item(
     transfer: TransferItem,
-    manager: manager.InventoryManager = Depends(manager.get_manager)
+    manager: manager.InventoryManager = Depends(manager.get_manager),
+    current_user: User = Depends(deps.get_current_user_optional)
 ):
     '''Перемещает указанное количество товара с одного склада на другой.'''
     try:
@@ -416,6 +442,17 @@ async def transfer_item(
             transfer.quantity
         )
         
+        # Создаем запись операции
+        operations_service = get_operations_service()
+        operations_service.create_single_operation(
+            operation_type=OperationType.TRANSFER,
+            warehouse_id=from_wh.value,
+            sku=transfer.sku,
+            quantity=transfer.quantity,
+            user_email=current_user.email,
+            target_warehouse_id=to_wh.value,
+        )
+        
         return JSONResponse({
             'status': 'success',
             'message': f'Успешно перемещено {transfer.quantity} шт. со склада {from_wh.value} на склад {to_wh.value}'
@@ -442,7 +479,8 @@ async def get_product_sales_history(
 @router.post('/remove/', summary='Списание товара со склада')
 async def remove_from_stock(
     item: RemoveItem,
-    manager: manager.InventoryManager = Depends(manager.get_manager)
+    manager: manager.InventoryManager = Depends(manager.get_manager),
+    current_user: User = Depends(deps.get_current_user_optional)
 ):
     """Списывает указанное количество товара с определенного склада."""
     try:
@@ -476,6 +514,17 @@ async def remove_from_stock(
                 warehouse.value,
                 item.quantity
             )
+            
+            # Создаем запись операции
+            operations_service = get_operations_service()
+            operations_service.create_single_operation(
+                operation_type=OperationType.STOCK_OUT_MANUAL,
+                warehouse_id=warehouse.value,
+                sku=item.sku,
+                quantity=item.quantity,
+                user_email=current_user.email,
+            )
+            
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         
@@ -492,7 +541,8 @@ async def remove_from_stock(
 @router.post('/add/', summary='Пополнение товара на складе')
 async def add_to_stock(
     item: AddItem,
-    manager: manager.InventoryManager = Depends(manager.get_manager)
+    manager: manager.InventoryManager = Depends(manager.get_manager),
+    current_user: User = Depends(deps.get_current_user_optional)
 ):
     '''Пополняет указанное количество товара на определенном складе.'''
     try:
@@ -504,17 +554,22 @@ async def add_to_stock(
         
         # Проверяем существование товара
         stocks = manager.get_stock_by_sku(item.sku)
-        if not stocks:
-            raise HTTPException(
-                status_code=404,
-                detail='Товар не найден'
-            )
         
         # Выполняем пополнение
         manager.add_to_warehouse(
             item.sku,
             warehouse.value,
             item.quantity
+        )
+        
+        # Создаем запись операции
+        operations_service = get_operations_service()
+        operations_service.create_single_operation(
+            operation_type=OperationType.STOCK_IN,
+            warehouse_id=warehouse.value,
+            sku=item.sku,
+            quantity=item.quantity,
+            user_email=current_user.email,
         )
         
         return JSONResponse({
@@ -524,8 +579,7 @@ async def add_to_stock(
         
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get(
     "/export/stock-with-sales/",
@@ -715,7 +769,8 @@ async def export_stock_with_sales_no_images(
 async def sale_from_order(
     sale_data: SaleFromOrder,
     manager: manager.InventoryManager = Depends(manager.get_manager),
-    db: AsyncSession = Depends(deps.get_async_session)
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
 ):
     '''Списывает товары из заказа как продажу только если все товары есть в наличии.'''
     try:
@@ -733,6 +788,7 @@ async def sale_from_order(
                     )
 
         # Если все товары есть в наличии, выполняем списание
+        operations_service = get_operations_service()
         for item in sale_data.line_items:
             if 'external_id' in item and item['external_id']:
                 try:
@@ -741,6 +797,18 @@ async def sale_from_order(
                         warehouse=sale_data.warehouse,
                         quantity=1  # Списываем по одной единице для каждой позиции
                     )
+                    
+                    # Создаем запись операции для каждого списанного товара
+                    operations_service.create_single_operation(
+                        operation_type=OperationType.STOCK_OUT_ORDER,
+                        warehouse_id=sale_data.warehouse,
+                        sku=item['external_id'],
+                        quantity=1,
+                        user_email=current_user.email,
+                        order_id=sale_data.order_id,
+                        comment=f"Списание товара выполнено через кнопку 'списать'"
+                    )
+                    
                 except Exception as e:
                     return JSONResponse(
                         status_code=400,
@@ -750,8 +818,6 @@ async def sale_from_order(
                         }
                     )
 
-
-        
         update_stmt = update(AllegroOrder).where(
             AllegroOrder.id == sale_data.order_id
         ).values(is_stock_updated=True)
@@ -773,7 +839,6 @@ async def sale_from_order(
                 'message': f'Ошибка при обработке заказа: {str(e)}'
             }
         )
-
 
 @router.get('/compress-images/', summary='Сжатие изображений')
 async def compress_images(
