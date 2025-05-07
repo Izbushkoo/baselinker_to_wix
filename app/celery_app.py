@@ -14,6 +14,7 @@ from app.services.process_funcs import transform_product
 from app.schemas.wix_models import WixImportFileModel
 from app.schemas.wix_models import generate_handle_id
 from app.utils.logging_config import logger
+from app.services.tg_client import TelegramManager
 
 import os
 
@@ -629,23 +630,23 @@ def process_allegro_order_events(token_id: str):
             # Обрабатываем каждое событие
             processed_count = 0
             last_processed_id = None
-            
+            tg_client = TelegramManager(chat_id=os.getenv("NOTIFY_GROUP_ID"))
+
             for event in events_list:
                 try:
                     # Обрабатываем событие
-                    order = order_service.repository.process_order_event(token_id, event, api_service)
+                    order = order_service.repository.process_order_event(token_id,token.access_token, event, api_service)
                     if order:
                         processed_count += 1
                         last_processed_id = event.get("id")
                 except Exception as e:
                     logger.error(f"Ошибка при обработке события {event.get('id')}: {str(e)}")
-                    continue
-            
-            # Сохраняем ID последнего обработанного события
-            if last_processed_id:
-                redis_client.set(f"last_allegro_event_{token_id}", last_processed_id)
-                logger.info(f"Сохранен ID последнего обработанного события: {last_processed_id}")
-            
+                    tg_client.send_message(f"Задача по обработке ивента упала с ошибкой {str(e)}\n Требуется вмешательство")
+                    raise 
+                else:
+                    redis_client.set(f"last_allegro_event_{token_id}", last_processed_id)
+                    logger.info(f"Сохранен ID последнего обработанного события: {last_processed_id}")
+                
             return {
                 "status": "success",
                 "processed_events": processed_count,

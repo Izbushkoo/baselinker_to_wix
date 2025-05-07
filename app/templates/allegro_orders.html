@@ -160,26 +160,22 @@ function getShipmentStatus(order) {
 
         const statusColors = {
             'SENT': 'bg-green-100 text-green-800',
-            'PICKED_UP': 'bg-teal-100 text-teal-800',
             'CANCELLED': 'bg-red-100 text-red-800',
-            'RETURNED': 'bg-gray-100 text-gray-800',
-            'NEW': 'bg-blue-100 text-blue-800'
+            'RETURNED': 'bg-gray-100 text-gray-800'
         };
 
         const statusLabels = {
             'SENT': 'Отправлен',
-            'PICKED_UP': 'Получен',
-            'CANCELLED': 'Отменён продавцом',
-            'RETURNED': 'Возвращён',
-            'NEW': 'Новый'
+            'CANCELLED': 'Отменен продавцом',
+            'RETURNED': 'Возвращен'
         };
 
         const status = fulfillment.status || fulfillment.shipmentSummary.status;
         
-        // Показываем статус только если он есть в нашем списке разрешенных статусов
-        if (status && statusLabels[status]) {
-            const colorClass = statusColors[status] || statusColors['NEW'];
-            const label = statusLabels[status] || 'Новый';
+        // Показываем только определенные статусы
+        if (status && ['SENT', 'CANCELLED', 'RETURNED'].includes(status)) {
+            const colorClass = statusColors[status];
+            const label = statusLabels[status];
 
             return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorClass}">
                 ${label}
@@ -253,10 +249,10 @@ function getOrderStatus(order) {
     };
 
     const statusLabels = {
-        'BOUGHT': 'Оплачен',
+        'BOUGHT': 'Заказан',
         'FILLED_IN': 'Заполнен',
-        'READY_FOR_PROCESSING': 'Готов к обработке',
-        'CANCELLED': 'Отменён покупателем'
+        'READY_FOR_PROCESSING': 'Оплачен. Готов к отправке',
+        'CANCELLED': 'Отменен'
     };
 
     const status = order.status || 'BOUGHT';
@@ -273,19 +269,17 @@ function displayOrders(orders) {
     container.innerHTML = '';
 
     orders.forEach(order => {
-        // Для отладки
-        console.log('Order:', order);
-        
         const orderElement = document.createElement('div');
         orderElement.className = 'bg-gray-800 rounded-lg shadow overflow-hidden';
         
-        // Получаем статус отправки
+        // Получаем статусы
+        const orderStatus = getOrderStatus(order);
         const shipmentStatus = getShipmentStatus(order);
         
         // Определяем, можно ли показывать кнопку списания
         const canShowWriteOff = order.status !== 'CANCELLED' && // не отменен покупателем
-                               !shipmentStatus.includes('Отменён продавцом') && // не отменен продавцом
-                               (shipmentStatus.includes('Отправлен') || shipmentStatus.includes('Новый')); // только для отправленных или новых
+                               !shipmentStatus.includes('Отменен продавцом') && // не отменен продавцом
+                               (shipmentStatus.includes('Отправлен') || order.status === 'READY_FOR_PROCESSING'); // только для отправленных или готовых к отправке
         
         const mainInfo = `
             <div class="p-4 cursor-pointer" onclick="toggleOrderDetails('${order.id}')">
@@ -294,7 +288,8 @@ function displayOrders(orders) {
                         <div class="flex items-center space-x-4 flex-wrap">
                             <span class="text-lg font-medium text-white">ID: ${order.id}</span>
                             <span class="text-sm text-gray-400">${new Date(order.updated_at).toLocaleString()}</span>
-                            ${order.status === 'CANCELLED' ? getOrderStatus(order) : `
+                            ${orderStatus}
+                            ${order.status !== 'CANCELLED' ? `
                                 ${shipmentStatus}
                                 ${canShowWriteOff ? `
                                     ${order.is_stock_updated ? `
@@ -311,7 +306,7 @@ function displayOrders(orders) {
                                         </button>
                                     `}
                                 ` : ''}
-                            `}
+                            ` : ''}
                         </div>
                     </div>
                     <svg id="arrow-${order.id}" class="w-5 h-5 text-gray-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">

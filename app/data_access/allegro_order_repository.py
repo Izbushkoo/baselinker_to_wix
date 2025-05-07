@@ -6,6 +6,8 @@ from app.utils.logging_config import logger
 from app.services.allegro.allegro_api_service import SyncAllegroApiService
 from app.services.stock_service import AllegroStockService
 from app.services.warehouse.manager import Warehouses
+from app.services.warehouse.manager import get_manager
+
 
 from app.models.allegro_order import (
     AllegroOrder,
@@ -389,12 +391,12 @@ class AllegroOrderRepository:
             self.session.rollback()
             raise ValueError(f"Ошибка при создании заказа: {str(e)}")
 
-    def process_order_event(self, token_id: str, event_data: Dict[str, Any], api_service: SyncAllegroApiService) -> Optional[AllegroOrder]:
+    def process_order_event(self, token_id: str, access_token: str, event_data: Dict[str, Any], api_service: SyncAllegroApiService) -> Optional[AllegroOrder]:
         """
         Обрабатывает событие заказа и обновляет данные в базе.
         
         Args:
-            token_id: ID токена Allegro
+            access_token: Токен Allegro
             event_data: Данные события заказа
             api_service: Синхронный сервис для работы с API Allegro
             
@@ -418,7 +420,7 @@ class AllegroOrderRepository:
 
             # Получаем детали заказа через API
             try:
-                order_details = api_service.get_order_details(token_id, order_id)
+                order_details = api_service.get_order_details(access_token, order_id)
             except Exception as e:
                 logger.error(f"Ошибка при получении деталей заказа {order_id}: {str(e)}")
                 return None
@@ -440,7 +442,7 @@ class AllegroOrderRepository:
                 allegro_order = self.update_order(token_id, order_id, order_details)
 
                 if event_type == "READY_FOR_PROCESSING":
-                    stock_service = AllegroStockService(self.session)
+                    stock_service = AllegroStockService(self.session, get_manager())
                     stock_service.process_order_stock_update(allegro_order, Warehouses.A.value)
                 # Для всех остальных типов событий обновляем заказ
                 return allegro_order
