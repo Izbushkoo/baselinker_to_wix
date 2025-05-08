@@ -280,12 +280,13 @@ class AllegroOrderRepository:
                             self.session.add(order_item)
 
             self.session.commit()
+            self.session.refresh(order)
             return order
             
         except Exception as e:
             self.session.rollback()
             error_traceback = traceback.format_exc()
-            print(f"Ошибка при обновлении заказа: {str(e)}\nTraceback:\n{error_traceback}")
+            logger.error(f"Ошибка при обновлении заказа: {str(e)}\nTraceback:\n{error_traceback}")
             raise ValueError(f"Ошибка при обновлении заказа: {str(e)}")
 
     def get_all_orders_basic_info(self, token_id: str) -> list:
