@@ -47,7 +47,8 @@
                             <div class="ml-10 flex items-baseline space-x-4">
                                 <a href="/" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Главная</a>
                                 <a href="/catalog" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Склад</a>
-                                <a href="/operations" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Импорт/Экспорт</a>
+                                <a href="/operations" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Операции</a>
+                                <a href="/import-export" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Импорт/Экспорт</a>
                                 {% if user and user.is_admin %}
                                 <a href="/synchronization" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Синхронизация</a>
                                 {% endif %}
@@ -92,7 +93,8 @@
                 <div class="space-y-1 px-2 pb-3 pt-2 sm:px-3">
                     <a href="/" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Главная</a>
                     <a href="/catalog" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Склад</a>
-                    <a href="/operations" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Импорт/Экспорт</a>
+                    <a href="/operations" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Операции</a>
+                    <a href="/import-export" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Импорт/Экспорт</a>
                     {% if user and user.is_admin %}
                     <a href="/synchronization" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Синхронизация</a>
                     {% endif %}
@@ -110,8 +112,6 @@
                         </div>
                     </div>
                     <div class="mt-3 space-y-1 px-2">
-                        <a href="/profile" class="block rounded-md px-3 py-2 text-base font-medium text-gray-400 hover:bg-gray-700 hover:text-white">Профиль</a>
-                        <a href="/settings" class="block rounded-md px-3 py-2 text-base font-medium text-gray-400 hover:bg-gray-700 hover:text-white">Настройки</a>
                         <button id="mobile-logout-btn" class="block w-full text-left rounded-md px-3 py-2 text-base font-medium text-gray-400 hover:bg-gray-700 hover:text-white">Выйти</button>
                     </div>
                     {% else %}

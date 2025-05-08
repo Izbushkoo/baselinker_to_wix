@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-8">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <!-- Фильтры -->
+        <div class="bg-white rounded-xl shadow-lg transform transition-all duration-200 hover:shadow-xl mb-8">
+            <div class="px-6 py-8">
+                <h2 class="text-3xl font-bold text-gray-900 mb-6 flex items-center">
+                    <svg class="w-8 h-8 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
+                    </svg>
+                    Фильтры
+                </h2>
+                <form id="filterForm" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div>
+                        <label for="type" class="block text-sm font-medium text-gray-700 mb-1">Тип операции</label>
+                        <select id="type" name="type" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md">
+                            <option value="">Все типы</option>
+                            {% for type in operation_types %}
+                            <option value="{{ type }}" {% if selected_type == type %}selected{% endif %}>{{ type|operation_type_label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="warehouse" class="block text-sm font-medium text-gray-700 mb-1">Склад</label>
+                        <select id="warehouse" name="warehouse" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md">
+                            <option value="">Все склады</option>
+                            {% for warehouse in warehouses %}
+                            <option value="{{ warehouse }}" {% if selected_warehouse == warehouse %}selected{% endif %}>{{ warehouse }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="search" class="block text-sm font-medium text-gray-700 mb-1">Поиск</label>
+                        <input type="text" id="search" name="search" value="{{ search }}" placeholder="ID заказа или email исполнителя" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+
+                    <div>
+                        <label for="date_from" class="block text-sm font-medium text-gray-700 mb-1">Дата от</label>
+                        <input type="date" id="date_from" name="date_from" value="{{ date_from }}" 
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+
+                    <div>
+                        <label for="date_to" class="block text-sm font-medium text-gray-700 mb-1">Дата до</label>
+                        <input type="date" id="date_to" name="date_to" value="{{ date_to }}" 
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Список операций -->
+        <div class="space-y-4">
+            {% for operation in operations %}
+            <div class="bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-xl shadow-lg p-6">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center space-x-2">
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold
+                            {% if operation.operation_type == 'stock_in' %} bg-green-100 text-green-800
+                            {% elif operation.operation_type == 'stock_in_file' %} bg-blue-100 text-blue-800
+                            {% elif operation.operation_type == 'transfer_file' %} bg-pink-100 text-pink-800
+                            {% elif operation.operation_type == 'transfer' %} bg-indigo-100 text-indigo-800
+                            {% elif operation.operation_type == 'product_create' %} bg-emerald-100 text-emerald-800
+                            {% elif operation.operation_type == 'product_delete' %} bg-red-100 text-red-800
+                            {% else %} bg-gray-100 text-gray-800 {% endif %}">
+                            {{ operation.operation_type|operation_type_label }}
+                        </span>
+                    </div>
+                    <span class="text-sm text-gray-500">{{ operation.created_at.strftime('%d.%m.%Y %H:%M:%S') }}</span>
+                </div>
+
+                <!-- Основная информация -->
+                <div class="mt-2">
+                    {% if operation.operation_type != 'product_delete' %}
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <div class="text-sm text-gray-500">
+                                {% if operation.operation_type in ['transfer', 'transfer_file'] %}
+                                Склад источник
+                                {% else %}
+                                Склад
+                                {% endif %}
+                            </div>
+                            <div class="text-lg font-semibold mb-2">{{ operation.warehouse_id }}</div>
+                        </div>
+
+                        {% if operation.operation_type in ['transfer', 'transfer_file'] %}
+                        <div>
+                            <div class="text-sm text-gray-500">Склад назначения</div>
+                            <div class="text-lg font-semibold mb-2">{{ operation.target_warehouse_id }}</div>
+                        </div>
+                        {% endif %}
+
+                        {% if operation.operation_type == 'product_create' %}
+                        <div>
+                            <div class="text-sm text-gray-500">SKU товара</div>
+                            <button onclick="copyToClipboard('{{ operation.products_data.sku }}', this)" class="text-lg font-mono hover:text-blue-600 focus:outline-none">{{ operation.products_data.sku }}</button>
+                        </div>
+                        {% if operation.products_data.initial_quantity is defined %}
+                        <div>
+                            <div class="text-sm text-gray-500">Начальное количество</div>
+                            <div class="text-lg font-semibold">{{ operation.products_data.initial_quantity }} шт.</div>
+                        </div>
+                        {% endif %}
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    {% if operation.operation_type == 'product_delete' %}
+                    <div>
+                        <div class="text-sm text-gray-500">SKU товара</div>
+                        <button onclick="copyToClipboard('{{ operation.products_data.sku }}', this)" class="text-lg font-mono hover:text-blue-600 focus:outline-none">{{ operation.products_data.sku }}</button>
+                    </div>
+                    {% endif %}
+
+                    {% if operation.file_name %}
+                    <div class="text-sm text-gray-500">Файл</div>
+                    <div class="flex items-center mb-2">
+                        <svg class="w-5 h-5 mr-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path d="M4 4v16h16V8l-6-6H4z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <button onclick="copyToClipboard('{{ operation.file_name }}', this)" class="font-mono text-base hover:text-blue-600 focus:outline-none">
+                            {{ operation.file_name }}
+                        </button>
+                    </div>
+                    {% endif %}
+
+                    {% if operation.products_data and operation.products_data.products %}
+                    <div class="mt-4">
+                        <button onclick="toggleProductList('{{ operation.id }}')" class="text-blue-600 hover:underline text-sm">
+                            <span id="button-text-{{ operation.id }}">Показать товары ({{ operation.products_data.products|length }})</span>
+                        </button>
+                        <div id="product-list-{{ operation.id }}" class="hidden mt-2">
+                            <div class="mb-3">
+                                <input type="text" 
+                                       id="search-{{ operation.id }}"
+                                       placeholder="Поиск по SKU" 
+                                       onkeyup="filterProducts('{{ operation.id }}', this.value)"
+                                       class="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm">
+                            </div>
+                            <div id="products-container-{{ operation.id }}" class="space-y-1">
+                                {% for product in operation.products_data.products %}
+                                <div class="flex justify-between text-sm border-b border-gray-700 last:border-0 py-1 product-item" data-sku="{{ product.sku|lower }}">
+                                    <button onclick="copyToClipboard('{{ product.sku }}', this)" class="font-mono hover:text-blue-600 focus:outline-none">{{ product.sku }}</button>
+                                    <span>{{ product.quantity }} шт.</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="flex items-center justify-between mt-4 text-sm text-gray-500">
+                        <span>
+                            <svg class="w-5 h-5 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path d="M5.121 17.804A13.937 13.937 0 0112 15c2.485 0 4.797.73 6.879 1.804M15 11a3 3 0 11-6 0 3 3 0 016 0z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            {% if operation.user_email %}
+                                {{ operation.user_email }}
+                            {% else %}
+                                <span class="text-gray-400">—————</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Пагинация -->
+        {% if total_pages > 1 %}
+        <div class="mt-8 flex justify-center">
+            <div class="flex gap-2">
+                {% for p in range(1, total_pages + 1) %}
+                <a href="?page={{ p }}&warehouse={{ selected_warehouse }}&type={{ selected_type }}&search={{ search }}&date_from={{ date_from }}&date_to={{ date_to }}"
+                   class="px-4 py-2 border {% if p == page %}bg-blue-600 border-blue-600 text-white{% else %}border-gray-300 text-gray-700 hover:bg-gray-50{% endif %} rounded-md">
+                    {{ p }}
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// Форматирование даты
+function formatDateForInput(date) {
+    if (!date) return '';
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+// При загрузке страницы форматируем значения в полях даты
+document.addEventListener('DOMContentLoaded', function() {
+    const dateFromInput = document.getElementById('date_from');
+    const dateToInput = document.getElementById('date_to');
+    
+    if (dateFromInput.value) {
+        dateFromInput.value = formatDateForInput(dateFromInput.value);
+    }
+    if (dateToInput.value) {
+        dateToInput.value = formatDateForInput(dateToInput.value);
+    }
+});
+
+function formatDate(date) {
+    return date.toISOString().slice(0, 16);
+}
+
+function copyToClipboard(text, button) {
+    navigator.clipboard.writeText(text).then(() => {
+        const originalText = button.innerHTML;
+        const checkIcon = `
+            <span class="flex items-center text-green-600">
+                Скопировано
+                <svg class="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+            </span>
+        `;
+        
+        button.innerHTML = checkIcon;
+        
+        setTimeout(() => {
+            button.innerHTML = originalText;
+        }, 2000);
+    });
+}
+
+function toggleProductList(operationId) {
+    const productList = document.getElementById(`product-list-${operationId}`);
+    const searchInput = document.getElementById(`search-${operationId}`);
+    
+    if (productList.classList.contains('hidden')) {
+        productList.classList.remove('hidden');
+        searchInput.focus(); // Автофокус на поле поиска при открытии
+    } else {
+        productList.classList.add('hidden');
+        // Очищаем поиск при закрытии
+        searchInput.value = '';
+        filterProducts(operationId, '');
+    }
+}
+
+function filterProducts(operationId, searchText) {
+    const container = document.getElementById(`products-container-${operationId}`);
+    const products = container.getElementsByClassName('product-item');
+    const searchLower = searchText.toLowerCase();
+    
+    for (let product of products) {
+        const sku = product.getAttribute('data-sku');
+        if (sku.includes(searchLower)) {
+            product.classList.remove('hidden');
+        } else {
+            product.classList.add('hidden');
+        }
+    }
+}
+
+// Автоматическая отправка формы при изменении фильтров
+document.querySelectorAll('#filterForm select, #filterForm input').forEach(element => {
+    element.addEventListener('change', () => {
+        document.getElementById('filterForm').submit();
+    });
+});
+
+// Обработка поиска с задержкой
+let searchTimeout;
+document.getElementById('search').addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        document.getElementById('filterForm').submit();
+    }, 500);
+});
+
+// Обновляем все временные метки при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('[data-timestamp]').forEach(element => {
+        const timestamp = element.getAttribute('data-timestamp');
+        element.textContent = formatDate(new Date(timestamp));
+    });
+});
+</script>
+{% endblock %}
