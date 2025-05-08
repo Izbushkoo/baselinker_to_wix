@@ -7,6 +7,7 @@ from app.services.allegro.allegro_api_service import SyncAllegroApiService
 from app.services.stock_service import AllegroStockService
 from app.services.warehouse.manager import Warehouses
 from app.services.warehouse.manager import get_manager
+import traceback
 
 
 from app.models.allegro_order import (
@@ -283,6 +284,8 @@ class AllegroOrderRepository:
             
         except Exception as e:
             self.session.rollback()
+            error_traceback = traceback.format_exc()
+            print(f"Ошибка при обновлении заказа: {str(e)}\nTraceback:\n{error_traceback}")
             raise ValueError(f"Ошибка при обновлении заказа: {str(e)}")
 
     def get_all_orders_basic_info(self, token_id: str) -> list:
