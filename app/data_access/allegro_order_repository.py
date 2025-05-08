@@ -207,12 +207,17 @@ class AllegroOrderRepository:
         try:
             order = self.get_order_by_id(order_id)
             if not order:
+                logger.error(f"Заказ {order_id} не найден в базе данных")
                 return None
+
+            logger.debug(f"Найден заказ для обновления: {order.id}, статус: {order.status}")
 
             # Обновляем основные данные заказа
             order.status = self._safe_get(order_data, "status", default=order.status)
             order.updated_at = self._safe_datetime(self._safe_get(order_data, "updatedAt"))
             order.token_id = token_id
+            
+            logger.debug(f"Обновлены основные данные заказа: {order.id}, новый статус: {order.status}")
             
             # Обновляем данные покупателя
             if order.buyer:
@@ -224,11 +229,13 @@ class AllegroOrderRepository:
                 order.buyer.last_name = self._safe_get(buyer_data, "lastName", default=order.buyer.last_name)
                 order.buyer.company_name = self._safe_get(buyer_data, "companyName", default=order.buyer.company_name)
                 order.buyer.address = self._safe_get(buyer_data, "address", default=order.buyer.address)
+                logger.debug(f"Обновлены данные покупателя для заказа {order.id}")
 
             # Обновляем JSON структуры
             order.payment = self._safe_get(order_data, "payment", default=order.payment)
             order.fulfillment = self._safe_get(order_data, "fulfillment", default=order.fulfillment)
             order.delivery = self._safe_get(order_data, "delivery", default=order.delivery)
+            logger.debug(f"Обновлены JSON структуры для заказа {order.id}")
 
             # Обновляем товарные позиции
             line_items = self._safe_get(order_data, "lineItems")
@@ -237,6 +244,7 @@ class AllegroOrderRepository:
                 # Удаляем старые связи
                 statement = delete(OrderLineItem).where(OrderLineItem.order_id == order_id)
                 self.session.exec(statement)
+                logger.debug(f"Удалены старые связи для заказа {order.id}")
 
                 # Добавляем новые связи
                 for item_data in line_items:
@@ -278,9 +286,16 @@ class AllegroOrderRepository:
                                 line_item_id=line_item.id
                             )
                             self.session.add(order_item)
+                logger.debug(f"Добавлены новые товарные позиции для заказа {order.id}")
 
+            logger.debug(f"Состояние заказа перед commit: {order.id}, статус: {order.status}")
             self.session.commit()
+            logger.debug(f"Commit выполнен успешно для заказа {order.id}")
+            
+            logger.debug(f"Состояние заказа перед refresh: {order.id}, статус: {order.status}")
             self.session.refresh(order)
+            logger.debug(f"Состояние заказа после refresh: {order.id}, статус: {order.status}, buyer: {order.buyer}, line_items: {order.order_items}")
+            
             return order
             
         except Exception as e:
