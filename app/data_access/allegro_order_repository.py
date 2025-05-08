@@ -449,19 +449,9 @@ class AllegroOrderRepository:
                 return None
 
             # Обрабатываем разные типы событий
-            if event_type == "BOUGHT":
-                try:
-                    # Пытаемся создать новый заказ
-                    return self.add_order(token_id, order_details)
-                except Exception as e:
-                    if "duplicate key" in str(e).lower():
-                        # Если возникла ошибка дубликата покупателя, используем существующего
-                        logger.info(f"Покупатель уже существует, создаем заказ с существующим покупателем")
-                        return self.add_order_with_existing_buyer(token_id, order_details)
-                    raise
 
-            elif event_type in ["FILLED_IN", "READY_FOR_PROCESSING", "BUYER_CANCELLED", 
-                              "FULFILLMENT_STATUS_CHANGED", "AUTO_CANCELLED"]:
+            if event_type in ["FILLED_IN", "READY_FOR_PROCESSING", "BUYER_CANCELLED", 
+                              "FULFILLMENT_STATUS_CHANGED", "AUTO_CANCELLED", "BOUGHT"]:
                 try:
                     allegro_order = self.update_order(token_id, order_id, order_details)
                     logger.debug(f"Заказ успешно обновлен: {allegro_order}")
