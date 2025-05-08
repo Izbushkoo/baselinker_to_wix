@@ -10,6 +10,7 @@ from app.services.warehouse.manager import get_manager
 import traceback
 
 
+
 from app.models.allegro_order import (
     AllegroOrder,
     AllegroBuyer,
@@ -207,8 +208,8 @@ class AllegroOrderRepository:
         try:
             order = self.get_order_by_id(order_id)
             if not order:
-                logger.error(f"Заказ {order_id} не найден в базе данных")
-                return None
+                logger.error(f"Заказ {order_id} не найден в базе данных, создаем")
+                return self.add_order(token_id=token_id, order_data=order_data)
 
             logger.debug(f"Найден заказ для обновления: {order.id}, статус: {order.status}")
 
