@@ -420,12 +420,15 @@ class AllegroOrderRepository:
                 return None
 
             logger.info(f"Обработка события типа {event_type} для заказа {order_id}")
+            logger.debug(f"Данные события: {event_data}")
 
             # Получаем детали заказа через API
             try:
                 order_details = api_service.get_order_details(access_token, order_id)
+                logger.debug(f"Полученные детали заказа: {order_details}")
             except Exception as e:
-                logger.error(f"Ошибка при получении деталей заказа {order_id}: {str(e)}")
+                error_traceback = traceback.format_exc()
+                logger.error(f"Ошибка при получении деталей заказа {order_id}: {str(e)}\nTraceback:\n{error_traceback}")
                 return None
 
             # Обрабатываем разные типы событий
@@ -442,20 +445,26 @@ class AllegroOrderRepository:
 
             elif event_type in ["FILLED_IN", "READY_FOR_PROCESSING", "BUYER_CANCELLED", 
                               "FULFILLMENT_STATUS_CHANGED", "AUTO_CANCELLED"]:
-                allegro_order = self.update_order(token_id, order_id, order_details)
+                try:
+                    allegro_order = self.update_order(token_id, order_id, order_details)
+                    logger.debug(f"Заказ успешно обновлен: {allegro_order}")
 
-                if event_type == "READY_FOR_PROCESSING":
-                    stock_service = AllegroStockService(self.session, get_manager())
-                    stock_service.process_order_stock_update(allegro_order, Warehouses.A.value)
-                # Для всех остальных типов событий обновляем заказ
-                return allegro_order
+                    if event_type == "READY_FOR_PROCESSING":
+                        stock_service = AllegroStockService(self.session, get_manager())
+                        stock_service.process_order_stock_update(allegro_order, Warehouses.A.value)
+                    return allegro_order
+                except Exception as e:
+                    error_traceback = traceback.format_exc()
+                    logger.error(f"Ошибка при обновлении заказа {order_id}: {str(e)}\nTraceback:\n{error_traceback}")
+                    raise
 
             else:
                 logger.warning(f"Неизвестный тип события: {event_type}")
                 return None
 
         except Exception as e:
-            logger.error(f"Ошибка при обработке события заказа: {str(e)}")
+            error_traceback = traceback.format_exc()
+            logger.error(f"Ошибка при обработке события заказа: {str(e)}\nTraceback:\n{error_traceback}")
             raise ValueError(f"Ошибка при обработке события заказа: {str(e)}")
 
     def get_orders_by_status(self, token_id: str, status: str) -> List[AllegroOrder]:

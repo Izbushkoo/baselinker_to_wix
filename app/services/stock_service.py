@@ -31,6 +31,9 @@ class AllegroStockService:
             if order.status != 'READY_FOR_PROCESSING' or order.is_stock_updated:
                 return False
 
+            if order.fulfillment.stasut == 'CANCELLED':
+                return False
+
             # Получаем товарные позиции заказа
             order_items_query = (
                 select(OrderLineItem)
