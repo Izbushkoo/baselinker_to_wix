@@ -725,3 +725,49 @@ async def mark_order_stock_updated(
         logger.error(f"Ошибка при пометке заказа как списанного: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/start-check-stock")
+def start_check_stock_task(interval_seconds: int) -> Dict[str, Any]:
+    """
+    Запускает периодическую задачу проверки и обновления стоков.
+    
+    Args:
+        interval_seconds: Интервал запуска в секундах
+    """
+    try:
+        client = get_redis_client()
+        schedule_raw = client.get("celery_beat_schedule")
+        if schedule_raw:
+            schedule = json.loads(schedule_raw.decode("utf-8"))
+        else:
+            schedule = {}
+
+        check_stock_entry = {
+            "task": "app.celery_app.check_and_update_stock",
+            "schedule": interval_seconds,
+            "args": []
+        }
+        schedule["check-and-update-stock"] = check_stock_entry
+        client.set("celery_beat_schedule", json.dumps(schedule))
+        return {"status": "success", "message": f"Периодическая задача проверки стоков запущена с интервалом {interval_seconds} сек."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка при запуске задачи: {str(e)}")
+
+@router.post("/stop-check-stock")
+def stop_check_stock_task() -> Dict[str, Any]:
+    """
+    Останавливает периодическую задачу проверки и обновления стоков.
+    """
+    try:
+        client = get_redis_client()
+        schedule_raw = client.get("celery_beat_schedule")
+        if schedule_raw:
+            schedule = json.loads(schedule_raw.decode("utf-8"))
+        else:
+            schedule = {}
+        if "check-and-update-stock" in schedule:
+            del schedule["check-and-update-stock"]
+            client.set("celery_beat_schedule", json.dumps(schedule))
+        return {"status": "success", "message": "Периодическая задача проверки стоков остановлена"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка при остановке задачи: {str(e)}")
+
