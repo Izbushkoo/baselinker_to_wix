@@ -167,6 +167,20 @@
                     </div>
                     {% endif %}
 
+                    {% if operation.operation_type == 'stock_in' and operation.products_data and operation.products_data.products %}
+                        <div class="mt-4">
+                            <div class="font-semibold mb-2">Товары в поступлении:</div>
+                            <div class="space-y-1">
+                                {% for product in operation.products_data.products %}
+                                <div class="flex justify-between text-sm border-b border-gray-200 last:border-0 py-1">
+                                    <span class="font-mono">{{ product.sku }}</span>
+                                    <span>{{ product.initial_quantity }} шт.</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    {% endif %}
+
                     <div class="flex items-center justify-between mt-4 text-sm text-gray-500">
                         <span>
                             <svg class="w-5 h-5 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
