@@ -396,7 +396,7 @@ function displayOrders(orders) {
                                 <div class="bg-gray-700 p-3 rounded-lg">
                                     <div class="grid grid-cols-2 gap-2 text-sm text-white">
                                         <div class="col-span-2 font-medium">${item.offer_name}</div>
-                                        <div>SKU: ${item.external_id || '-'}</div>
+                                        <div>SKU: <button onclick="copyToClipboard('${item.external_id || '-'}', this)" class="font-mono text-blue-400 hover:text-blue-600 focus:outline-none">${item.external_id || '-'}</button></div>
                                         <div>ID: ${item.offer_id}</div>
                                         <div>Цена: ${formatPrice(item.price)}</div>
                                         <div>Оригинальная цена: ${formatPrice(item.original_price)}</div>
