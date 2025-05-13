@@ -7,6 +7,16 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+class NotFoundDetails(Exception):
+    """
+    Исключение, возникающее при отсутствии деталей заказа.
+    """
+    def __init__(self, message: str = "Детали не найдены"):
+        self.message = message
+        super().__init__(self.message)
+
+
 class BaseAllegroApiService:
     def __init__(self, base_url: str = "https://api.allegro.pl/"):
         self.base_url = base_url
@@ -140,6 +150,11 @@ class SyncAllegroApiService(BaseAllegroApiService):
             )
             response.raise_for_status()
             return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise NotFoundDetails(f"Детали заказа '{order_id}' не найдены")
+            raise ValueError(f"Ошибка при получении деталей заказа: {str(e)}")
+
         except httpx.HTTPError as e:
             raise ValueError(f"Ошибка при получении деталей заказа: {str(e)}")
 
