@@ -639,17 +639,16 @@ def process_allegro_order_events(token_id: str):
                     if order:
                         processed_count += 1
                         last_processed_id = event.get("id")
+                        redis_client.set(f"last_allegro_event_{token_id}", last_processed_id)
+                        logger.info(f"Сохранен ID последнего обработанного события: {last_processed_id}")
                 except NotFoundDetails as e:
                     logger.error(f"Заказ {event.get('id')} не найден, пропускаем")
-                    # tg_client.send_message(f"Задача по обработке ивента упала с ошибкой {str(e)}\n Заказ пропущен и синхронизирован не будет, если он существует необходимо вручную списать позиции такого заказа из каталога.")
-
+                    celery.send_task("app.celery_app.send_message_to_tg", args=(f"Задача по обработке ивента упала с ошибкой {str(e)}\n Заказ пропущен и синхронизирован не будет, если он существует необходимо вручную списать позиции такого заказа из каталога."))
+                    continue
                 except Exception as e:
                     logger.error(f"Ошибка при обработке события {event.get('id')}: {str(e)}")
-                    tg_client.send_message(f"Задача по обработке ивента упала с ошибкой {str(e)}\n Требуется вмешательство")
-                    raise 
-                else:
-                    redis_client.set(f"last_allegro_event_{token_id}", last_processed_id)
-                    logger.info(f"Сохранен ID последнего обработанного события: {last_processed_id}")
+                    celery.send_task("app.celery_app.send_message_to_tg", args=(f"Задача по обработке ивента упала с ошибкой {str(e)}\n Требуется вмешательство"))
+                    raise
                 
             return {
                 "status": "success",
@@ -665,3 +664,7 @@ def process_allegro_order_events(token_id: str):
         return {"status": "error", "message": str(e)}
 
 
+@celery.task(name="app.celery_app.send_message_to_tg")
+def send_message_to_tg(message: str):
+    tg_client = TelegramManager(chat_id=os.getenv("NOTIFY_GROUP_ID"))
+    tg_client.send_message(message)
