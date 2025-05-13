@@ -101,6 +101,7 @@ class OperationsService:
         order_id: str,
         products_data: List[Dict[str, Union[str, int]]],
         comment: Optional[str] = None,
+        user_email: Optional[str] = None,
         session: Optional[Session] = None
     ) -> Operation:
         """Создание операции списания по заказу"""
@@ -110,6 +111,7 @@ class OperationsService:
             products=products_data,
             order_id=order_id,
             comment=comment,
+            user_email=user_email,
             session=session
         )
 

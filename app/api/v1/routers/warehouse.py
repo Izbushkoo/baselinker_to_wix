@@ -787,6 +787,7 @@ async def sale_from_order(
                         }
                     )
 
+        products = []
         # Если все товары есть в наличии, выполняем списание
         operations_service = get_operations_service()
         for item in sale_data.line_items:
@@ -797,17 +798,11 @@ async def sale_from_order(
                         warehouse=sale_data.warehouse,
                         quantity=1  # Списываем по одной единице для каждой позиции
                     )
-                    
+                    products.append({
+                        'sku': item['external_id'],
+                        'quantity': 1
+                    })
                     # Создаем запись операции для каждого списанного товара
-                    operations_service.create_single_operation(
-                        operation_type=OperationType.STOCK_OUT_ORDER,
-                        warehouse_id=sale_data.warehouse,
-                        sku=item['external_id'],
-                        quantity=1,
-                        user_email=current_user.email,
-                        order_id=sale_data.order_id,
-                        comment=f"Списание товара выполнено через кнопку 'списать'"
-                    )
                     
                 except Exception as e:
                     return JSONResponse(
@@ -818,6 +813,13 @@ async def sale_from_order(
                         }
                     )
 
+        operations_service.create_order_operation(
+            warehouse_id=sale_data.warehouse,
+            user_email=current_user.email,
+            order_id=sale_data.order_id,
+            comment=f"Списание товара выполнено через кнопку 'списать'\n",
+            products_data=products
+        )
         update_stmt = update(AllegroOrder).where(
             AllegroOrder.id == sale_data.order_id
         ).values(is_stock_updated=True)
