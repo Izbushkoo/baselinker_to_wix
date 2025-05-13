@@ -643,11 +643,11 @@ def process_allegro_order_events(token_id: str):
                         logger.info(f"Сохранен ID последнего обработанного события: {last_processed_id}")
                 except NotFoundDetails as e:
                     logger.error(f"Заказ {event.get('id')} не найден, пропускаем")
-                    celery.send_task("app.celery_app.send_message_to_tg", args=(f"Задача по обработке ивента упала с ошибкой {str(e)}\n Заказ пропущен и синхронизирован не будет, если он существует необходимо вручную списать позиции такого заказа из каталога."))
+                    send_message_to_tg.delay(f"Задача по обработке ивента упала с ошибкой {str(e)}\n Заказ пропущен и синхронизирован не будет, если он существует необходимо вручную списать позиции такого заказа из каталога.")
                     continue
                 except Exception as e:
                     logger.error(f"Ошибка при обработке события {event.get('id')}: {str(e)}")
-                    celery.send_task("app.celery_app.send_message_to_tg", args=(f"Задача по обработке ивента упала с ошибкой {str(e)}\n Требуется вмешательство"))
+                    send_message_to_tg.delay(f"Задача по обработке ивента упала с ошибкой {str(e)}\n Требуется вмешательство")
                     raise
                 
             return {
