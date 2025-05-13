@@ -19,7 +19,7 @@ from app.services.tg_client import TelegramManager
 import os
 
 from app.services.allegro.order_service import SyncAllegroOrderService
-from app.services.allegro.allegro_api_service import SyncAllegroApiService
+from app.services.allegro.allegro_api_service import SyncAllegroApiService, NotFoundDetails
 from app.database import engine
 
 import time
@@ -639,6 +639,10 @@ def process_allegro_order_events(token_id: str):
                     if order:
                         processed_count += 1
                         last_processed_id = event.get("id")
+                except NotFoundDetails as e:
+                    logger.error(f"Заказ {event.get('id')} не найден, пропускаем")
+                    # tg_client.send_message(f"Задача по обработке ивента упала с ошибкой {str(e)}\n Заказ пропущен и синхронизирован не будет, если он существует необходимо вручную списать позиции такого заказа из каталога.")
+
                 except Exception as e:
                     logger.error(f"Ошибка при обработке события {event.get('id')}: {str(e)}")
                     tg_client.send_message(f"Задача по обработке ивента упала с ошибкой {str(e)}\n Требуется вмешательство")
