@@ -185,30 +185,37 @@ DEFAULT_BEAT_SCHEDULE = {
 }
 
 def initialize_beat_schedule():
-    """Инициализирует расписание в Redis, если оно отсутствует"""
+    """Инициализирует и синхронизирует расписание в Redis с DEFAULT_BEAT_SCHEDULE"""
     try:
         redis_client = get_redis_client()
         schedule_raw = redis_client.get("celery_beat_schedule")
         
         if not schedule_raw:
+            # Если расписания нет - создаем новое из дефолтного
             logger.info("Инициализация начального расписания в Redis")
             redis_client.set("celery_beat_schedule", json.dumps(DEFAULT_BEAT_SCHEDULE))
             logger.info("Начальное расписание успешно установлено")
-        else:
-            # Проверяем наличие задач по умолчанию в существующем расписании
-            current_schedule = json.loads(schedule_raw.decode("utf-8"))
-            schedule_updated = False
-            
-            for task_name, task_config in DEFAULT_BEAT_SCHEDULE.items():
-                if task_name not in current_schedule:
-                    current_schedule[task_name] = task_config
-                    schedule_updated = True
-            
-            if schedule_updated:
-                logger.info("Добавление отсутствующих задач по умолчанию в существующее расписание")
-                redis_client.set("celery_beat_schedule", json.dumps(current_schedule))
-                logger.info("Расписание успешно обновлено")
-            
+            return
+
+        # Если расписание есть - проверяем соответствие с дефолтным
+        current_schedule = json.loads(schedule_raw.decode("utf-8"))
+        schedule_updated = False
+
+        for task_name, task_config in DEFAULT_BEAT_SCHEDULE.items():
+            if task_name not in current_schedule:
+                # Добавляем отсутствующую задачу
+                current_schedule[task_name] = task_config
+                schedule_updated = True
+            elif current_schedule[task_name] != task_config:
+                # Обновляем конфигурацию существующей задачи
+                current_schedule[task_name] = task_config
+                schedule_updated = True
+
+        if schedule_updated:
+            logger.info("Обновление расписания в Redis")
+            redis_client.set("celery_beat_schedule", json.dumps(current_schedule))
+            logger.info("Расписание успешно синхронизировано с DEFAULT_BEAT_SCHEDULE")
+
     except Exception as e:
         logger.error(f"Ошибка при инициализации расписания: {str(e)}")
 
