@@ -54,6 +54,7 @@ class SaleFromOrder(BaseModel):
 
 @router.get("/operations", response_class=HTMLResponse)
 async def operations_page(request: Request, current_user: User = Depends(deps.get_current_user_optional)):
+    logging.info(f"Operations page requested by user: {current_user}")
     if not current_user:
         return RedirectResponse(url=f"/login?next=/operations", status_code=302)
     return templates.TemplateResponse("operations.html", {
