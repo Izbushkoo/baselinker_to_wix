@@ -75,7 +75,7 @@ async def login_access_token(
                 key="access_token",                # имя cookie
                 value=token,                # само значение JWT
                 httponly=True,                     # нельзя достать из JS
-                secure=False,                       # true в продакшене (HTTPS)
+                secure=True,                       # true в продакшене (HTTPS)
                 samesite="lax",                    # защищает от CSRF при кросс-сайтовых GET
                 max_age=60 * 60 * 24 * 7,          # живёт неделю
                 path="/",                          # доступно на всём сайте
