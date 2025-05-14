@@ -276,7 +276,7 @@ async def get_webhook_info():
 async def tg_catalog(
     request: Request,
     page: int = Query(1, ge=1),
-    page_size: int = Query(3, ge=1, le=1000),
+    page_size: int = Query(50, ge=1, le=1000),
     search: Optional[str] = None,
     stock_filter: Optional[int] = None,
     min_stock_filter: Optional[int] = None,
