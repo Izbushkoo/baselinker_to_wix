@@ -561,6 +561,40 @@
         .stock-modal-btn.cancel { background: #e5e7eb; color: #374151; }
         .stock-modal-btn.ok { background: #2563eb; color: #fff; }
         .stock-modal-btn.ok:active { background: #1746a2; }
+
+        /* Стили для индикатора загрузки */
+        .loading-spinner {
+            display: none;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .loading-spinner.active {
+            display: flex;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #2563eb;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .loading-text {
+            color: #64748b;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -583,6 +617,11 @@
     </div>
     <div class="container">
         <div class="content" id="content">
+            <!-- Индикатор загрузки -->
+            <div class="loading-spinner" id="loadingSpinner">
+                <div class="spinner"></div>
+                <div class="loading-text">Загрузка товаров...</div>
+            </div>
             <!-- Список товаров -->
             <div id="productsList">
                 {% for product in products %}
@@ -719,29 +758,42 @@
         async function loadProducts(page = 1, append = false) {
             if (isLoading || (!hasMore && append)) return;
             isLoading = true;
+
+            // Показываем индикатор загрузки и очищаем список товаров
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            const productsList = document.getElementById('productsList');
+            
+            loadingSpinner.classList.add('active');
+            productsList.style.display = 'none';
+            if (!append) productsList.innerHTML = '';
+
             const filters = getFilters();
             filters.page = page;
 
-            const params = new URLSearchParams(filters);
-            const response = await fetch(`/tg/catalog?${params.toString()}`, {
-                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
-            });
-            const data = await response.json();
+            try {
+                const params = new URLSearchParams(filters);
+                const response = await fetch(`/tg/catalog?${params.toString()}`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                });
+                const data = await response.json();
 
-            const productsList = document.getElementById('productsList');
-            if (!append) productsList.innerHTML = '';
-            data.products.forEach(item => {
-                const div = document.createElement('div');
-                div.innerHTML = item.html;
-                productsList.appendChild(div.firstElementChild);
-            });
+                data.products.forEach(item => {
+                    const div = document.createElement('div');
+                    div.innerHTML = item.html;
+                    productsList.appendChild(div.firstElementChild);
+                });
 
-            currentPage = data.page;
-            totalPages = data.total_pages;
-            hasMore = data.page < data.total_pages;
-            isLoading = false;
-
-            renderPagination();
+                currentPage = data.page;
+                totalPages = data.total_pages;
+                hasMore = data.page < data.total_pages;
+            } catch (error) {
+                console.error('Ошибка при загрузке товаров:', error);
+            } finally {
+                loadingSpinner.classList.remove('active');
+                productsList.style.display = 'block';
+                isLoading = false;
+                renderPagination();
+            }
         }
 
         function handleFilterChange() {
