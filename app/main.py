@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 from sqlmodel.ext.asyncio.session import AsyncSession
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from app.api.v1.api import api_router as api_router_v1, web_router
 from app.core.config import settings
 from app.utils.logging_config import setup_project_logging
@@ -55,6 +55,9 @@ async def home(
     current_user: Optional[UserModel] = Depends(deps.get_current_user_optional),
     inventory_manager: manager.InventoryManager = Depends(manager.get_manager)
 ):
+    if not current_user:
+        return RedirectResponse(url="/login?next=/", status_code=302)
+
     total_items = await inventory_manager.count_products()
     low_stock = await inventory_manager.get_low_stock_products()
     logger.info(f"Total items: {total_items}")
