@@ -72,6 +72,8 @@ async def get_current_user_optional(
     access_token: str = Cookie(None),       # читаем cookie
     db: AsyncSession = Depends(get_async_session),
 ) -> UserModel:
+
+    logging.info(f"Access token: {access_token}")
     if not access_token:
         return None
     try:
@@ -84,6 +86,7 @@ async def get_current_user_optional(
     except (jwt.exceptions.PyJWTError, ValidationError):
         return None
     user = await db.get(UserModel, user_id)
+    logging.info(f"User from cookie: {user}")
     if not user:
         return None
     return user
