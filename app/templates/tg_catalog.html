@@ -195,6 +195,38 @@
             color: #000000;
             box-sizing: border-box;
         }
+        /* Стили для контейнера поля поиска */
+        .search-input-container {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        .search-input-container .filter-input {
+            padding-right: 36px; /* Больше места для крестика */
+        }
+        .clear-search-btn {
+            position: absolute;
+            right: 10px; /* Меньше отступ, чтобы крестик был ближе к краю поля, но не прилипал */
+            background: none;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            color: #bdbdbd;
+            display: none;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            transition: background 0.15s;
+        }
+        .clear-search-btn:active, .clear-search-btn:focus {
+            background: #f1f5f9;
+        }
+        .clear-search-btn svg {
+            width: 24px;
+            height: 24px;
+            display: block;
+            margin: 0;
+        }
         /* Стили для контента */
         .content {
             margin-top: 72px;
@@ -653,7 +685,14 @@
             
             <!-- Панель фильтров -->
             <div class="filters-panel" id="filtersPanel">
-                <input type="text" class="filter-input" id="searchInput" placeholder="Поиск по названию, SKU или EAN">
+                <div class="search-input-container">
+                    <input type="text" class="filter-input" id="searchInput" placeholder="Поиск по названию, SKU или EAN">
+                    <button class="clear-search-btn" id="clearSearchBtn" title="Очистить поиск">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
                 <input type="number" class="filter-input" id="stockFilter" placeholder="Остаток меньше чем">
                 <select class="filter-input" id="sortOrder">
                     <option value="">Сортировка по умолчанию</option>
@@ -800,12 +839,72 @@
             currentPage = 1;
             hasMore = true;
             loadProducts(1, false);
+
+            // Сворачиваем панель фильтров, если она открыта
+            const filtersPanel = document.getElementById('filtersPanel');
+            if (filtersPanel.classList.contains('active')) {
+                toggleFilters();
+            }
         }
 
         document.getElementById('applyFiltersBtn').addEventListener('click', handleFilterChange);
 
+        // Управление кнопкой очистки поиска
+        const searchInput = document.getElementById('searchInput');
+        const clearSearchBtn = document.getElementById('clearSearchBtn');
+
+        if (searchInput && clearSearchBtn) {
+            searchInput.addEventListener('input', () => {
+                if (searchInput.value.length > 0) {
+                    clearSearchBtn.style.display = 'flex';
+                } else {
+                    clearSearchBtn.style.display = 'none';
+                }
+            });
+
+            clearSearchBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                searchInput.value = '';
+                clearSearchBtn.style.display = 'none';
+                searchInput.focus();
+            });
+
+            // Начальная проверка при загрузке страницы (если поле уже заполнено)
+            if (searchInput.value.length > 0) {
+                clearSearchBtn.style.display = 'flex';
+            }
+        }
+
+        // Функция для очистки всех фильтров при загрузке страницы
+        function clearAllFiltersOnLoad() {
+            const searchInput = document.getElementById('searchInput');
+            const stockFilter = document.getElementById('stockFilter');
+            const sortOrder = document.getElementById('sortOrder');
+            const pageSize = document.getElementById('pageSize');
+            const clearSearchBtn = document.getElementById('clearSearchBtn');
+
+            if (searchInput) {
+                searchInput.value = '';
+            }
+            if (stockFilter) {
+                stockFilter.value = '';
+            }
+            if (sortOrder) {
+                sortOrder.value = ''; // Значение для "Сортировка по умолчанию"
+            }
+            if (pageSize) {
+                pageSize.value = '50'; // Значение для "50 товаров"
+            }
+            if (clearSearchBtn) { // Также скрываем кнопку очистки, если она была видима
+                clearSearchBtn.style.display = 'none';
+            }
+        }
+
         // Инициализация
-        // loadProducts(1, false);
+        document.addEventListener('DOMContentLoaded', function() {
+            clearAllFiltersOnLoad();
+            // loadProducts(1, false); // Если нужно загружать товары сразу после очистки фильтров
+        });
 
         // Обработка сообщений от Telegram
         tg.onEvent('message', function(event) {
