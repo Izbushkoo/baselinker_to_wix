@@ -4,6 +4,7 @@ from fastapi.responses import RedirectResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
 from fastapi.templating import Jinja2Templates
 from datetime import datetime
+import logging
 from app.api import deps
 from app.models.operations import Operation, OperationType
 from app.models.user import User
@@ -26,6 +27,7 @@ async def import_export_page(
     """
     Страница импорта/экспорта
     """
+    logging.info(f"Import/Export page requested by user: {current_user}")
     if not current_user:
         return RedirectResponse(url=f"/login?next=/import-export", status_code=302)
 
