@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Главная — Склад</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #f6f8fa;
+            font-family: Arial, sans-serif;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            height: 56px;
+            background: #fff;
+            border-bottom: 1.5px solid #e5e7eb;
+            font-weight: 700;
+            font-size: 20px;
+        }
+        .burger {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            z-index: 10;
+        }
+        .burger svg {
+            width: 28px;
+            height: 28px;
+            color: #2563eb;
+        }
+        .menu {
+            display: none;
+            position: absolute;
+            top: 56px;
+            left: 12px;
+            right: 12px;
+            background: #fff;
+            border-radius: 14px;
+            box-shadow: 0 4px 24px rgba(37,99,235,0.08);
+            border: 1.5px solid #e5e7eb;
+            padding: 8px 0;
+            z-index: 100;
+        }
+        .menu.active {
+            display: block;
+        }
+        .menu-item {
+            padding: 14px 20px;
+            font-size: 16px;
+            color: #1e293b;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .menu-item:hover {
+            background: #f1f5f9;
+        }
+        .main {
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 18px 8px 0 8px;
+        }
+        .stat-block {
+            background: #fff;
+            border-radius: 18px;
+            box-shadow: 0 2px 12px rgba(37,99,235,0.06);
+            padding: 22px 18px 18px 18px;
+            margin-bottom: 18px;
+        }
+        .stat-title {
+            display: flex;
+            align-items: center;
+            font-size: 22px;
+            font-weight: 800;
+            color: #1e293b;
+            margin-bottom: 18px;
+        }
+        .stat-title svg {
+            width: 24px;
+            height: 24px;
+            color: #2563eb;
+            margin-right: 8px;
+        }
+        .stat-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        .stat-card {
+            border-radius: 12px;
+            padding: 16px 14px 12px 14px;
+            font-size: 15px;
+            font-weight: 500;
+            margin-bottom: 0;
+        }
+        .stat-card-total {
+            background: #eaf1ff;
+            color: #2563eb;
+        }
+        .stat-card-low {
+            background: #fff9e6;
+            color: #b45309;
+        }
+        .stat-card-ops {
+            background: #e6faee;
+            color: #15803d;
+        }
+        .stat-card .stat-label {
+            font-size: 14px;
+            color: #64748b;
+            font-weight: 400;
+        }
+        .stat-card .stat-value {
+            font-size: 26px;
+            font-weight: 800;
+            margin-top: 2px;
+            display: block;
+        }
+        .log-container {
+            margin: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <button class="burger" onclick="toggleMenu()" aria-label="Меню">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+        </button>
+        <span>Главная</span>
+        <div id="menu" class="menu">
+            <div class="menu-item" onclick="goTo('warehouse')">Склад</div>
+            <div class="menu-item" onclick="goTo('operations')">Операции</div>
+            <div class="menu-item" onclick="goTo('import_export')">Импорт/Экспорт</div>
+        </div>
+    </div>
+    <div id="log" class="log-container"></div>
+    <div class="main">
+        <div class="stat-block">
+            <div class="stat-title">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M3 17v-2a4 4 0 014-4h10a4 4 0 014 4v2" />
+                    <circle cx="12" cy="7" r="4" stroke-width="2.2" />
+                </svg>
+                Статистика склада
+            </div>
+            <div class="stat-cards">
+                <div class="stat-card stat-card-total">
+                    <span class="stat-label">Всего товаров</span><br>
+                    <span class="stat-value">{{ total_products }}</span>
+                </div>
+                <div class="stat-card stat-card-low">
+                    <span class="stat-label">Заканчиваются</span><br>
+                    <span class="stat-value">{{ low_stock }}</span>
+                </div>
+                <div class="stat-card stat-card-ops">
+                    <span class="stat-label">Операций сегодня</span><br>
+                    <span class="stat-value">{{ today_ops }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // function log(message) {
+        //     const logElement = document.getElementById('log');
+        //     const time = new Date().toLocaleTimeString();
+        //     logElement.innerHTML += `[${time}] ${message}\n`;
+        // }
+
+        window.onload = async function() {
+            // Инициализация Telegram WebApp
+            const tg = window.Telegram.WebApp;
+            
+            // Скрываем кнопку "Назад" на главной странице
+            tg.BackButton.hide();
+
+            // log('Страница загружена, проверяем Telegram.WebApp');
+            if (window.Telegram && Telegram.WebApp) {
+                // log('Telegram.WebApp доступен');
+                // log('InitData: ' + window.Telegram.WebApp.initData);
+                try {
+                    const response = await fetch('/tg/validate_init', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'text/plain',
+                        },
+                        body: window.Telegram.WebApp.initData
+                    });
+                    
+                    // log('Ответ от сервера: ' + response.status);
+                    
+                    if (!response.ok) {
+                        throw new Error('Ошибка валидации: ' + response.status);
+                    }
+                    
+                    const data = await response.json();
+                    // log('Данные валидации: ' + JSON.stringify(data));
+                    
+                    if (data.status !== 'success') {
+                        throw new Error('Ошибка авторизации: ' + data.status);
+                    }
+                } catch (error) {
+                    // log('Ошибка: ' + error.message);
+                    alert('Ошибка авторизации. Пожалуйста, попробуйте позже.');
+                    window.Telegram.WebApp.close();
+                }
+            } else {
+                // log('Telegram.WebApp не доступен');
+            }
+        };
+
+        function toggleMenu() {
+            const menu = document.getElementById('menu');
+            menu.classList.toggle('active');
+        }
+
+        function goTo(page) {
+            if (page === 'warehouse') {
+                window.location.href = '/tg/catalog';
+                return;
+            }
+            if (window.Telegram && Telegram.WebApp) {
+                Telegram.WebApp.sendData(JSON.stringify({action: 'navigate', page: page}));
+            } else {
+                window.location.href = '/' + page;
+            }
+        }
+
+        // Закрытие меню при клике вне
+        document.addEventListener('click', function(e) {
+            const menu = document.getElementById('menu');
+            const burger = document.querySelector('.burger');
+            if (!menu.contains(e.target) && !burger.contains(e.target)) {
+                menu.classList.remove('active');
+            }
+        });
+    </script>
+</body>
+</html>

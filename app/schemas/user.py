@@ -1,6 +1,6 @@
 from typing import Optional
-
-from pydantic import BaseModel, EmailStr
+import uuid
+from pydantic import BaseModel, EmailStr, Field
 
 
 # Shared properties
@@ -16,6 +16,7 @@ class UserCreate(UserBase):
     email: EmailStr
     password: str
     is_admin: bool = False
+    tg_nickname: Optional[str] = Field(default_factory=lambda x : str(uuid.uuid4()))
 
 # Properties to receive via API on update
 class UserUpdate(UserBase):

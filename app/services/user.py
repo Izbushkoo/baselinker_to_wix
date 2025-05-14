@@ -79,3 +79,8 @@ async def toggle_admin_status_by_id(db: AsyncSession, user_id: int) -> None:
         await session.commit()
         await session.refresh(user)
         return user
+
+async def get_user_by_tg_nickname(db: AsyncSession, tg_nickname: str) -> user_schemas.User:
+    async with db as session:
+        result = await session.exec(select(user_models.User).where(user_models.User.tg_nickname == tg_nickname))
+        return result.first()

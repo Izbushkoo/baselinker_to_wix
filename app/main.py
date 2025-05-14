@@ -20,6 +20,7 @@ from app.models.operations import Operation, OperationType
 from uuid import uuid4
 from app.services.operations_service import get_operations_service
 from app.templates.filters import operation_type_label
+from app.tg_app import router as tg_router
 
 
 # Настраиваем логирование при запуске приложения
@@ -89,6 +90,9 @@ async def status_page(request: Request):
 
 # Подключаем веб-маршруты (без API префикса)
 app.include_router(web_router)
+
+# Подключаем Telegram Web App роутер
+app.include_router(tg_router)
 
 # API маршруты
 app.include_router(api_router_v1, prefix=settings.API_V1_STR)

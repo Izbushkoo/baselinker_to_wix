@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Добавить товар</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --tg-theme-bg-color: #f8fafc;
+            --tg-theme-text-color: #1e293b;
+            --tg-theme-hint-color: #94a3b8; 
+            --tg-theme-link-color: #3b82f6;
+            --tg-theme-button-color: #3b82f6;
+            --tg-theme-button-text-color: #ffffff;
+        }
+
+        body {
+            font-family: 'SF Pro Text', -apple-system, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            margin: 0;
+            padding: 16px;
+            background-color: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            font-size: 15px;
+            line-height: 1.4;
+        }
+
+        .form-container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            color: var(--tg-theme-text-color);
+            font-weight: 500;
+            font-size: 14px;
+            letter-spacing: -0.01em;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        textarea,
+        select {
+            width: 94%;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 15px;
+            background-color: #ffffff;
+            color: #000000;
+            box-sizing: border-box;
+            font-family: inherit;
+        }
+
+        .stock-inputs {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .stock-input {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .submit-button {
+            width: 94%;
+            padding: 12px;
+            background-color: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 16px;
+            font-family: inherit;
+            letter-spacing: 0.01em;
+        }
+
+        .error-message {
+            color: #ef4444;
+            font-size: 13px;
+            margin-top: 4px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="form-container">
+        <form id="addProductForm" 
+              onsubmit="submitForm(event)"
+              enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="name">Название товара*</label>
+                <input type="text" id="name" name="name" required>
+                <div class="error-message" id="nameError"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="sku">SKU*</label>
+                <input type="text" id="sku" name="sku" required>
+                <div class="error-message" id="skuError"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="ean">EAN (штрихкоды через запятую)</label>
+                <input type="text" id="ean" name="ean" placeholder="Например: 4600000000000, 4600000000001">
+                <div class="error-message" id="eanError"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="image">Изображение (до 1MB)</label>
+                <input type="file" 
+                       id="image" 
+                       name="image" 
+                       accept="image/*"
+                       onchange="validateFileSize(this)">
+                <div class="error-message" id="imageError"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="warehouse">Склад*</label>
+                <select id="warehouse" name="warehouse" required>
+                    <option value="">Выберите склад</option>
+                    {% for warehouse in warehouses %}
+                    <option value="{{ warehouse }}">{{ warehouse }}</option>
+                    {% endfor %}
+                </select>
+                <div class="error-message" id="warehouseError"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="quantity">Начальное количество*</label>
+                <input type="number" 
+                       id="quantity" 
+                       name="quantity" 
+                       min="0" 
+                       value="0" 
+                       required>
+                <div class="error-message" id="quantityError"></div>
+            </div>
+
+            <button type="submit" class="submit-button">Добавить товар</button>
+        </form>
+    </div>
+
+    <script>
+        let tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.enableClosingConfirmation();
+
+        // Показываем кнопку "Назад"
+        tg.BackButton.show();
+        tg.BackButton.onClick(() => {
+            window.history.back();
+        });
+
+        function validateFileSize(input) {
+            const maxSize = 1 * 1024 * 1024; // 1MB
+            const errorElement = document.getElementById('imageError');
+            
+            if (input.files && input.files[0]) {
+                if (input.files[0].size > maxSize) {
+                    errorElement.textContent = 'Размер файла превышает 1MB';
+                    errorElement.style.display = 'block';
+                    input.value = ''; // Очищаем поле
+                } else {
+                    errorElement.style.display = 'none';
+                }
+            }
+        }
+
+        async function submitForm(event) {
+            event.preventDefault();
+            
+            // Сбрасываем предыдущие ошибки
+            document.querySelectorAll('.error-message').forEach(el => {
+                el.style.display = 'none';
+                el.textContent = '';
+            });
+
+            const form = event.target;
+            const formData = new FormData(form);
+
+            try {
+                const response = await fetch('/api/products', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    if (errorData.detail) {
+                        if (typeof errorData.detail === 'object') {
+                            Object.entries(errorData.detail).forEach(([field, error]) => {
+                                const errorElement = document.getElementById(`${field}Error`);
+                                if (errorElement) {
+                                    errorElement.textContent = error;
+                                    errorElement.style.display = 'block';
+                                }
+                            });
+                        } else {
+                            tg.showAlert(errorData.detail);
+                        }
+                    }
+                    return;
+                }
+
+                const result = await response.json();
+                tg.showAlert('Товар успешно добавлен!');
+                window.history.back();
+
+            } catch (error) {
+                console.error('Error:', error);
+                tg.showAlert('Произошла ошибка при добавлении товара. Попробуйте позже.');
+            }
+        }
+    </script>
+</body>
+</html>

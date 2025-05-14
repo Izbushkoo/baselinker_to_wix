@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     # Используем значение из .env или генерируем новое, если его нет
     SECRET_KEY: str = os.getenv("SECRET_KEY", secrets.token_urlsafe(32))
 
+    # Telegram Bot settings
+    NOTIFICATOR_BOT_TOKEN: str
+    TELEGRAM_WEBHOOK_URL: Optional[str] = None
+    TELEGRAM_WEBAPP_URL: Optional[str] = None
+
     # 60 minutes * 24 hours * 8 days = 8 days
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
 

@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Telegram Web App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f8fafc;
+            color: var(--tg-theme-text-color, #000000);
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 56px;
+            background: #fff;
+            border-bottom: 1.5px solid #e5e7eb;
+            font-weight: 700;
+            font-size: 20px;
+            z-index: 2000;
+            color: #000000;
+        }
+        .header-title {
+            text-decoration: none;
+            color: inherit;
+        }
+        .burger {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            z-index: 10;
+        }
+        .burger svg {
+            width: 28px;
+            height: 28px;
+            color: #2563eb;
+        }
+        .menu {
+            display: none;
+            position: absolute;
+            top: 56px;
+            left: 12px;
+            right: 12px;
+            background: #fff;
+            border-radius: 14px;
+            box-shadow: 0 4px 24px rgba(37,99,235,0.08);
+            border: 1.5px solid #e5e7eb;
+            padding: 8px 0;
+            z-index: 2100;
+        }
+        .menu.active {
+            display: block;
+        }
+        .menu-item {
+            padding: 14px 20px;
+            font-size: 16px;
+            color: #1e293b;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .menu-item:hover {
+            background: #f1f5f9;
+        }
+        .container {
+            width: 100vw;
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        .button {
+            background-color: var(--tg-theme-button-color, #2481cc);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        .button:hover {
+            opacity: 0.5;
+        }
+        .error {
+            color: red;
+            text-align: center;
+            padding: 20px;
+        }
+        /* Стили для мобильной панели */
+        .mobile-panel {
+            position: fixed;
+            top: 56px;
+            left: 0;
+            right: 0;
+            margin: 0 auto;
+            background-color: var(--tg-theme-bg-color, #ffffff);
+            border-bottom: 1px solid var(--tg-theme-hint-color, #999999);
+            z-index: 1000;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .button-row {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 4px;
+            padding: 4px;
+            background: #f8fafc;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .icon-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 16px;
+            height: 32px;
+            width: 100%;
+            font-size: 14px;
+            margin: 0;
+            box-sizing: border-box;
+            padding: 0 12px;
+            background: #fff;
+            transition: none;
+            gap: 8px;
+        }
+        .btn-add {
+            background: #2563eb;
+            color: #fff;
+        }
+        .btn-filter {
+            background: #eaf3ff;
+            color: #2563eb;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-filter .filter-icon {
+            display: inline-block;
+        }
+        .btn-filter .arrow-up {
+            display: none;
+        }
+        .btn-filter.active .filter-icon {
+            display: none;
+        }
+        .btn-filter.active .arrow-up {
+            display: inline-block;
+        }
+        .icon-button svg {
+            width: 20px;
+            height: 20px;
+            stroke-width: 2.2;
+        }
+        .icon-button:active, .icon-button:focus, .icon-button:hover {
+            filter: none;
+            opacity: 1;
+            box-shadow: none;
+        }
+        /* Стили для панели фильтров */
+        .filters-panel {
+            display: none;
+            padding: 16px;
+            background-color: #ffffff;
+            border-bottom: 1px solid var(--tg-theme-hint-color, #999999);
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            z-index: 999;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .filters-panel.active {
+            display: block;
+        }
+        .filter-input {
+            width: calc(100% - 8px);
+            padding: 8px;
+            margin-bottom: 8px;
+            border: 1px solid var(--tg-theme-hint-color, #999999);
+            border-radius: 8px;
+            background-color: #ffffff;
+            color: #000000;
+            box-sizing: border-box;
+        }
+        /* Стили для контента */
+        .content {
+            margin-top: 72px;
+            padding: 16px;
+            padding-bottom: 88px;
+            transition: margin-top 0.3s ease;
+        }
+        .content.with-filters {
+            margin-top: 288px;
+        }
+        /* Стили для кнопки "Загрузить ещё" */
+        #loadMoreBtn {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            margin: 0;
+            padding: 16px;
+            background: var(--tg-theme-button-color, #2481cc);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            z-index: 1001;
+            box-sizing: border-box;
+        }
+
+        /* --- Стили карточки товара --- */
+        .tg-product-card {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            box-sizing: border-box;
+            margin: 8px 0;
+            background: #fafafa;
+            border-radius: 14px;
+            border: 1.5px solid #e5e7eb;
+            padding: 12px;
+            position: relative;
+        }
+        .tg-product-main {
+            display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            width: 100%;
+        }
+        .tg-product-image {
+            width: 25%;
+            aspect-ratio: 1;
+            min-width: 64px;
+            max-width: 90px;
+            flex-shrink: 0;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #f3f4f6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .tg-product-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .tg-product-info {
+            flex: 1;
+            min-width: 0;
+            padding-left: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .tg-product-sku {
+            font-size: 12px;
+            color: #2563eb;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .tg-product-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #000;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .tg-product-stock {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .tg-product-status {
+            font-size: 11px;
+            font-weight: 600;
+            border-radius: 999px;
+            padding: 2px 10px;
+        }
+        .tg-product-status.out   { background: #fef2f2; color: #b91c1c; }
+        .tg-product-status.low   { background: #fef9c3; color: #b45309; }
+        .tg-product-status.in    { background: #dcfce7; color: #15803d; }
+        
+        .toggle-text {
+            font-size: 12px;
+            color: #2563eb;
+        }
+        .tg-product-qty {
+            font-size: 16px;
+            font-weight: 700;
+            color: #111827;
+        }
+        /* Подсветка числа общего остатка */
+        .tg-product-qty {
+            font-size: 16px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 6px;
+        }
+        .tg-product-qty.green  { background: #dcfce7; color: #15803d; }
+        .tg-product-qty.yellow { background: #fef9c3; color: #d97706; }
+        .tg-product-qty.red    { background: #fef2f2; color: #b91c1c; }
+
+        /* Скрытый блок с остатками по складам */
+        .tg-product-details {
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 12px;
+            width: 100%;
+        }
+        /* Показываем при добавлении класса .expanded */
+        .tg-product-card.expanded .tg-product-details {
+            display: flex;
+        }
+
+        /* Одиночная строка склада */
+        .stock-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+        }
+        /* Название склада */
+        .stock-item-name {
+            flex: 1;
+            font-size: 14px;
+            color: #64748b;
+        }
+        .stock-item-qty {
+            font-size: 15px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 6px;
+            min-width: 56px;
+            text-align: center;
+        }
+        .stock-item-qty.green  { background: #dcfce7; color: #15803d; }
+        .stock-item-qty.yellow { background: #fef9c3; color: #d97706; }
+        .stock-item-qty.red    { background: #fef2f2; color: #b91c1c; }
+        /* Контролы «– [input] + ↔» */
+        .stock-item-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 12px;
+            width: calc(100% - 24px); /* Вычитаем padding чтобы не выходить за края */
+        }
+        .stock-item-controls input[type="number"] {
+            width: 40px;
+            text-align: center;
+            padding: 4px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+        }
+        .stock-item-controls button {
+            border: none;
+            border-radius: 6px;
+            flex: 1;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .stock-item-controls button.minus {
+            background: #fb7185;
+        }
+        .stock-item-controls button.plus {
+            background: #4ade80;
+        }
+        .stock-item-controls button.transfer {
+            background: #60a5fa;
+        }
+        .stock-item-controls button svg {
+            display: block;
+            width: 18px;
+            height: 18px;
+            fill: #fff;
+            stroke: #fff;
+        }
+        .delete-button {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            border: none;
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            transition: all 0.2s ease;
+            z-index: 10;
+        }
+
+        .delete-button:hover {
+            background: rgba(239, 68, 68, 0.2);
+        }
+
+        .delete-button svg {
+            width: 20px;
+            height: 20px;
+            stroke-width: 1.5;
+        }
+
+        .tg-product-card-sku {
+            background: none;
+            border: none;
+            padding: 2px 6px;
+            font-size: 12px;
+            color: #2563eb;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        .tg-product-card-sku:hover {
+            background: rgba(37, 99, 235, 0.1);
+        }
+
+        /* Стиль для тултипа */
+        .tg-product-card-sku[title]:hover:after {
+            content: attr(title);
+            position: absolute;
+            background: #333;
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 20;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            margin-top: 4px;
+        }
+
+        /* Добавляем отступ для деталей, чтобы кнопка не перекрывала контент */
+        .tg-product-details {
+            padding-bottom: 32px;
+        }
+        #applyFiltersBtn {
+            width: 100%;
+            margin-top: 8px;
+            padding: 10px 0;
+            background: #2563eb;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        #applyFiltersBtn:active {
+            opacity: 0.7;
+        }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            margin: 12px 0;
+        }
+        .pagination-btn {
+            background: #2563eb;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 6px 18px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .pagination-btn:disabled {
+            background: #e5e7eb;
+            color: #a1a1aa;
+            cursor: default;
+        }
+        .pagination-info {
+            font-size: 15px;
+            color: #1e293b;
+            font-weight: 500;
+        }
+        .pagination-fixed {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1200;
+            background: #fff;
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.04);
+            margin: 0;
+            padding: 12px 0;
+        }
+        .stock-modal {
+            position: fixed;
+            z-index: 3000;
+            left: 0; top: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .stock-modal-content {
+            background: #fff;
+            border-radius: 12px;
+            padding: 24px 20px 16px 20px;
+            min-width: 260px;
+            max-width: 90vw;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+        }
+        .stock-modal-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: #1e293b;
+        }
+        .stock-modal-fields {
+            margin-bottom: 18px;
+            color: #334155;
+        }
+        .stock-modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        .stock-modal-btn {
+            padding: 7px 18px;
+            border-radius: 8px;
+            border: none;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .stock-modal-btn.cancel { background: #e5e7eb; color: #374151; }
+        .stock-modal-btn.ok { background: #2563eb; color: #fff; }
+        .stock-modal-btn.ok:active { background: #1746a2; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <button class="burger" onclick="toggleMenu()" aria-label="Меню">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+        </button>
+        <a href="/tg/webapp" class="header-title">Склад</a>
+        <div id="menu" class="menu">
+            <div class="menu-item" onclick="goTo('warehouse')">Склад</div>
+            <div class="menu-item" onclick="goTo('operations')">Операции</div>
+            <div class="menu-item" onclick="goTo('import_export')">Импорт/Экспорт</div>
+        </div>
+    </div>
+    <div id="paginationData"
+         data-current-page="{{ page if page is defined else 1 }}"
+         data-total-pages="{{ total_pages if total_pages is defined else 1 }}">
+    </div>
+    <div class="container">
+        <div class="content" id="content">
+            <!-- Список товаров -->
+            <div id="productsList">
+                {% for product in products %}
+                    {% include "tg_product_card.html" %}
+                {% endfor %}
+            </div>
+        </div>
+        <!-- Фиксированная пагинация снизу -->
+        <div class="pagination pagination-fixed" id="paginationBottom"></div>
+        <!-- Мобильная панель с кнопками -->
+        <div class="mobile-panel">
+            <div class="button-row">
+                <button class="icon-button btn-add" onclick="window.location.href='/tg/add_product'" title="Добавить товар">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                    Добавить
+                </button>
+                <button class="icon-button btn-filter" id="filtersToggleBtn" onclick="toggleFilters()" title="Фильтры">
+                    <span class="filter-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                        Фильтры
+                    </span>
+                    <span class="arrow-up" style="display:none;">▲ Свернуть</span>
+                </button>
+            </div>
+            
+            <!-- Панель фильтров -->
+            <div class="filters-panel" id="filtersPanel">
+                <input type="text" class="filter-input" id="searchInput" placeholder="Поиск по названию, SKU или EAN">
+                <input type="number" class="filter-input" id="stockFilter" placeholder="Остаток меньше чем">
+                <select class="filter-input" id="sortOrder">
+                    <option value="">Сортировка по умолчанию</option>
+                    <option value="asc">По возрастанию остатков</option>
+                    <option value="desc">По убыванию остатков</option>
+                </select>
+                <select class="filter-input" id="pageSize">
+                    <option value="50">50 товаров</option>
+                    <option value="100">100 товаров</option>
+                    <option value="500">500 товаров</option>
+                    <option value="1000">1000 товаров</option>
+                </select>
+                <button id="applyFiltersBtn">Применить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Инициализация Telegram WebApp
+        const tg = window.Telegram.WebApp;
+        const initData = tg.initData;
+        
+        // Расширяем окно на весь экран
+        tg.expand();
+
+        // Показываем кнопку "Назад"
+        tg.BackButton.show();
+        
+        // Обработчик нажатия кнопки "Назад"
+        tg.BackButton.onClick(() => {
+            window.location.href = '/tg/webapp';
+        });
+
+        function addNewProduct() {
+            window.location.href = '/tg/add_product';
+        }
+
+        function toggleFilters() {
+            const filtersPanel = document.getElementById('filtersPanel');
+            const content = document.getElementById('content');
+            const btn = document.getElementById('filtersToggleBtn');
+            filtersPanel.classList.toggle('active');
+            content.classList.toggle('with-filters');
+            btn.classList.toggle('active');
+            if (filtersPanel.classList.contains('active')) {
+                btn.querySelector('.arrow-up').style.display = 'inline-block';
+                btn.querySelector('.filter-icon').style.display = 'none';
+            } else {
+                btn.querySelector('.arrow-up').style.display = 'none';
+                btn.querySelector('.filter-icon').style.display = 'inline-block';
+            }
+        }
+
+        // Обработка фильтров
+        let currentPage = 1;
+        let isLoading = false;
+        let hasMore = true;
+        let totalPages = 1;
+
+        // Инициализация пагинации из data-атрибутов
+        const paginationData = document.getElementById('paginationData');
+        currentPage = parseInt(paginationData.dataset.currentPage) || 1;
+        totalPages = parseInt(paginationData.dataset.totalPages) || 1;
+        renderPagination();
+
+        function renderPagination() {
+            const pagination = document.getElementById('paginationBottom');
+            if (!pagination) return;
+            pagination.innerHTML = '';
+            const prevBtn = document.createElement('button');
+            prevBtn.className = 'pagination-btn';
+            prevBtn.textContent = 'Назад';
+            prevBtn.disabled = currentPage <= 1;
+            prevBtn.onclick = () => loadProducts(currentPage - 1, false);
+            const nextBtn = document.createElement('button');
+            nextBtn.className = 'pagination-btn';
+            nextBtn.textContent = 'Вперед';
+            nextBtn.disabled = currentPage >= totalPages;
+            nextBtn.onclick = () => loadProducts(currentPage + 1, false);
+            const info = document.createElement('span');
+            info.className = 'pagination-info';
+            info.textContent = `Страница ${currentPage} из ${totalPages}`;
+            pagination.appendChild(prevBtn);
+            pagination.appendChild(info);
+            pagination.appendChild(nextBtn);
+        }
+
+        function getFilters() {
+            const filters = {};
+            const search = document.getElementById('searchInput').value.trim();
+            const stock_filter = document.getElementById('stockFilter').value.trim();
+            const sort_order = document.getElementById('sortOrder').value;
+            const page_size = document.getElementById('pageSize').value;
+
+            if (search) filters.search = search;
+            if (stock_filter) filters.stock_filter = stock_filter;
+            if (sort_order) filters.sort_order = sort_order;
+            if (page_size) filters.page_size = page_size;
+            return filters;
+        }
+
+        async function loadProducts(page = 1, append = false) {
+            if (isLoading || (!hasMore && append)) return;
+            isLoading = true;
+            const filters = getFilters();
+            filters.page = page;
+
+            const params = new URLSearchParams(filters);
+            const response = await fetch(`/tg/catalog?${params.toString()}`, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+            });
+            const data = await response.json();
+
+            const productsList = document.getElementById('productsList');
+            if (!append) productsList.innerHTML = '';
+            data.products.forEach(item => {
+                const div = document.createElement('div');
+                div.innerHTML = item.html;
+                productsList.appendChild(div.firstElementChild);
+            });
+
+            currentPage = data.page;
+            totalPages = data.total_pages;
+            hasMore = data.page < data.total_pages;
+            isLoading = false;
+
+            renderPagination();
+        }
+
+        function handleFilterChange() {
+            currentPage = 1;
+            hasMore = true;
+            loadProducts(1, false);
+        }
+
+        document.getElementById('applyFiltersBtn').addEventListener('click', handleFilterChange);
+
+        // Инициализация
+        // loadProducts(1, false);
+
+        // Обработка сообщений от Telegram
+        tg.onEvent('message', function(event) {
+            console.log('Received message:', event);
+            // Здесь можно обработать ответы от Telegram
+        });
+ 
+
+        function toggleMenu() {
+            const menu = document.getElementById('menu');
+            menu.classList.toggle('active');
+        }
+
+        function goTo(page) {
+            if (page === 'warehouse') {
+                window.location.href = '/tg/catalog';
+                return;
+            }
+            if (window.Telegram && Telegram.WebApp) {
+                Telegram.WebApp.sendData(JSON.stringify({action: 'navigate', page: page}));
+            } else {
+                window.location.href = '/' + page;
+            }
+        }
+
+        // Закрытие меню при клике вне
+        document.addEventListener('click', function(e) {
+            const menu = document.getElementById('menu');
+            const burger = document.querySelector('.burger');
+            if (!menu.contains(e.target) && !burger.contains(e.target)) {
+                menu.classList.remove('active');
+            }
+        });
+    </script>
+</body>
+</html> 
