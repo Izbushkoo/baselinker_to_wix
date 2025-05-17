@@ -159,17 +159,12 @@ document.addEventListener('DOMContentLoaded', function() {
         filtersPanel.classList.toggle('active');
         content.classList.toggle('with-filters');
         btn.classList.toggle('active');
-        
+
+        const pagination = document.getElementById('paginationBottom');
+        const productsList = document.getElementById('productsList');
         if (filtersPanel.classList.contains('active')) {
-            btn.querySelector('.arrow-up').style.display = 'inline-block';
-            btn.querySelector('.filter-icon').style.display = 'none';
-            const pagination = document.getElementById('paginationBottom');
             if (pagination) pagination.style.display = 'none';
         } else {
-            btn.querySelector('.arrow-up').style.display = 'none';
-            btn.querySelector('.filter-icon').style.display = 'inline-block';
-            const pagination = document.getElementById('paginationBottom');
-            const productsList = document.getElementById('productsList');
             if (pagination && productsList && productsList.children.length > 0) {
                 pagination.style.display = '';
             }

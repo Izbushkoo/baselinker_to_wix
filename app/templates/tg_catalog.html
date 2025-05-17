@@ -168,17 +168,27 @@
             gap: 6px;
         }
         
-        .btn-filter .filter-icon {
-            display: inline-block;
-        }
+        .btn-filter .filter-icon,
         .btn-filter .arrow-up {
-            display: none;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            height: 20px;
+        }
+        .btn-filter .filter-icon {
+            visibility: visible;
         }
         .btn-filter.active .filter-icon {
-            display: none;
+            visibility: hidden;
+            position: absolute;
+        }
+        .btn-filter .arrow-up {
+            visibility: hidden;
+            position: absolute;
         }
         .btn-filter.active .arrow-up {
-            display: inline-block;
+            visibility: visible;
+            position: static;
         }
         .btn-reset {
             background: hsl(0, 100%, 97%);
@@ -665,6 +675,21 @@
         input[type="number"] {
             -moz-appearance: textfield;
         }
+        .btn-filter, .btn-add, .btn-reset {
+            font-size: 15px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0 12px;
+            line-height: 1;
+        }
+        .btn-filter svg, .btn-add svg, .btn-reset svg {
+            width: 20px;
+            height: 20px;
+            display: block;
+            vertical-align: middle;
+        }
     </style>
 </head>
 <body>
@@ -712,11 +737,16 @@
                 <button class="icon-button btn-filter" id="filtersToggleBtn" onclick="toggleFilters()" title="Фильтры">
                     <span class="filter-icon">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                         </svg>
                         Фильтры
                     </span>
-                    <span class="arrow-up" style="display:none;">▲ Свернуть</span>
+                    <span class="arrow-up">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M5 15l7-7 7 7"/>
+                        </svg>
+                        Свернуть
+                    </span>
                 </button>
                 <button class="icon-button btn-reset" onclick="resetFilters()" title="Сбросить фильтры" style="display:none;">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
