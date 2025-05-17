@@ -275,6 +275,24 @@ async def get_webhook_info():
 @router.get("/catalog")
 async def tg_catalog(
     request: Request,
+    current_user: Optional[User] = Depends(deps.get_current_user_optional)
+):
+    """
+    Начальная загрузка страницы каталога для Telegram WebApp.
+    Возвращает пустой шаблон без данных.
+    """
+    return templates.TemplateResponse(
+        "tg_catalog.html",
+        {
+            "request": request,
+            "user": current_user,
+            "current_user": current_user
+        }
+    )
+
+@router.get("/api/catalog")
+async def tg_catalog_api(
+    request: Request,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=1000),
     search: Optional[str] = None,
@@ -285,9 +303,9 @@ async def tg_catalog(
     current_user: Optional[User] = Depends(deps.get_current_user_optional)
 ):
     """
-    Каталог для Telegram WebApp. Повторяет логику обычного каталога, но возвращает tg_catalog.html и карточки tg_product_card.html.
+    API для получения данных каталога.
     """
-    #   # Базовый запрос для товаров с подсчетом остатков
+    # Базовый запрос для товаров с подсчетом остатков
     base_query = (
         select(
             Product,
@@ -367,7 +385,8 @@ async def tg_catalog(
             "name": product.name,
             "eans": product.eans,
             "ean": product.eans[0] if product.eans else None,
-            "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
+            # "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
+            "image": None,  # Временно отключаем отдачу изображений
             "total_stock": total_stock,
             "stocks": {}
         }
@@ -382,48 +401,26 @@ async def tg_catalog(
         
         products_with_stocks.append(product_data)
 
-    # Проверяем, является ли запрос AJAX-запросом
-    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
-    accept = request.headers.get("accept", "")
+    # Генерируем HTML для каждой карточки
+    products_response = []
+    for product_data in products_with_stocks:
+        html = templates.get_template("tg_product_card.html").render(
+            product=product_data,
+            selected_products=[],
+            current_user=current_user
+        )
+        products_response.append({
+            "data": product_data,
+            "html": html
+        })
 
-    # Если это AJAX-запрос или клиент ожидает JSON
-    if is_ajax or "application/json" in accept:
-        # Для AJAX-запросов генерируем HTML для каждой карточки
-        products_response = []
-        for product_data in products_with_stocks:
-            html = templates.get_template("tg_product_card.html").render(
-                product=product_data,
-                selected_products=[],
-                current_user=current_user
-            )
-            products_response.append({
-                "data": product_data,
-                "html": html
-            })
-
-        return {
-            "products": products_response,
-            "total": total_count,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": total_pages
-        }
-
-    # Для обычных запросов возвращаем HTML-страницу
-    warehouses = [w.value for w in Warehouses]
-    return templates.TemplateResponse(
-        "tg_catalog.html",
-        {
-            "request": request,
-            "user": current_user,
-            "products": products_with_stocks,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": total_pages,
-            "warehouses": warehouses,
-            "current_user": current_user
-        }
-    )
+    return {
+        "products": products_response,
+        "total": total_count,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages
+    }
 
 @router.get("/add_product", response_class=HTMLResponse)
 async def tg_add_product(

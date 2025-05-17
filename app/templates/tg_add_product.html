@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Добавить товар</title>
+    <script src="/static/js/tg_catalog.js"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
@@ -160,7 +161,7 @@
         // Показываем кнопку "Назад"
         tg.BackButton.show();
         tg.BackButton.onClick(() => {
-            window.history.back();
+            window.location.href = '/tg/catalog';
         });
 
         function validateFileSize(input) {
@@ -223,6 +224,7 @@
                 tg.showAlert('Произошла ошибка при добавлении товара. Попробуйте позже.');
             }
         }
+
     </script>
 </body>
 </html>

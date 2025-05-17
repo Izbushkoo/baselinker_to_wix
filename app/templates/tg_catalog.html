@@ -3,6 +3,12 @@
 <head>
     <title>Telegram Web App</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Telegram Web App для управления складом">
+    <meta name="theme-color" content="#2563eb">
+    <!-- Предзагрузка критических ресурсов -->
+    <link rel="preload" href="https://telegram.org/js/telegram-web-app.js" as="script">
+    <link rel="preload" href="/static/js/tg_catalog.js" as="script">
+    <!-- Загрузка Telegram WebApp -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
@@ -110,10 +116,18 @@
             border-bottom: 1px solid var(--tg-theme-hint-color, #999999);
             z-index: 1000;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: opacity 0.2s ease;
+        }
+        .mobile-panel.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        .mobile-panel.disabled .icon-button {
+            cursor: not-allowed;
         }
         .button-row {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(3, 1fr);
             gap: 4px;
             padding: 4px;
             background: #f8fafc;
@@ -147,6 +161,7 @@
             align-items: center;
             gap: 6px;
         }
+        
         .btn-filter .filter-icon {
             display: inline-block;
         }
@@ -158,6 +173,10 @@
         }
         .btn-filter.active .arrow-up {
             display: inline-block;
+        }
+        .btn-reset {
+            background: hsl(0, 100%, 97%);
+            color: #2563eb;
         }
         .icon-button svg {
             width: 20px;
@@ -181,9 +200,15 @@
             right: 0;
             z-index: 999;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: opacity 0.2s ease;
         }
         .filters-panel.active {
             display: block;
+        }
+        .filters-panel.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+            position: relative;
         }
         .filter-input {
             width: calc(100% - 8px);
@@ -194,6 +219,11 @@
             background-color: #ffffff;
             color: #000000;
             box-sizing: border-box;
+            transition: background-color 0.2s ease;
+        }
+        .filter-input:disabled {
+            background-color: #f3f4f6;
+            cursor: not-allowed;
         }
         /* Стили для контейнера поля поиска */
         .search-input-container {
@@ -283,7 +313,7 @@
             flex-shrink: 0;
             border-radius: 10px;
             overflow: hidden;
-            background: #f3f4f6;
+            /* background: #f3f4f6; */
             display: flex;
             align-items: center;
             justify-content: center;
@@ -507,9 +537,11 @@
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
+            transition: opacity 0.2s ease;
         }
-        #applyFiltersBtn:active {
-            opacity: 0.7;
+        #applyFiltersBtn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
         .pagination {
             display: flex;
@@ -650,19 +682,18 @@
     <div class="container">
         <div class="content" id="content">
             <!-- Индикатор загрузки -->
-            <div class="loading-spinner" id="loadingSpinner">
+            <div class="loading-spinner active" id="loadingSpinner">
                 <div class="spinner"></div>
                 <div class="loading-text">Загрузка товаров...</div>
             </div>
             <!-- Список товаров -->
-            <div id="productsList">
-                {% for product in products %}
-                    {% include "tg_product_card.html" %}
-                {% endfor %}
+            <div id="productsList" style="display: none;"></div>
+            <div id="emptyState" style="display: none; text-align: center; color: #888; margin: 24px 0;">
+                Товары не найдены
             </div>
         </div>
         <!-- Фиксированная пагинация снизу -->
-        <div class="pagination pagination-fixed" id="paginationBottom"></div>
+        <div class="pagination pagination-fixed" id="paginationBottom" style="display: none;"></div>
         <!-- Мобильная панель с кнопками -->
         <div class="mobile-panel">
             <div class="button-row">
@@ -681,6 +712,12 @@
                     </span>
                     <span class="arrow-up" style="display:none;">▲ Свернуть</span>
                 </button>
+                <button class="icon-button btn-reset" onclick="resetFilters()" title="Сбросить фильтры">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Сброc
+                </button>
             </div>
             
             <!-- Панель фильтров -->
@@ -693,7 +730,7 @@
                         </svg>
                     </button>
                 </div>
-                <input type="number" class="filter-input" id="stockFilter" placeholder="Остаток меньше чем">
+                <input type="number" class="filter-input" id="stockFilter" placeholder="Остаток меньше чем" min="1">
                 <select class="filter-input" id="sortOrder">
                     <option value="">Сортировка по умолчанию</option>
                     <option value="asc">По возрастанию остатков</option>
@@ -709,235 +746,23 @@
             </div>
         </div>
     </div>
-
-    <script>
-        // Инициализация Telegram WebApp
-        const tg = window.Telegram.WebApp;
-        const initData = tg.initData;
-        
-        // Расширяем окно на весь экран
-        tg.expand();
-
-        // Показываем кнопку "Назад"
-        tg.BackButton.show();
-        
-        // Обработчик нажатия кнопки "Назад"
-        tg.BackButton.onClick(() => {
-            window.location.href = '/tg/webapp';
-        });
-
-        function addNewProduct() {
-            window.location.href = '/tg/add_product';
-        }
-
-        function toggleFilters() {
-            const filtersPanel = document.getElementById('filtersPanel');
-            const content = document.getElementById('content');
-            const btn = document.getElementById('filtersToggleBtn');
-            filtersPanel.classList.toggle('active');
-            content.classList.toggle('with-filters');
-            btn.classList.toggle('active');
-            if (filtersPanel.classList.contains('active')) {
-                btn.querySelector('.arrow-up').style.display = 'inline-block';
-                btn.querySelector('.filter-icon').style.display = 'none';
-            } else {
-                btn.querySelector('.arrow-up').style.display = 'none';
-                btn.querySelector('.filter-icon').style.display = 'inline-block';
-            }
-        }
-
-        // Обработка фильтров
-        let currentPage = 1;
-        let isLoading = false;
-        let hasMore = true;
-        let totalPages = 1;
-
-        // Инициализация пагинации из data-атрибутов
-        const paginationData = document.getElementById('paginationData');
-        currentPage = parseInt(paginationData.dataset.currentPage) || 1;
-        totalPages = parseInt(paginationData.dataset.totalPages) || 1;
-        renderPagination();
-
-        function renderPagination() {
-            const pagination = document.getElementById('paginationBottom');
-            if (!pagination) return;
-            pagination.innerHTML = '';
-            const prevBtn = document.createElement('button');
-            prevBtn.className = 'pagination-btn';
-            prevBtn.textContent = 'Назад';
-            prevBtn.disabled = currentPage <= 1;
-            prevBtn.onclick = () => loadProducts(currentPage - 1, false);
-            const nextBtn = document.createElement('button');
-            nextBtn.className = 'pagination-btn';
-            nextBtn.textContent = 'Вперед';
-            nextBtn.disabled = currentPage >= totalPages;
-            nextBtn.onclick = () => loadProducts(currentPage + 1, false);
-            const info = document.createElement('span');
-            info.className = 'pagination-info';
-            info.textContent = `Страница ${currentPage} из ${totalPages}`;
-            pagination.appendChild(prevBtn);
-            pagination.appendChild(info);
-            pagination.appendChild(nextBtn);
-        }
-
-        function getFilters() {
-            const filters = {};
-            const search = document.getElementById('searchInput').value.trim();
-            const stock_filter = document.getElementById('stockFilter').value.trim();
-            const sort_order = document.getElementById('sortOrder').value;
-            const page_size = document.getElementById('pageSize').value;
-
-            if (search) filters.search = search;
-            if (stock_filter) filters.stock_filter = stock_filter;
-            if (sort_order) filters.sort_order = sort_order;
-            if (page_size) filters.page_size = page_size;
-            return filters;
-        }
-
-        async function loadProducts(page = 1, append = false) {
-            if (isLoading || (!hasMore && append)) return;
-            isLoading = true;
-
-            // Показываем индикатор загрузки и очищаем список товаров
-            const loadingSpinner = document.getElementById('loadingSpinner');
-            const productsList = document.getElementById('productsList');
-            
-            loadingSpinner.classList.add('active');
-            productsList.style.display = 'none';
-            if (!append) productsList.innerHTML = '';
-
-            const filters = getFilters();
-            filters.page = page;
-
-            try {
-                const params = new URLSearchParams(filters);
-                const response = await fetch(`/tg/catalog?${params.toString()}`, {
-                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
-                });
-                const data = await response.json();
-
-                data.products.forEach(item => {
-                    const div = document.createElement('div');
-                    div.innerHTML = item.html;
-                    productsList.appendChild(div.firstElementChild);
-                });
-
-                currentPage = data.page;
-                totalPages = data.total_pages;
-                hasMore = data.page < data.total_pages;
-            } catch (error) {
-                console.error('Ошибка при загрузке товаров:', error);
-            } finally {
-                loadingSpinner.classList.remove('active');
-                productsList.style.display = 'block';
-                isLoading = false;
-                renderPagination();
-            }
-        }
-
-        function handleFilterChange() {
-            currentPage = 1;
-            hasMore = true;
-            loadProducts(1, false);
-
-            // Сворачиваем панель фильтров, если она открыта
-            const filtersPanel = document.getElementById('filtersPanel');
-            if (filtersPanel.classList.contains('active')) {
-                toggleFilters();
-            }
-        }
-
-        document.getElementById('applyFiltersBtn').addEventListener('click', handleFilterChange);
-
-        // Управление кнопкой очистки поиска
-        const searchInput = document.getElementById('searchInput');
-        const clearSearchBtn = document.getElementById('clearSearchBtn');
-
-        if (searchInput && clearSearchBtn) {
-            searchInput.addEventListener('input', () => {
-                if (searchInput.value.length > 0) {
-                    clearSearchBtn.style.display = 'flex';
-                } else {
-                    clearSearchBtn.style.display = 'none';
-                }
+    
+    <!-- Регистрация Service Worker -->
+    <!-- <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/static/js/sw.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful');
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
             });
-
-            clearSearchBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                searchInput.value = '';
-                clearSearchBtn.style.display = 'none';
-                searchInput.focus();
-            });
-
-            // Начальная проверка при загрузке страницы (если поле уже заполнено)
-            if (searchInput.value.length > 0) {
-                clearSearchBtn.style.display = 'flex';
-            }
         }
-
-        // Функция для очистки всех фильтров при загрузке страницы
-        function clearAllFiltersOnLoad() {
-            const searchInput = document.getElementById('searchInput');
-            const stockFilter = document.getElementById('stockFilter');
-            const sortOrder = document.getElementById('sortOrder');
-            const pageSize = document.getElementById('pageSize');
-            const clearSearchBtn = document.getElementById('clearSearchBtn');
-
-            if (searchInput) {
-                searchInput.value = '';
-            }
-            if (stockFilter) {
-                stockFilter.value = '';
-            }
-            if (sortOrder) {
-                sortOrder.value = ''; // Значение для "Сортировка по умолчанию"
-            }
-            if (pageSize) {
-                pageSize.value = '50'; // Значение для "50 товаров"
-            }
-            if (clearSearchBtn) { // Также скрываем кнопку очистки, если она была видима
-                clearSearchBtn.style.display = 'none';
-            }
-        }
-
-        // Инициализация
-        document.addEventListener('DOMContentLoaded', function() {
-            clearAllFiltersOnLoad();
-            // loadProducts(1, false); // Если нужно загружать товары сразу после очистки фильтров
-        });
-
-        // Обработка сообщений от Telegram
-        tg.onEvent('message', function(event) {
-            console.log('Received message:', event);
-            // Здесь можно обработать ответы от Telegram
-        });
- 
-
-        function toggleMenu() {
-            const menu = document.getElementById('menu');
-            menu.classList.toggle('active');
-        }
-
-        function goTo(page) {
-            if (page === 'warehouse') {
-                window.location.href = '/tg/catalog';
-                return;
-            }
-            if (window.Telegram && Telegram.WebApp) {
-                Telegram.WebApp.sendData(JSON.stringify({action: 'navigate', page: page}));
-            } else {
-                window.location.href = '/' + page;
-            }
-        }
-
-        // Закрытие меню при клике вне
-        document.addEventListener('click', function(e) {
-            const menu = document.getElementById('menu');
-            const burger = document.querySelector('.burger');
-            if (!menu.contains(e.target) && !burger.contains(e.target)) {
-                menu.classList.remove('active');
-            }
-        });
-    </script>
+    </script> -->
+    <!-- Подключение основного JavaScript файла -->
+    <script type="module" src="/static/js/image_cache.js"></script>
+    <script type="module" src="/static/js/tg_catalog.js"></script>
 </body>
 </html> 
