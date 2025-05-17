@@ -385,8 +385,8 @@ async def tg_catalog_api(
             "name": product.name,
             "eans": product.eans,
             "ean": product.eans[0] if product.eans else None,
-            # "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
-            "image": None,  # Временно отключаем отдачу изображений
+            "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
+            # "image": None,  # Временно отключаем отдачу изображений
             "total_stock": total_stock,
             "stocks": {}
         }

@@ -145,13 +145,13 @@
             </div>
 
             <div class="form-group">
-                <label for="image" class="file-label">Изображение (до 1MB)</label>
+                <label for="image" class="file-label">Изображение (до 5MB)</label>
                 <input type="file" 
                        id="image" 
                        name="image" 
                        accept="image/*"
                        onchange="validateFileSize(this)"
-                       placeholder="Изображение (до 1MB)">
+                       placeholder="Изображение (до 5MB)">
                 <div class="error-message" id="imageError"></div>
             </div>
 
@@ -194,12 +194,12 @@
         });
 
         function validateFileSize(input) {
-            const maxSize = 1 * 1024 * 1024; // 1MB
+            const maxSize = 5 * 1024 * 1024; // 5MB
             const errorElement = document.getElementById('imageError');
             
             if (input.files && input.files[0]) {
                 if (input.files[0].size > maxSize) {
-                    errorElement.textContent = 'Размер файла превышает 1MB';
+                    errorElement.textContent = 'Размер файла превышает 5MB';
                     errorElement.style.display = 'block';
                     input.value = ''; // Очищаем поле
                 } else {
@@ -255,7 +255,38 @@
         }
 
         function cancelForm() {
-            window.location.href = '/tg/catalog';
+            const form = document.querySelector('form');
+            const formData = new FormData(form);
+            let hasData = false;
+
+            console.log('Проверка полей формы:');
+            for (let [key, value] of formData.entries()) {
+                console.log(`Поле ${key}: значение = "${value}"`);
+                // Проверяем все поля кроме quantity и warehouse
+                if (key !== 'quantity' && key !== 'warehouse') {
+                    if (typeof value === 'string' && value.trim() !== '') {
+                        hasData = true;
+                        console.log(`Найдено заполненное текстовое поле: ${key}`);
+                        break;
+                    }
+                    if (value instanceof File && value.name) {
+                        hasData = true;
+                        console.log(`Найден файл: ${value.name}`);
+                        break;
+                    }
+                }
+            }
+            console.log('hasData =', hasData);
+
+            if (hasData) {
+                tg.showConfirm('Вы уверены, что хотите отменить добавление товара?', (confirmed) => {
+                    if (confirmed) {
+                        window.location.href = '/tg/catalog';
+                    }
+                });
+            } else {
+                window.location.href = '/tg/catalog';
+            }
         }
 
     </script>

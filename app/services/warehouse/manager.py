@@ -211,14 +211,14 @@ class InventoryManager:
 
     def compress_image(self, image_data: bytes) -> Optional[bytes]:
         """
-        Сжимает изображение до размера 150x150 пикселей.
-        Поддерживает форматы: JPEG, PNG, GIF, WEBP и другие, которые поддерживает Pillow.
+        Сжимает изображение до размера 100x100 пикселей в формат WebP.
+        Поддерживает все форматы, которые поддерживает Pillow.
         
         Args:
             image_data: Байты исходного изображения
             
         Returns:
-            bytes: Сжатые байты изображения или None в случае ошибки
+            bytes: Сжатые байты изображения в формате WebP или None в случае ошибки
         """
         if not image_data:
             return None
@@ -234,24 +234,12 @@ class InventoryManager:
                 img = background
             
             # Определяем размеры для сохранения пропорций
-            target_size = (150, 150)
+            target_size = (100, 100)
             img.thumbnail(target_size, Image.Resampling.LANCZOS)
             
-            # Сохраняем в буфер
+            # Сохраняем в буфер в формате WebP с максимальным сжатием
             output = io.BytesIO()
-            
-            # Сохраняем в исходном формате с оптимизацией
-            format = img.format or 'JPEG'
-            
-            if format == 'JPEG':
-                img.save(output, format=format, quality=85, optimize=True)
-            elif format == 'PNG':
-                img.save(output, format=format, optimize=True)
-            elif format == 'WEBP':
-                img.save(output, format=format, quality=85, method=6)
-            else:
-                # Для других форматов конвертируем в JPEG
-                img.save(output, format='JPEG', quality=85, optimize=True)
+            img.save(output, format='WEBP', quality=30, method=6)
             
             return output.getvalue()
             

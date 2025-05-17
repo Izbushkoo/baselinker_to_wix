@@ -287,6 +287,15 @@ document.addEventListener('DOMContentLoaded', function() {
         ) {
             toggleFilters();
         }
+        // --- Закрытие деталей по складам при клике вне карточки ---
+        const expandedCards = document.querySelectorAll('.tg-product-card.expanded');
+        expandedCards.forEach(card => {
+            if (!card.contains(e.target)) {
+                card.classList.remove('expanded');
+                const toggleText = card.querySelector('.toggle-text');
+                if (toggleText) toggleText.textContent = 'Детали по складам ▼';
+            }
+        });
     });
 
     // Инициализация при загрузке
@@ -306,19 +315,22 @@ document.addEventListener('DOMContentLoaded', function() {
     function copyToClipboard(element) {
         if (element.classList.contains('copying')) return;
         const text = element.getAttribute('data-sku');
+        const skuBlock = element.closest('.tg-product-sku');
         navigator.clipboard.writeText(text).then(() => {
             const originalText = element.textContent;
+            if (skuBlock) skuBlock.classList.add('copied');
             element.textContent = 'Скопировано!';
-            element.style.backgroundColor = 'rgba(34, 197, 94, 0.7)';
-            element.style.color = 'white';
+            element.style.color = '#22c55e';
+            element.style.background = 'none';
             element.style.pointerEvents = 'none';
             element.classList.add('copying');
             setTimeout(() => {
                 element.textContent = originalText;
-                element.style.backgroundColor = '';
                 element.style.color = '';
+                element.style.background = '';
                 element.style.pointerEvents = '';
                 element.classList.remove('copying');
+                if (skuBlock) skuBlock.classList.remove('copied');
             }, 1000);
         });
     }

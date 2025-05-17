@@ -13,6 +13,10 @@ from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.models.user import User
 from app.services.warehouse.manager import Warehouses
 from app.services.operations_service import OperationsService, OperationType, get_operations_service
+from PIL import Image
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 web_router = APIRouter()
@@ -266,8 +270,8 @@ async def create_product(
         # Читаем изображение, если оно было загружено
         image_data = None
         if image:
-            # Проверяем размер файла (1MB максимум)
-            MAX_FILE_SIZE = 1 * 1024 * 1024  # 1MB в байтах
+            # Проверяем размер файла (5MB максимум)
+            MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB в байтах
             file_size = 0
             image_data = bytearray()
             
@@ -276,12 +280,26 @@ async def create_product(
                 if file_size > MAX_FILE_SIZE:
                     raise HTTPException(
                         status_code=400,
-                        detail="Размер файла превышает 1MB"
+                        detail="Размер файла превышает 5MB"
                     )
                 image_data.extend(chunk)
             
-            if not file_size:
-                image_data = None
+            if file_size:
+                # Открываем изображение с помощью PIL
+                img = Image.open(io.BytesIO(image_data))
+                
+                # Изменяем размер изображения до 100x100 с сохранением пропорций
+                img.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                
+                # Конвертируем в RGB если изображение в режиме RGBA
+                if img.mode in ('RGBA', 'P'):
+                    img = img.convert('RGB')
+                
+                # Сохраняем изображение в буфер в формате WebP с максимальным сжатием
+                output_buffer = io.BytesIO()
+                img.save(output_buffer, format='WEBP', quality=30, method=6)
+                image_data = output_buffer.getvalue()
+                logger.info(f"Размер обработанного изображения: {len(image_data) / 1024:.2f} КБ")
 
         # Разбиваем строку EAN по запятой и очищаем от пробелов
         eans = [e.strip() for e in ean.split(',')] if ean else []
