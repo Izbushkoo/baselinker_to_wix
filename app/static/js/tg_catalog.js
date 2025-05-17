@@ -44,49 +44,15 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Обработчик нажатия кнопки "Назад"
     tg.BackButton.onClick(() => {
-        if (stateHistory.length > 1) {
-            // Убираем текущее состояние
-            stateHistory.pop();
-            const prev = stateHistory[stateHistory.length - 1];
-            
-            // Восстанавливаем UI-фильтры и подгружаем нужную страницу
-            applyState(prev);
-            
-            // Обновляем URL без новых записей
-            const url = `${location.pathname}?${new URLSearchParams(prev.filters).toString()}&page=${prev.page}`;
-            window.history.replaceState(prev, '', url);
-        } else {
-            window.history.back();
-        }
+        window.history.back();
     });
-    window.addEventListener('pageshow', (event) => {
-        console.log('pageshow event triggered', {
-            persisted: event.persisted,
-            filters: getFilters()
-        });
-        if (event.persisted) {
-            handleFilterChange();
-        }
-    });
+
     // Инициализация переменных
     let currentPage = 1;
     let isLoading = false;
     let hasMore = true;
     let totalPages = 1;
     let cacheTimeout = 5 * 60 * 1000; // 5 минут
-
-    function applyState(state) {
-        // восстанавливаем поля фильтров
-        const f = state.filters;
-        document.getElementById('searchInput').value   = f.search       || '';
-        document.getElementById('stockFilter').value  = f.stock_filter || '';
-        document.getElementById('sortOrder').value    = f.sort_order   || '';
-        document.getElementById('pageSize').value     = f.page_size    || '50';
-        // загружаем именно ту страницу без пуша в history
-        currentPage = state.page;
-        hasMore = true;
-        loadProducts(state.page, false, false);
-    }
 
     // Функция для работы с кэшем фильтров (только параметры, не товары)
     const filterCache = {
@@ -142,6 +108,11 @@ document.addEventListener('DOMContentLoaded', function() {
         pagination.appendChild(nextBtn);
     }
 
+    function isValidStockFilter(val) {
+        if (!val) return false;
+        return val.match(/^[0-9]+$/);
+    }
+
     function getFilters() {
         const filters = {};
         const search = document.getElementById('searchInput').value.trim();
@@ -150,38 +121,29 @@ document.addEventListener('DOMContentLoaded', function() {
         const page_size = document.getElementById('pageSize').value;
 
         if (search) filters.search = search;
-        if (stock_filter) {
-            const stockValue = parseInt(stock_filter);
-            if (stockValue > 0) {
-                filters.stock_filter = stockValue;
-            } else {
-                if (stockValue == 0) {
-                    if (tg && tg.showAlert) {
-                        tg.showAlert('Остаток не может быть меньше 0');
-                }
-                }
-                if (tg && tg.showAlert) {
-                    tg.showAlert('Значение остатка не может быть отрицательным');
-                }
-                document.getElementById('stockFilter').value = '';
-                return filters;
-            }
-        }
+        if (stock_filter && isValidStockFilter(stock_filter)) {
+            filters.stock_filter = parseInt(stock_filter);
+        } 
+
         if (sort_order) filters.sort_order = sort_order;
         if (page_size) filters.page_size = page_size;
         return filters;
     }
 
     function handleFilterChange() {
-        console.log('handleFilterChange called', {
-            currentFilters: getFilters(),
-            currentPage: currentPage
-        });
+        const stockInput = document.getElementById('stockFilter');
+        const valRaw = stockInput.value;
+        const val = valRaw.trim();
+        if (val && !isValidStockFilter(val)) {
+            tg.showAlert('Введите только целое положительное число для фильтра по остатку');
+            stockInput.focus();
+            return;
+        }
+        const filters = getFilters();
         currentPage = 1;
         hasMore = true;
-        // Сохраняем только фильтры
-        filterCache.set(getFilters());
-        loadProducts(1, false, false);
+        filterCache.set(filters);
+        loadProducts(1, false);
         const filtersPanel = document.getElementById('filtersPanel');
         if (filtersPanel && filtersPanel.classList.contains('active')) {
             toggleFilters();
@@ -236,6 +198,46 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    function initStockClear() {
+        const stockInput = document.getElementById('stockFilter');
+        const clearStockBtn = document.getElementById('clearStockBtn');
+        if (stockInput && clearStockBtn) {
+            stockInput.addEventListener('input', () => {
+                clearStockBtn.style.display = stockInput.value.length > 0 ? 'flex' : 'none';
+            });
+            clearStockBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                stockInput.value = '';
+                clearStockBtn.style.display = 'none';
+                stockInput.focus();
+                updateResetFiltersBtnVisibility();
+            });
+            if (stockInput.value.length > 0) {
+                clearStockBtn.style.display = 'flex';
+            } else {
+                clearStockBtn.style.display = 'none';
+            }
+        }
+    }
+
+    function updateResetFiltersBtnVisibility() {
+        const search = document.getElementById('searchInput').value.trim();
+        const stock = document.getElementById('stockFilter').value.trim();
+        const sort = document.getElementById('sortOrder').value;
+        const pageSize = document.getElementById('pageSize').value;
+        const btn = document.querySelector('.btn-reset');
+        const buttonRow = document.querySelector('.button-row');
+        if (!btn) return;
+        // дефолтные значения: все пусто, pageSize = '50'
+        if (search || stock || sort || pageSize !== '50') {
+            btn.style.display = '';
+            if (buttonRow) buttonRow.classList.add('has-reset');
+        } else {
+            btn.style.display = 'none';
+            if (buttonRow) buttonRow.classList.remove('has-reset');
+        }
+    }
+
     function clearAllFiltersOnLoad() {
         const searchInput = document.getElementById('searchInput');
         const stockFilter = document.getElementById('stockFilter');
@@ -248,6 +250,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (sortOrder) sortOrder.value = '';
         if (pageSize) pageSize.value = '50';
         if (clearSearchBtn) clearSearchBtn.style.display = 'none';
+        updateResetFiltersBtnVisibility();
     }
 
     function toggleMenu() {
@@ -292,12 +295,12 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Инициализация при загрузке
-    // clearAllFiltersOnLoad();
     initSearchClear();
+    initStockClear();
     applyFiltersFromStorage(); // Восстанавливаем фильтры при загрузке
     
     // Загрузка первой страницы товаров
-    loadProducts(1, false, false);
+    loadProducts(1, false);
 
     // Обработка сообщений от Telegram
     tg.onEvent('message', function(event) {
@@ -408,40 +411,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    async function moveStock(sku, fromWarehouse) {
-        try {
-            const result = await new Promise(resolve => {
-                const warehouses = ['WH1', 'WH2', 'WH3', 'WH4'];
-                const buttons = warehouses.filter(wh => wh !== fromWarehouse).map(wh => ({ id: wh, text: `Склад ${wh}` }));
-                tg.showPopup({ title: 'Перемещение товара', message: 'Выберите склад назначения:', buttons: buttons }, resolve);
-            });
-            if (!result) return;
-            const toWarehouse = result;
-            const qty = await new Promise(resolve => {
-                tg.showPopup({ title: 'Количество', message: 'Введите количество для перемещения:', buttons: [{ type: 'default', id: 'cancel', text: 'Отмена' }] }, resolve);
-            });
-            if (!qty || isNaN(qty) || qty <= 0) {
-                tg.showAlert('Неверное количество');
-                return;
-            }
-            const removed = await removeFromStock(sku, fromWarehouse, qty);
-            if (!removed) return;
-            const added = await addToStock(sku, toWarehouse, qty);
-            if (!added) {
-                await addToStock(sku, fromWarehouse, qty);
-                return;
-            }
-            // Обновить отображение остатков на обоих складах
-            const card = document.querySelector(`.tg-product-card[data-sku="${sku}"]`);
-            await updateStockDisplay(card, fromWarehouse, -qty);
-            await updateStockDisplay(card, toWarehouse, qty);
-            tg.showAlert(`Успешно перемещено ${qty} шт. со склада ${fromWarehouse} на склад ${toWarehouse}`);
-        } catch (error) {
-            console.error('Error:', error);
-            tg.showAlert('Произошла ошибка при перемещении товара');
-        }
-    }
-
     async function addToStock(sku, warehouse, quantity) {
         try {
             const response = await fetch('/api/warehouse/add/', {
@@ -538,45 +507,43 @@ document.addEventListener('DOMContentLoaded', function() {
             title.textContent = 'Перемещение товара';
             // Только склады с остатком > 0
             const fromWarehouses = warehouses.filter(w => stockMap[w] > 0);
-            let warning = '';
             if (fromWarehouses.length === 0) {
-                warning = '<div style="color:#b91c1c; margin-bottom:8px;">Нет складов с остатком для перемещения</div>';
+                tg.showAlert('Нет складов с остатком для перемещения');
+                return;
             }
             const fromDefault = fromWarehouses[0];
             const toOptions = fromDefault ? warehouses.filter(w => w !== fromDefault) : [];
             html = `
-                ${warning}
                 <label>Склад-источник:<br>
-                    <select id="modalFrom-${sku}" ${fromWarehouses.length === 0 ? 'disabled' : ''}>
+                    <select id="modalFrom-${sku}">
                         ${fromWarehouses.map(w => `<option value="${w}">${w} (${stockMap[w]} шт.)</option>`).join('')}
                     </select>
                 </label><br><br>
                 <label>Склад-назначения:<br>
-                    <select id="modalTo-${sku}" ${fromWarehouses.length === 0 ? 'disabled' : ''}>
+                    <select id="modalTo-${sku}">
                         ${toOptions.map(w => `<option value="${w}">${w}</option>`).join('')}
                     </select>
                 </label><br><br>
                 <label>Количество:<br>
-                    <input id="modalQty-${sku}" type="number" min="1" style="width:80px;" ${fromWarehouses.length === 0 ? 'disabled' : ''}>
+                    <input id="modalQty-${sku}" type="number" min="1" style="width:80px;">
                 </label>
             `;
         } else if (action === 'remove') {
             title.textContent = 'Списание товара';
             // Только склады с остатком > 0 для списания
             const removeWarehouses = warehouses.filter(w => stockMap[w] > 0);
-            let warning = '';
             if (removeWarehouses.length === 0) {
-                warning = '<div style="color:#b91c1c; margin-bottom:8px;">Нет складов с остатком для списания</div>';
+                tg.showAlert('Нет складов с остатком для списания');
+                return;
             }
             html = `
-                ${warning}
                 <label>Склад:<br>
-                    <select id="modalWarehouse-${sku}" ${removeWarehouses.length === 0 ? 'disabled' : ''}>
+                    <select id="modalWarehouse-${sku}">
                         ${removeWarehouses.map(w => `<option value="${w}">${w} (${stockMap[w]} шт.)</option>`).join('')}
                     </select>
                 </label><br><br>
                 <label>Количество:<br>
-                    <input id="modalQty-${sku}" type="number" min="1" style="width:80px;" ${removeWarehouses.length === 0 ? 'disabled' : ''}>
+                    <input id="modalQty-${sku}" type="number" min="1" style="width:80px;">
                 </label>
             `;
         } else {
@@ -681,10 +648,17 @@ document.addEventListener('DOMContentLoaded', function() {
         if (clearSearchBtn) {
             clearSearchBtn.style.display = filters.search ? 'flex' : 'none';
         }
+        updateResetFiltersBtnVisibility();
     }
 
-    async function loadProducts(page = 1, append = false, pushHistory = false) {
+    async function loadProducts(page = 1, append = false) {
         if (isLoading || (!hasMore && append)) return;
+        const stockInput = document.getElementById('stockFilter');
+        const valRaw = stockInput.value;
+        const val = valRaw.trim();
+        if (val && !isValidStockFilter(val)) {
+            return;
+        }
         isLoading = true;
         const loadingSpinner = document.getElementById('loadingSpinner');
         const productsList   = document.getElementById('productsList');
@@ -806,4 +780,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Добавьте функцию в список глобальных функций
     window.resetFilters = resetFilters;
+
+    // Вызов при изменении любого фильтра
+    document.getElementById('searchInput').addEventListener('input', updateResetFiltersBtnVisibility);
+    document.getElementById('stockFilter').addEventListener('input', updateResetFiltersBtnVisibility);
+    document.getElementById('sortOrder').addEventListener('change', updateResetFiltersBtnVisibility);
+    document.getElementById('pageSize').addEventListener('change', updateResetFiltersBtnVisibility);
+
+    // Вызов при инициализации
+    updateResetFiltersBtnVisibility();
 }); 

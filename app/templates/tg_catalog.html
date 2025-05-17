@@ -127,12 +127,18 @@
         }
         .button-row {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(2, 1fr);
             gap: 4px;
             padding: 4px;
             background: #f8fafc;
             width: 100%;
             box-sizing: border-box;
+        }
+        .button-row.has-reset {
+            grid-template-columns: repeat(3, 1fr);
+        }
+        .button-row .icon-button {
+            min-width: 0;
         }
         .icon-button {
             display: flex;
@@ -234,26 +240,29 @@
         .search-input-container .filter-input {
             padding-right: 36px; /* Больше места для крестика */
         }
-        .clear-search-btn {
+        /* Крестики для очистки поиска и стока */
+        .clear-search-btn, .clear-stock-btn {
             position: absolute;
-            right: 10px; /* Меньше отступ, чтобы крестик был ближе к краю поля, но не прилипал */
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
             background: none;
             border: none;
-            padding: 0;
-            cursor: pointer;
             color: #bdbdbd;
-            display: none;
-            width: 30px;
-            height: 30px;
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
+            cursor: pointer;
+            display: flex;
             transition: background 0.15s;
         }
-        .clear-search-btn:active, .clear-search-btn:focus {
+        .clear-search-btn:active, .clear-search-btn:focus,
+        .clear-stock-btn:active, .clear-stock-btn:focus {
             background: #f1f5f9;
         }
-        .clear-search-btn svg {
-            width: 24px;
-            height: 24px;
+        .clear-search-btn svg, .clear-stock-btn svg {
+            width: 20px;
+            height: 20px;
             display: block;
             margin: 0;
         }
@@ -267,25 +276,7 @@
         .content.with-filters {
             margin-top: 288px;
         }
-        /* Стили для кнопки "Загрузить ещё" */
-        #loadMoreBtn {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            width: 100%;
-            margin: 0;
-            padding: 16px;
-            background: var(--tg-theme-button-color, #2481cc);
-            color: var(--tg-theme-button-text-color, #ffffff);
-            border: none;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            z-index: 1001;
-            box-sizing: border-box;
-        }
-
+ 
         /* --- Стили карточки товара --- */
         .tg-product-card {
             display: flex;
@@ -659,6 +650,13 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+
+        .stock-input-container {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
@@ -712,7 +710,7 @@
                     </span>
                     <span class="arrow-up" style="display:none;">▲ Свернуть</span>
                 </button>
-                <button class="icon-button btn-reset" onclick="resetFilters()" title="Сбросить фильтры">
+                <button class="icon-button btn-reset" onclick="resetFilters()" title="Сбросить фильтры" style="display:none;">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
@@ -730,7 +728,14 @@
                         </svg>
                     </button>
                 </div>
-                <input type="number" class="filter-input" id="stockFilter" placeholder="Остаток меньше чем" min="1">
+                <div class="stock-input-container" style="position: relative; display: flex; align-items: center;">
+                    <input type="text" class="filter-input" id="stockFilter" placeholder="Остаток меньше чем" style="appearance: textfield;">
+                    <button class="clear-stock-btn" id="clearStockBtn" title="Очистить фильтр по остатку">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
                 <select class="filter-input" id="sortOrder">
                     <option value="">Сортировка по умолчанию</option>
                     <option value="asc">По возрастанию остатков</option>
@@ -746,23 +751,37 @@
             </div>
         </div>
     </div>
-    
-    <!-- Регистрация Service Worker -->
-    <!-- <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/static/js/sw.js')
-                    .then(registration => {
-                        console.log('ServiceWorker registration successful');
-                    })
-                    .catch(err => {
-                        console.log('ServiceWorker registration failed: ', err);
-                    });
-            });
-        }
-    </script> -->
+
     <!-- Подключение основного JavaScript файла -->
     <script type="module" src="/static/js/image_cache.js"></script>
     <script type="module" src="/static/js/tg_catalog.js"></script>
+    <script>
+        // Логика для крестика в поиске
+        const searchInput = document.getElementById('searchInput');
+        const clearSearchBtn = document.getElementById('clearSearchBtn');
+        if (searchInput && clearSearchBtn) {
+            searchInput.addEventListener('input', () => {
+                clearSearchBtn.style.display = searchInput.value ? 'block' : 'none';
+            });
+            clearSearchBtn.addEventListener('click', () => {
+                searchInput.value = '';
+                clearSearchBtn.style.display = 'none';
+                searchInput.focus();
+            });
+        }
+        // Логика для крестика в поле стока
+        const stockInput = document.getElementById('stockFilter');
+        const clearStockBtn = document.getElementById('clearStockBtn');
+        if (stockInput && clearStockBtn) {
+            stockInput.addEventListener('input', () => {
+                clearStockBtn.style.display = stockInput.value ? 'block' : 'none';
+            });
+            clearStockBtn.addEventListener('click', () => {
+                stockInput.value = '';
+                clearStockBtn.style.display = 'none';
+                stockInput.focus();
+            });
+        }
+    </script>
 </body>
 </html> 
