@@ -657,6 +657,14 @@
             display: flex;
             align-items: center;
         }
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
     </style>
 </head>
 <body>
@@ -729,7 +737,7 @@
                     </button>
                 </div>
                 <div class="stock-input-container" style="position: relative; display: flex; align-items: center;">
-                    <input type="text" class="filter-input" id="stockFilter" placeholder="Остаток меньше чем" style="appearance: textfield;">
+                    <input type="number" class="filter-input" id="stockFilter" placeholder="Остаток меньше чем" style="appearance: textfield;">
                     <button class="clear-stock-btn" id="clearStockBtn" title="Очистить фильтр по остатку">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
