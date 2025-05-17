@@ -22,6 +22,7 @@ from app.services.user import get_user_by_tg_nickname, create_user
 from app.schemas.user import UserCreate
 from app.core.security import create_access_token
 import uuid
+import imghdr
 
 # Хранилище для отслеживания обработанных update_id
 processed_updates = set()
@@ -290,6 +291,16 @@ async def tg_catalog(
         }
     )
 
+def get_image_data_url(image_bytes: bytes) -> str:
+    if not image_bytes:
+        return None
+    fmt = imghdr.what(None, h=image_bytes)
+    if fmt:
+        mime = f'image/{fmt}'
+    else:
+        mime = 'application/octet-stream'
+    return f'data:{mime};base64,{base64.b64encode(image_bytes).decode()}'
+
 @router.get("/api/catalog")
 async def tg_catalog_api(
     request: Request,
@@ -385,8 +396,7 @@ async def tg_catalog_api(
             "name": product.name,
             "eans": product.eans,
             "ean": product.eans[0] if product.eans else None,
-            "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
-            # "image": None,  # Временно отключаем отдачу изображений
+            "image": get_image_data_url(product.image) if product.image else None,
             "total_stock": total_stock,
             "stocks": {}
         }

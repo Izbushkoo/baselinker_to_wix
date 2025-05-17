@@ -2,7 +2,7 @@
 <div class="tg-product-card" data-sku="{{ product.sku }}" data-warehouses='{{ product.stocks.keys()|list|tojson }}'>
   <div class="tg-product-main">
     <div class="tg-product-image">
-      <img src="data:image/jpeg;base64,{{ product.image }}" alt="{{ product.name }}">
+      <img src="{{ product.image }}" alt="{{ product.name }}">
     </div>
     <div class="tg-product-info">
       <div class="tg-product-sku">

@@ -1,8 +1,22 @@
 import { saveImageToDB, getImageFromDB } from './image_cache.js';
 
+function clearImageCacheDB() {
+    const dbName = 'image_cache';
+    const req = indexedDB.deleteDatabase(dbName);
+    req.onsuccess = function() {
+        console.log('IndexedDB image_cache очищена');
+    };
+    req.onerror = function(e) {
+        console.warn('Ошибка очистки image_cache:', e);
+    };
+    req.onblocked = function() {
+        console.warn('Очистка image_cache заблокирована');
+    };
+}
 
 // Ожидаем загрузки DOM и Telegram WebApp
 document.addEventListener('DOMContentLoaded', function() {
+    // clearImageCacheDB(); // Очищаем кэш изображений при загрузке страницы
 
     // В начале скрипта (внутри DOMContentLoaded) добавьте:
     let stateHistory = [];  // <<< где хранятся все состояния
@@ -738,19 +752,32 @@ document.addEventListener('DOMContentLoaded', function() {
             const div = document.createElement('div');
             div.innerHTML = item.html;
             const card = div.firstElementChild;
-            // Найти img
             const img = card.querySelector('.tg-product-image img');
             if (img && img.src.startsWith('data:image')) {
                 const sku = card.getAttribute('data-sku');
                 try {
+                    // Получаем base64 из текущего src
+                    const base64 = img.src.split(',')[1];
+                    const mimeString = img.src.split(',')[0].split(':')[1].split(';')[0];
+
+                    // Проверяем, есть ли blob в кэше
                     const cachedBlob = await getImageFromDB(sku);
+
+                    // Если blob есть, сравниваем его с текущим base64
+                    let needUpdate = true;
                     if (cachedBlob) {
-                        img.src = URL.createObjectURL(cachedBlob);
-                    } else {
+                        // Преобразуем blob обратно в base64 для сравнения
+                        const arrayBuffer = await cachedBlob.arrayBuffer();
+                        const cachedBase64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+                        if (cachedBase64 === base64) {
+                            // Всё совпадает, используем кэш
+                            img.src = URL.createObjectURL(cachedBlob);
+                            needUpdate = false;
+                        }
+                    }
+                    if (needUpdate) {
                         // Конвертируем base64 в Blob и сохраняем
-                        const base64 = img.src.split(',')[1];
                         const byteString = atob(base64);
-                        const mimeString = img.src.split(',')[0].split(':')[1].split(';')[0];
                         const ab = new ArrayBuffer(byteString.length);
                         const ia = new Uint8Array(ab);
                         for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
