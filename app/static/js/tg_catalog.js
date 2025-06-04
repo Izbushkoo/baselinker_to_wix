@@ -19,7 +19,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // clearImageCacheDB(); // Очищаем кэш изображений при загрузке страницы
 
     // В начале скрипта (внутри DOMContentLoaded) добавьте:
-    let stateHistory = [];  // <<< где хранятся все состояния
 
     window.toggleMenu = toggleMenu;
     window.goTo = goTo;
@@ -29,13 +28,6 @@ document.addEventListener('DOMContentLoaded', function() {
     window.closeStockModal = closeStockModal;
     window.confirmStockModal = confirmStockModal;
     window.deleteProduct = deleteProduct;
-
-    window.addEventListener('popstate', event => {
-        const state = event.state;
-        if (state && state.filters) {
-            applyState(state); // <<< ИЗМЕНЕНИЕ
-        }
-    });
 
     // Инициализация Telegram WebApp
     let tg;
