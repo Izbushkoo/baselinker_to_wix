@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 from typing import List, Optional
 from sqlmodel import select, update
 from app.models.allegro_order import AllegroOrder
@@ -366,6 +367,9 @@ async def export_stock_with_sales(
     skus: Optional[List[str]] = Query(None, description="Список SKU для экспорта"),
     manager: manager.InventoryManager = Depends(manager.get_manager),
 ):
+    mimetypes.init()
+    mimetypes.add_type("image/webp", ".webp")
+
     """Возвращает XLSX-файл с остатками, картинками 100×100px и статистикой продаж за 15/30/60 дней."""
     # получаем DF без image и параллельный список bytes
     df, images = manager.get_stock_report()
