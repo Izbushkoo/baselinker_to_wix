@@ -368,7 +368,7 @@ async def export_stock_with_sales(
     manager: manager.InventoryManager = Depends(manager.get_manager),
 ):
     mimetypes.init()
-    mimetypes.types_map[True]['.webp'] = 'image/webp'
+    # mimetypes.types_map[True]['.webp'] = 'image/webp'
 
     """Возвращает XLSX-файл с остатками, картинками 100×100px и статистикой продаж за 15/30/60 дней."""
     # получаем DF без image и параллельный список bytes
