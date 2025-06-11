@@ -307,6 +307,63 @@ class SyncAllegroApiService(BaseAllegroApiService):
         except httpx.HTTPError as e:
             raise ValueError(f"Ошибка при получении статистики событий: {str(e)}")
 
+    def get_offers(
+        self,
+        token: str,
+        external_ids: Optional[List[str]] = None,
+        limit: int = 20,
+        offset: int = 0,
+        sort: Optional[str] = None,
+        publication_status: Optional[List[str]] = None,
+        publication_marketplace: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Получает список офферов продавца с возможностью фильтрации.
+        
+        Args:
+            token: Токен доступа
+            external_ids: Список внешних идентификаторов для фильтрации
+            limit: Максимальное количество офферов в ответе (1-1000)
+            offset: Смещение для пагинации
+            sort: Параметр сортировки
+            publication_status: Статус публикации оффера
+            publication_marketplace: ID маркетплейса
+            
+        Returns:
+            Dict[str, Any]: Ответ от API с офферами
+            
+        Raises:
+            ValueError: При ошибке получения данных
+        """
+        params = {
+            "limit": min(limit, 1000),  # Ограничиваем максимальное значение
+            "offset": offset
+        }
+
+        if external_ids:
+            for external_id in external_ids:
+                if len(external_id) > 100:
+                    raise ValueError("Длина external.id не должна превышать 100 символов")
+                params["external.id"] = external_ids
+
+        if sort:
+            params["sort"] = sort
+        if publication_status:
+            params["publication.status"] = publication_status
+        if publication_marketplace:
+            params["publication.marketplace"] = publication_marketplace
+
+        try:
+            response = self.client.get(
+                "/offers/listing",
+                headers=self._get_headers(token),
+                params=params
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise ValueError(f"Ошибка при получении офферов: {str(e)}")
+
 class AsyncAllegroApiService(BaseAllegroApiService):
     def __init__(self, base_url: str = "https://api.allegro.pl"):
         super().__init__(base_url)
@@ -493,4 +550,62 @@ class AsyncAllegroApiService(BaseAllegroApiService):
                 return response.json()
         except httpx.HTTPError as e:
             raise ValueError(f"Ошибка при получении заказов: {str(e)}")
+
+    async def get_offers(
+        self,
+        token: str,
+        external_ids: Optional[List[str]] = None,
+        limit: int = 20,
+        offset: int = 0,
+        sort: Optional[str] = None,
+        publication_status: Optional[List[str]] = None,
+        publication_marketplace: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Асинхронная версия получения списка офферов продавца с возможностью фильтрации.
+        
+        Args:
+            token: Токен доступа
+            external_ids: Список внешних идентификаторов для фильтрации
+            limit: Максимальное количество офферов в ответе (1-1000)
+            offset: Смещение для пагинации
+            sort: Параметр сортировки
+            publication_status: Статус публикации оффера
+            publication_marketplace: ID маркетплейса
+            
+        Returns:
+            Dict[str, Any]: Ответ от API с офферами
+            
+        Raises:
+            ValueError: При ошибке получения данных
+        """
+        params = {
+            "limit": min(limit, 1000),  # Ограничиваем максимальное значение
+            "offset": offset
+        }
+
+        if external_ids:
+            for external_id in external_ids:
+                if len(external_id) > 100:
+                    raise ValueError("Длина external.id не должна превышать 100 символов")
+                params["external.id"] = external_ids
+
+        if sort:
+            params["sort"] = sort
+        if publication_status:
+            params["publication.status"] = publication_status
+        if publication_marketplace:
+            params["publication.marketplace"] = publication_marketplace
+
+        try:
+            async with self.client as client:
+                response = await client.get(
+                    "/offers/listing",
+                    headers=self._get_headers(token),
+                    params=params
+                )
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPError as e:
+            raise ValueError(f"Ошибка при получении офферов: {str(e)}")
 
