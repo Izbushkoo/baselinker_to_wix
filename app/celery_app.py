@@ -40,6 +40,7 @@ from app.services.tg_client import TelegramManager
 from app.models.allegro_order import AllegroOrder
 import csv
 import requests
+from app.repositories.allegro_event_tracker_repository import AllegroEventTrackerRepository
 
 def get_redis_client():
     redis_url = os.getenv("CELERY_REDIS_URL", "redis://redis:6379/0")
@@ -594,7 +595,6 @@ def process_allegro_order_events(token_id: str):
         token_id: ID токена Allegro
     """
     try:
-        redis_client = get_redis_client()
         session = SessionLocal()
         
         try:
@@ -604,9 +604,10 @@ def process_allegro_order_events(token_id: str):
             # Создаем необходимые сервисы
             api_service = SyncAllegroApiService()
             order_service = SyncAllegroOrderService(session)
+            event_tracker_repo = AllegroEventTrackerRepository(session)
             
-            # Получаем ID последнего обработанного события из Redis
-            last_event_id = redis_client.get(f"last_allegro_event_{token_id}")
+            # Получаем ID последнего обработанного события из БД
+            last_event_id = event_tracker_repo.get_last_event_id(token_id)
             
             if not last_event_id:
                 # Если нет сохраненного события, получаем статистику
@@ -618,14 +619,14 @@ def process_allegro_order_events(token_id: str):
                     logger.warning(f"Не удалось получить ID последнего события для токена {token_id}")
                     return {"status": "error", "message": "Не удалось получить ID последнего события"}
 
-                redis_client.set(f"last_allegro_event_{token_id}", last_event_id)
+                event_tracker_repo.update_last_event_id(token_id, last_event_id)
                 logger.info(f"Сохранен ID последнего события: {last_event_id}")
             
             # Получаем новые события
             allegro_rate_limiter.wait_if_needed()
             events = api_service.get_order_events_v2(
                 token=token.access_token,
-                from_event_id=last_event_id.decode() if isinstance(last_event_id, bytes) else last_event_id,
+                from_event_id=last_event_id,
                 limit=100
             )
             
@@ -642,11 +643,11 @@ def process_allegro_order_events(token_id: str):
             for event in events_list:
                 try:
                     # Обрабатываем событие
-                    order = order_service.repository.process_order_event(token_id,token.access_token, event, api_service)
+                    order = order_service.repository.process_order_event(token_id, token.access_token, event, api_service)
                     if order:
                         processed_count += 1
                         last_processed_id = event.get("id")
-                        redis_client.set(f"last_allegro_event_{token_id}", last_processed_id)
+                        event_tracker_repo.update_last_event_id(token_id, last_processed_id)
                         logger.info(f"Сохранен ID последнего обработанного события: {last_processed_id}")
                 except NotFoundDetails as e:
                     logger.error(f"Заказ {event.get('id')} не найден, пропускаем")

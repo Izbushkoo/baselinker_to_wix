@@ -51,3 +51,18 @@
 - Поддержка фильтрации по external.id с валидацией длины
 - Поддержка пагинации и сортировки результатов
 - Поддержка фильтрации по статусу публикации и маркетплейсу 
+
+## [2024-03-21] - Миграция хранения ID последних событий Allegro с Redis на PostgreSQL
+### Изменено
+- Создана новая модель `AllegroEventTracker` для хранения ID последних событий Allegro
+- Добавлен репозиторий `AllegroEventTrackerRepository` для работы с моделью
+- Модифицирована задача `process_allegro_order_events` для использования PostgreSQL вместо Redis
+- Удалена зависимость от Redis для хранения ID последних событий
+
+### Технические детали
+- Новая таблица `allegro_event_trackers` содержит поля:
+  - `id` (PK)
+  - `token_id` (unique, indexed)
+  - `last_event_id`
+  - `created_at`
+  - `updated_at` 
