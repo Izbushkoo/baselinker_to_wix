@@ -379,3 +379,187 @@ sequenceDiagram
    - Логирование всех изменений
    - Сохранение истории изменений
    - Возможность отката изменений
+
+## Каскадные операции в базе данных
+
+### Обзор
+Система каскадных операций обеспечивает целостность данных при изменении или удалении товаров, автоматически обновляя или удаляя связанные записи в таблицах Stock, Sale и Transfer.
+
+### Архитектура каскадных операций
+
+#### Модели с каскадными связями
+
+1. **Product (Товар)**:
+   ```python
+   class Product(SQLModel, table=True):
+       # Основные поля товара
+       stocks: List["Stock"] = Relationship(
+           back_populates="product",
+           sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+       )
+       sales: List["Sale"] = Relationship(
+           back_populates="product",
+           sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+       )
+       transfers: List["Transfer"] = Relationship(
+           back_populates="product",
+           sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+       )
+   ```
+
+2. **Stock (Складские остатки)**:
+   ```python
+   class Stock(SQLModel, table=True):
+       product_id: Optional[int] = Field(
+           default=None, 
+           foreign_key="product.id",
+           sa_column_kwargs={"ondelete": "CASCADE", "onupdate": "CASCADE"}
+       )
+       product: Optional[Product] = Relationship(back_populates="stocks")
+   ```
+
+3. **Sale (Продажи)**:
+   ```python
+   class Sale(SQLModel, table=True):
+       product_id: Optional[int] = Field(
+           default=None, 
+           foreign_key="product.id",
+           sa_column_kwargs={"ondelete": "CASCADE", "onupdate": "CASCADE"}
+       )
+       product: Optional[Product] = Relationship(back_populates="sales")
+   ```
+
+4. **Transfer (Перемещения)**:
+   ```python
+   class Transfer(SQLModel, table=True):
+       product_id: Optional[int] = Field(
+           default=None, 
+           foreign_key="product.id",
+           sa_column_kwargs={"ondelete": "CASCADE", "onupdate": "CASCADE"}
+       )
+       product: Optional[Product] = Relationship(back_populates="transfers")
+   ```
+
+### Типы каскадных операций
+
+#### 1. Каскадное удаление (CASCADE DELETE)
+При удалении товара автоматически удаляются:
+- Все связанные записи в таблице Stock
+- Все связанные записи в таблице Sale
+- Все связанные записи в таблице Transfer
+
+#### 2. Каскадное обновление (CASCADE UPDATE)
+При изменении ID товара автоматически обновляются:
+- Поля product_id в таблице Stock
+- Поля product_id в таблице Sale
+- Поля product_id в таблице Transfer
+
+### Реализация на уровне базы данных
+
+#### SQLModel Relationship
+- Использование параметра `sa_relationship_kwargs={"cascade": "all, delete-orphan"}`
+- Автоматическое удаление связанных объектов при удалении родительского объекта
+- Поддержка "orphan" объектов (объекты без родителя)
+
+#### ForeignKey с каскадными ограничениями
+- Параметр `ondelete="CASCADE"` для каскадного удаления
+- Параметр `onupdate="CASCADE"` для каскадного обновления
+- Ограничения на уровне базы данных для обеспечения целостности
+
+### Миграции Alembic
+
+#### Генерация миграций
+```bash
+alembic revision --autogenerate -m "add_cascade_constraints_to_warehouse_tables"
+```
+
+#### Применение миграций
+```bash
+alembic upgrade head
+```
+
+### Диаграмма связей
+
+```mermaid
+erDiagram
+    Product ||--o{ Stock : "cascade delete/update"
+    Product ||--o{ Sale : "cascade delete/update"
+    Product ||--o{ Transfer : "cascade delete/update"
+    
+    Product {
+        int id PK
+        string name
+        string sku
+        string ean
+        string image
+    }
+    
+    Stock {
+        int id PK
+        int product_id FK
+        int warehouse_id FK
+        int quantity
+    }
+    
+    Sale {
+        int id PK
+        int product_id FK
+        int quantity
+        datetime sale_date
+    }
+    
+    Transfer {
+        int id PK
+        int product_id FK
+        int from_warehouse_id FK
+        int to_warehouse_id FK
+        int quantity
+    }
+```
+
+### Преимущества каскадных операций
+
+1. **Целостность данных**:
+   - Автоматическое удаление связанных записей
+   - Предотвращение "висящих" ссылок
+   - Консистентность данных
+
+2. **Упрощение кода**:
+   - Не требуется ручное удаление связанных записей
+   - Автоматическая обработка зависимостей
+   - Меньше кода для поддержки
+
+3. **Производительность**:
+   - Операции выполняются на уровне базы данных
+   - Минимальные накладные расходы
+   - Атомарность операций
+
+### Ограничения и рекомендации
+
+1. **Осторожность при удалении**:
+   - Каскадное удаление необратимо
+   - Рекомендуется предварительное резервное копирование
+   - Логирование всех каскадных операций
+
+2. **Производительность**:
+   - При большом количестве связанных записей операция может быть медленной
+   - Рекомендуется выполнение в транзакциях
+   - Мониторинг времени выполнения
+
+3. **Отладка**:
+   - Сложность отслеживания каскадных операций
+   - Необходимость детального логирования
+   - Возможность временного отключения каскадов для отладки
+
+### История операций: отображение редактирования товара
+
+- Для операций типа PRODUCT_EDIT:
+  - В поле "Склад" отображается "—"
+  - Показывается список изменённых полей: "Поле: Старое → Новое"
+  - Для каждого поля, если значение изменилось, выводится строка: Название поля, старое значение, стрелка, новое значение
+  - Пример:
+    - SKU: 12345 → 54321
+    - Название: "Старое" → "Новое"
+    - EAN: 12345678 → 87654321
+- Это позволяет быстро увидеть, какие именно изменения были внесены администратором
+

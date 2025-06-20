@@ -75,7 +75,34 @@
 
                 <!-- Основная информация -->
                 <div class="mt-2">
-                    {% if operation.operation_type != 'product_delete' %}
+                    {% if operation.operation_type == 'product_edit' %}
+                    <div class="grid grid-cols-2 gap-4 items-center">
+                        <div>
+                            <div class="text-sm text-gray-500">Склад</div>
+                            <div class="text-lg font-semibold mb-2">—</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-500">SKU товара</div>
+                            <button onclick="copyToClipboard('{{ operation.products_data.sku }}', this)" class="text-lg font-mono hover:text-blue-600 focus:outline-none">{{ operation.products_data.sku }}</button>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <div class="text-sm text-gray-500 mb-1">Изменённые поля:</div>
+                        <ul class="bg-yellow-50 border border-yellow-200 rounded-md px-4 py-2 text-sm space-y-1">
+                            {% for key, old_val in operation.products_data.old_values.items() %}
+                                {% set new_val = operation.products_data.new_values[key] %}
+                                {% if old_val != new_val %}
+                                <li>
+                                    <span class="font-semibold">{{ key|capitalize }}:</span>
+                                    <span class="text-gray-700">{{ old_val if old_val else '—' }}</span>
+                                    <span class="mx-1 text-gray-400">→</span>
+                                    <span class="text-blue-700">{{ new_val if new_val else '—' }}</span>
+                                </li>
+                                {% endif %}
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% elif operation.operation_type != 'product_delete' %}
                     <div class="grid grid-cols-2 gap-4 items-center">
                         <div>
                             <div class="text-sm text-gray-500">Склад</div>
