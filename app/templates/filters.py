@@ -10,6 +10,7 @@ def operation_type_label(operation_type: str) -> str:
         'stock_out_order': "Списание по заказу",
         'transfer': 'Перемещение',
         'product_create': 'Создание товара',
-        'product_delete': 'Удаление товара'
+        'product_delete': 'Удаление товара',
+        'product_edit': 'Редактирование товара'
     }
     return labels.get(operation_type, operation_type) 

@@ -146,7 +146,19 @@
 
         <!-- Кнопка удаления в нижнем левом углу -->
         {% if current_user and current_user.is_admin %}
-        <div class="absolute bottom-4 left-4">
+        <div class="absolute bottom-4 left-4 flex space-x-2">
+            <button 
+                type="button"
+                onclick="editProduct(this)"
+                data-product-sku="{{ product['sku'] }}"
+                data-product-name="{{ product['name'] }}"
+                class="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-full transition-colors duration-200"
+                title="Редактировать товар"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                </svg>
+            </button>
             <button 
                 type="button"
                 onclick="deleteProduct(this)"
@@ -443,5 +455,13 @@ function deleteProduct(button) {
     .finally(() => {
         button.disabled = false;
     });
+}
+
+function editProduct(button) {
+    const sku = button.dataset.productSku;
+    const name = button.dataset.productName;
+    
+    // Перенаправляем на страницу редактирования
+    window.location.href = `/products/${sku}/edit`;
 }
 </script> 

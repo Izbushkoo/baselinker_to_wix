@@ -14,6 +14,7 @@ class OperationType(str, Enum):
     TRANSFER_FILE = "transfer_file"  # Массовое перемещение через файл
     PRODUCT_CREATE = "product_create"  # Создание нового товара
     PRODUCT_DELETE = "product_delete"  # Удаление товара
+    PRODUCT_EDIT = "product_edit"  # Редактирование товара
 
 class Operation(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)

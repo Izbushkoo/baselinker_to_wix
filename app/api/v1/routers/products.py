@@ -13,6 +13,7 @@ from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.models.user import User
 from app.services.warehouse.manager import Warehouses
 from app.services.operations_service import OperationsService, OperationType, get_operations_service
+from app.schemas.product import ProductUpdate, ProductEditForm, ProductResponse
 from PIL import Image
 import logging
 
@@ -245,6 +246,49 @@ async def add_product_form(
         }
     )
 
+@web_router.get("/products/{sku}/edit", response_class=HTMLResponse)
+async def edit_product_form(
+    request: Request,
+    sku: str,
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_from_cookie)
+):
+    """Отображает форму редактирования товара."""
+    # Проверяем права доступа
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Недостаточно прав для редактирования товара"
+        )
+    
+    # Получаем товар из базы данных
+    product_query = select(Product).where(Product.sku == sku)
+    result = await db.exec(product_query)
+    product = result.first()
+    
+    if not product:
+        raise HTTPException(
+            status_code=404,
+            detail="Товар не найден"
+        )
+    
+    # Подготавливаем данные для формы
+    product_data = {
+        "sku": product.sku,
+        "name": product.name,
+        "ean": ", ".join(product.eans) if product.eans else "",
+        "current_image": base64.b64encode(product.image).decode('utf-8') if product.image else None
+    }
+    
+    return templates.TemplateResponse(
+        "edit_product.html",
+        {
+            "request": request,
+            "user": current_user,
+            "product": product_data
+        }
+    )
+
 @router.post("")
 async def create_product(
     request: Request,
@@ -422,4 +466,128 @@ async def delete_product(
         raise HTTPException(
             status_code=400,
             detail=f"Не удалось удалить товар: {str(e)}"
+        )
+
+@router.put("/{sku}")
+async def update_product(
+    sku: str,
+    request: Request,
+    name: Optional[str] = Form(None),
+    new_sku: Optional[str] = Form(None),
+    ean: Optional[str] = Form(None),
+    image: Optional[UploadFile] = File(None),
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional),
+    operations_service: OperationsService = Depends(get_operations_service)
+):
+    """Обновляет товар по его SKU"""
+    # Проверяем права доступа
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Недостаточно прав для редактирования товара"
+        )
+    
+    try:
+        # Получаем текущий товар
+        product_query = select(Product).where(Product.sku == sku)
+        result = await db.exec(product_query)
+        product = result.first()
+        
+        if not product:
+            raise HTTPException(
+                status_code=404,
+                detail="Товар не найден"
+            )
+        
+        # Сохраняем старые значения для логирования
+        old_values = {
+            "sku": product.sku,
+            "name": product.name,
+            "eans": product.eans.copy() if product.eans else []
+        }
+        
+        # Проверяем уникальность нового SKU, если он изменяется
+        if new_sku and new_sku != sku:
+            existing_product_query = select(Product).where(Product.sku == new_sku)
+            existing_result = await db.exec(existing_product_query)
+            if existing_result.first():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Товар с SKU '{new_sku}' уже существует"
+                )
+        
+        # Обновляем поля товара
+        if name is not None:
+            product.name = name
+        
+        if new_sku is not None:
+            product.sku = new_sku
+        
+        if ean is not None:
+            # Разбиваем строку EAN по запятой и очищаем от пробелов
+            eans = [e.strip() for e in ean.split(',')] if ean else []
+            product.eans = eans
+        
+        # Обрабатываем новое изображение, если оно загружено
+        if image:
+            # Проверяем размер файла (5MB максимум)
+            MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB в байтах
+            file_size = 0
+            image_data = bytearray()
+            
+            while chunk := await image.read(8192):
+                file_size += len(chunk)
+                if file_size > MAX_FILE_SIZE:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Размер файла превышает 5MB"
+                    )
+                image_data.extend(chunk)
+            
+            if file_size:
+                # Открываем изображение с помощью PIL
+                img = Image.open(io.BytesIO(image_data))
+                
+                # Изменяем размер изображения до 100x100 с сохранением пропорций
+                img.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                
+                # Конвертируем в RGB если изображение в режиме RGBA
+                if img.mode in ('RGBA', 'P'):
+                    img = img.convert('RGB')
+                
+                # Сохраняем изображение в буфер в формате WebP с максимальным сжатием
+                output_buffer = io.BytesIO()
+                img.save(output_buffer, format='WEBP', quality=30, method=6)
+                image_data = output_buffer.getvalue()
+                logger.info(f"Размер обработанного изображения: {len(image_data) / 1024:.2f} КБ")
+                
+                product.image = bytes(image_data)
+        
+        # Сохраняем изменения
+        await db.commit()
+        await db.refresh(product)
+        
+        # Подготавливаем новые значения для логирования
+        new_values = {
+            "sku": product.sku,
+            "name": product.name,
+            "eans": product.eans.copy() if product.eans else []
+        }
+        
+        # Создаем запись операции
+        operations_service.create_product_edit_operation(
+            sku=old_values["sku"],
+            old_values=old_values,
+            new_values=new_values,
+            user_email=current_user.email
+        )
+        
+        return {"success": True, "message": "Товар успешно обновлен", "sku": product.sku}
+        
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Не удалось обновить товар: {str(e)}"
         )

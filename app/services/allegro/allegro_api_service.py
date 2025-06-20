@@ -355,7 +355,7 @@ class SyncAllegroApiService(BaseAllegroApiService):
 
         try:
             response = self.client.get(
-                "/offers/listing",
+                "/sale/offers",
                 headers=self._get_headers(token),
                 params=params
             )

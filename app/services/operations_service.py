@@ -284,3 +284,33 @@ class OperationsService:
         session.commit()
         session.refresh(operation)
         return operation
+
+    def create_product_edit_operation(
+        self,
+        sku: str,
+        old_values: Dict,
+        new_values: Dict,
+        user_email: str,
+        comment: Optional[str] = None,
+        session: Optional[Session] = None
+    ) -> Operation:
+        """Создание операции редактирования товара"""
+        session = self._get_session(session)
+        
+        products_data = {
+            "sku": sku,
+            "old_values": old_values,
+            "new_values": new_values
+        }
+        
+        operation = Operation(
+            operation_type=OperationType.PRODUCT_EDIT.value,
+            products_data=products_data,
+            user_email=user_email,
+            comment=comment
+        )
+        
+        session.add(operation)
+        session.commit()
+        session.refresh(operation)
+        return operation
