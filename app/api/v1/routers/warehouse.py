@@ -634,3 +634,88 @@ async def compress_images(
 ):
     result = manager.compress_all_product_images()
     return JSONResponse({'status': 'success', 'result': result})
+
+@router.post('/sync-wix/', summary='Синхронизация количества товаров с Wix')
+async def sync_wix_inventory(
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Запускает синхронизацию количества товаров между локальной базой данных и Wix.
+    
+    Процесс:
+    1. Получает все SKU и их количество из локальной базы данных
+    2. Находит соответствующие товары в Wix по SKU
+    3. Обновляет количество товаров в Wix до соответствия локальной базе
+    
+    Returns:
+        JSONResponse: Результат запуска синхронизации
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    
+    try:
+        from app.celery_app import launch_wix_sync
+        
+        # Запускаем синхронизацию в фоновом режиме
+        result = launch_wix_sync()
+        
+        return JSONResponse({
+            "status": "success",
+            "message": "Синхронизация с Wix запущена",
+            "task_id": result.id,
+            "task_status": "PENDING"
+        })
+        
+    except Exception as e:
+        logging.error(f"Ошибка при запуске синхронизации Wix: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Ошибка при запуске синхронизации: {str(e)}"
+        )
+
+
+@router.get('/sync-wix/status/{task_id}', summary='Статус синхронизации Wix')
+async def get_wix_sync_status(
+    task_id: str,
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Получает статус выполнения задачи синхронизации с Wix.
+    
+    Args:
+        task_id: ID задачи Celery
+        
+    Returns:
+        JSONResponse: Статус задачи и результат выполнения
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    
+    try:
+        from celery.result import AsyncResult
+        
+        # Получаем результат задачи
+        result = AsyncResult(task_id)
+        
+        response_data = {
+            "task_id": task_id,
+            "status": result.status,
+            "ready": result.ready()
+        }
+        
+        # Если задача завершена, добавляем результат
+        if result.ready():
+            if result.successful():
+                response_data["result"] = result.result
+            else:
+                response_data["error"] = str(result.info)
+        
+        return JSONResponse(response_data)
+        
+    except Exception as e:
+        logging.error(f"Ошибка при получении статуса задачи {task_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Ошибка при получении статуса: {str(e)}"
+        )

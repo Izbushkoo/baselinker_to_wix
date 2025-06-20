@@ -1,3 +1,4 @@
+import os
 import requests
 import json
 from typing import List, Dict, Optional, Union, Any
@@ -115,7 +116,7 @@ class WixInventoryUpdate(SQLModel):
     model_config = ConfigDict(from_attributes=True, extra="allow")
     
     inventory_item_id: str = Field(alias="inventoryId")
-    variant_id: Optional[str] = None
+    variant_id: str = Field(alias="variantId")
     quantity: int = Field(ge=0)
 
 
@@ -233,9 +234,9 @@ class WixInventoryFilter(SQLModel):
 
 class WixApiService:
     def __init__(self):
-        self.wix_api_key = "IST.eyJraWQiOiJQb3pIX2FDMiIsImFsZyI6IlJTMjU2In0.eyJkYXRhIjoie1wiaWRcIjpcImU1MWYxM2EwLTgxYTgtNDgxNS05Y2Q2LThjMjZlNDVmMjIwMFwiLFwiaWRlbnRpdHlcIjp7XCJ0eXBlXCI6XCJhcHBsaWNhdGlvblwiLFwiaWRcIjpcIjM3NzE1ZTdjLTkyMWYtNDcyMC1iZGE5LTI0OTU1NWI5NjM5NFwifSxcInRlbmFudFwiOntcInR5cGVcIjpcImFjY291bnRcIixcImlkXCI6XCJjMmM5MTllZC1iMWY5LTQwMzgtOTY4Ni1mZjA1YmNiY2RmMDhcIn19IiwiaWF0IjoxNzQ5NjM2MzEyfQ.VwQkWABD5yiu_HBmay0sCkpCg0ahFPAU-S_Y3zhzSE1rDLK9uWX2lqnY8EAaqjoJzy0iYJiy3KVg25fKpLlO6sTuRr7IuzFTX7xQXjDNuPhearsm9kaRxcFrZXzxr9Q_KQfnde8oBdhQZHa7ChT6BGZ32mHE1aFQpwnodoO4r6hCnSf3YyGGXCsoV5mdt8fgFJ677QHv7U52-09HyC0PGtaYqqbkwUTYQi1jG8QxPwiZWuT7QFB7POWtFGO0t-HizpZQkljQAzZGpeOLcrf3c5dTQnKneOYOAve3zeKbsV5aqnLMFnBGUh8edfzx1Cg99yMQ00X8f3YJ4OInyaBx9g"
-        self.site_id = "75b93fc8-d16b-4511-a3cb-97b5291f8ea4"
-        self.account_id = "e9efeafa-e196-4ed4-a42c-1153375d9ddd"
+        self.wix_api_key = os.getenv("WIX_API_KEY")
+        self.site_id = os.getenv("WIX_SITE_ID")
+        self.account_id = os.getenv("WIX_ACCOUNT_ID")
         self.base_url = "https://www.wixapis.com"
         self.headers = {
             "Authorization": self.wix_api_key,
@@ -331,22 +332,27 @@ class WixApiService:
             return
 
         endpoint = "stores/v2/inventoryItems/increment" if increment else "stores/v2/inventoryItems/decrement"
-        field_name = "incrementData" if increment else "decrementData"
         
         # Преобразуем данные в формат API
         update_data = []
         for update in updates:
             item = {
-                "productId": update.inventory_item_id,
+                "inventoryId": update.inventory_item_id,
+                "variantId": update.variant_id,
                 "incrementBy" if increment else "decrementBy": update.quantity
             }
-            if update.variant_id:
-                item["variantId"] = update.variant_id
             update_data.append(item)
-        full_update_data = {field_name: update_data}
-        print(full_update_data)
+        
+        payload = {
+            "incrementData" if increment else "decrementData": update_data
+        }
+        
+        print(f"Отправляем {len(updates)} обновлений на {endpoint}:")
+        print(f"Payload: {payload}")
+        
         try:
-            self._make_request("POST", endpoint, full_update_data)
+            self._make_request("POST", endpoint, payload)
+            print(f"Успешно обновлено {len(updates)} товаров")
         except WixApiError as e:
             raise WixApiError(f"Ошибка при обновлении стока: {str(e)}")
 
@@ -595,6 +601,360 @@ class WixApiService:
                 
         return all_items
 
+    def get_inventory_updates_by_sku_list(self, sku_list: List[str], batch_size: int = 100) -> List[WixInventoryUpdate]:
+        """
+        Получает готовые модели WixInventoryUpdate для списка SKU любой длины.
+        
+        Процесс:
+        1. Разбивает список SKU на батчи по batch_size
+        2. Для каждого батча получает товары по SKU
+        3. Для найденных товаров получает информацию об инвентаре
+        4. Создает модели WixInventoryUpdate с variant_id первого варианта
+        
+        Args:
+            sku_list: Список SKU для обработки
+            batch_size: Размер батча для API запросов (максимум 100)
+            
+        Returns:
+            List[WixInventoryUpdate]: Список готовых моделей для обновления инвентаря
+        """
+        if not sku_list:
+            return []
+        
+        all_updates = []
+        total_sku = len(sku_list)
+        
+        print(f"Начинаем обработку {total_sku} SKU батчами по {batch_size}")
+        
+        # Разбиваем список SKU на батчи
+        for i in range(0, total_sku, batch_size):
+            batch_sku = sku_list[i:i + batch_size]
+            batch_num = (i // batch_size) + 1
+            total_batches = (total_sku + batch_size - 1) // batch_size
+            
+            print(f"Обрабатываем батч {batch_num}/{total_batches} ({len(batch_sku)} SKU)")
+            
+            try:
+                # 1. Получаем товары по SKU для текущего батча
+                products = self.get_products_by_sku(batch_sku, batch_size)
+                print(f"  Найдено товаров в Wix: {len(products)}")
+                
+                if not products:
+                    print(f"  Пропускаем батч {batch_num} - товары не найдены")
+                    continue
+                
+                # 2. Получаем ID товаров для запроса инвентаря
+                product_ids = [product.id for product in products]
+                
+                # 3. Получаем информацию об инвентаре для найденных товаров
+                inventory_data = self.query_inventory(
+                    product_ids=product_ids,
+                    limit=batch_size
+                )
+                
+                inventory_items = inventory_data.get("inventoryItems", [])
+                print(f"  Получено элементов инвентаря: {len(inventory_items)}")
+                
+                # 4. Создаем маппинг product_id -> inventory_item для быстрого поиска
+                inventory_map = {}
+                for item in inventory_items:
+                    inventory_map[item.get("productId")] = item
+                
+                # 5. Создаем модели WixInventoryUpdate
+                for product in products:
+                    try:
+                        # Ищем соответствующий элемент инвентаря
+                        inventory_item = inventory_map.get(product.id)
+                        
+                        if not inventory_item:
+                            print(f"    Инвентарь не найден для товара {product.sku} (ID: {product.id})")
+                            continue
+                        
+                        # Получаем variant_id первого варианта
+                        variants = inventory_item.get("variants", [])
+                        if not variants:
+                            print(f"    Варианты не найдены для товара {product.sku}")
+                            continue
+                        
+                        first_variant = variants[0]
+                        variant_id = first_variant.get("variantId")
+                        
+                        if not variant_id:
+                            print(f"    variantId не найден для первого варианта товара {product.sku}")
+                            continue
+                        
+                        # Создаем модель WixInventoryUpdate
+                        update = WixInventoryUpdate(
+                            inventory_item_id=inventory_item["id"],
+                            variant_id=variant_id,
+                            quantity=0  # Количество будет установлено позже при обновлении
+                        )
+                        
+                        all_updates.append(update)
+                        print(f"    Создана модель обновления для {product.sku} (variant_id: {variant_id})")
+                        
+                    except Exception as e:
+                        print(f"    Ошибка при создании модели обновления для {product.sku}: {str(e)}")
+                        continue
+                
+            except Exception as e:
+                print(f"  Ошибка при обработке батча {batch_num}: {str(e)}")
+                continue
+        
+        print(f"Обработка завершена. Создано {len(all_updates)} моделей обновления")
+        return all_updates
+
+    def update_inventory_by_sku_list(
+        self, 
+        sku_quantity_map: Dict[str, int], 
+        batch_size: int = 100
+    ) -> Dict[str, Any]:
+        """
+        Обновляет инвентарь для списка SKU с указанными количествами.
+        
+        Args:
+            sku_quantity_map: Словарь {sku: quantity} с количествами для обновления
+            batch_size: Размер батча для API запросов
+            
+        Returns:
+            Dict[str, Any]: Результат обновления с детальной статистикой
+        """
+        if not sku_quantity_map:
+            return {
+                "status": "success",
+                "message": "Нет данных для обновления",
+                "total_sku": 0,
+                "processed": 0,
+                "updated": 0,
+                "errors": 0
+            }
+        
+        sku_list = list(sku_quantity_map.keys())
+        total_sku = len(sku_list)
+        
+        print(f"Начинаем обновление инвентаря для {total_sku} SKU")
+        
+        # Получаем готовые модели обновления
+        inventory_updates = self.get_inventory_updates_by_sku_list(sku_list, batch_size)
+        
+        if not inventory_updates:
+            return {
+                "status": "success",
+                "message": "Не найдено товаров в Wix для обновления",
+                "total_sku": total_sku,
+                "processed": 0,
+                "updated": 0,
+                "errors": 0
+            }
+        
+        # Создаем маппинг sku -> product_id для сопоставления
+        sku_to_product_map = {}
+        for sku in sku_list:
+            # Получаем товар по SKU для создания маппинга
+            products = self.get_products_by_sku([sku], 1)
+            if products:
+                sku_to_product_map[sku] = products[0].id
+        
+        # Создаем маппинг inventory_item_id -> quantity через product_id
+        quantity_map = {}
+        for update in inventory_updates:
+            # Находим product_id для данного inventory_item
+            for sku, quantity in sku_quantity_map.items():
+                product_id = sku_to_product_map.get(sku)
+                if product_id:
+                    # Получаем product_id из inventory_item для сопоставления
+                    # Для этого нужно получить информацию об inventory_item
+                    try:
+                        inventory_info = self.query_inventory(product_ids=[product_id], limit=1)
+                        for item in inventory_info.get("inventoryItems", []):
+                            if item.get("id") == update.inventory_item_id:
+                                quantity_map[update.inventory_item_id] = quantity
+                                break
+                    except Exception as e:
+                        print(f"Ошибка при получении информации об инвентаре для {sku}: {str(e)}")
+                        continue
+        
+        # Обновляем количество в моделях
+        for update in inventory_updates:
+            update.quantity = quantity_map.get(update.inventory_item_id, 0)
+        
+        # Выполняем обновления батчами
+        updated_count = 0
+        error_count = 0
+        
+        for i in range(0, len(inventory_updates), batch_size):
+            batch = inventory_updates[i:i + batch_size]
+            batch_num = (i // batch_size) + 1
+            total_batches = (len(inventory_updates) + batch_size - 1) // batch_size
+            
+            print(f"Обновляем батч {batch_num}/{total_batches} ({len(batch)} элементов)")
+            
+            try:
+                # Получаем текущие количества из Wix
+                inventory_item_ids = [update.inventory_item_id for update in batch]
+                current_inventory = self.query_inventory(product_ids=inventory_item_ids)
+                
+                # Создаем обновления с учетом текущих количеств
+                increment_updates = []
+                for update in batch:
+                    try:
+                        # Ищем текущее количество в ответе API
+                        current_qty = 0
+                        for item in current_inventory.get("inventoryItems", []):
+                            if item.get("id") == update.inventory_item_id:
+                                for variant in item.get("variants", []):
+                                    if variant.get("variantId") == update.variant_id:
+                                        current_qty = variant.get("quantity", 0)
+                                        break
+                                break
+                        
+                        # Вычисляем разницу для increment
+                        diff = update.quantity - current_qty
+                        if diff != 0:
+                            increment_update = WixInventoryUpdate(
+                                inventory_item_id=update.inventory_item_id,
+                                variant_id=update.variant_id,
+                                quantity=abs(diff)
+                            )
+                            increment_updates.append((increment_update, diff > 0))
+                            print(f"    Подготовлено обновление: {current_qty} -> {update.quantity} (diff: {diff})")
+                        else:
+                            print(f"    Количество уже актуально: {current_qty}")
+                            
+                    except Exception as e:
+                        print(f"    Ошибка при подготовке обновления: {str(e)}")
+                        error_count += 1
+                        continue
+                
+                # Выполняем обновления
+                for increment_update, is_increment in increment_updates:
+                    try:
+                        self.update_inventory([increment_update], increment=is_increment)
+                        updated_count += 1
+                        print(f"    Обновлен товар {increment_update.inventory_item_id}: {'+' if is_increment else '-'}{increment_update.quantity}")
+                    except Exception as e:
+                        print(f"    Ошибка при обновлении товара {increment_update.inventory_item_id}: {str(e)}")
+                        error_count += 1
+                        
+            except Exception as e:
+                print(f"Ошибка при обработке батча обновлений {batch_num}: {str(e)}")
+                error_count += len(batch)
+                continue
+        
+        result = {
+            "status": "success",
+            "message": "Обновление инвентаря завершено",
+            "total_sku": total_sku,
+            "processed": len(inventory_updates),
+            "updated": updated_count,
+            "errors": error_count,
+            "details": {
+                "inventory_updates_created": len(inventory_updates),
+                "batches_processed": (len(inventory_updates) + batch_size - 1) // batch_size
+            }
+        }
+        
+        print(f"Обновление завершено: {result}")
+        return result
+
+    def get_wix_products_info_by_sku_list(self, sku_list: List[str], batch_size: int = 100) -> Dict[str, Dict[str, Any]]:
+        """
+        Получает информацию о товарах в Wix по списку SKU.
+        
+        Args:
+            sku_list: Список SKU для обработки
+            batch_size: Размер батча для API запросов (максимум 100)
+            
+        Returns:
+            Dict[str, Dict[str, Any]]: Словарь {sku: {product_id, variant_id, current_quantity}}
+        """
+        if not sku_list:
+            return {}
+        
+        result = {}
+        total_sku = len(sku_list)
+        
+        print(f"Начинаем получение информации о {total_sku} товарах в Wix батчами по {batch_size}")
+        
+        # Разбиваем список SKU на батчи
+        for i in range(0, total_sku, batch_size):
+            batch_sku = sku_list[i:i + batch_size]
+            batch_num = (i // batch_size) + 1
+            total_batches = (total_sku + batch_size - 1) // batch_size
+            
+            print(f"Обрабатываем батч {batch_num}/{total_batches} ({len(batch_sku)} SKU)")
+            
+            try:
+                # 1. Получаем товары по SKU для текущего батча
+                products = self.get_products_by_sku(batch_sku, batch_size)
+                print(f"  Найдено товаров в Wix: {len(products)}")
+                
+                if not products:
+                    print(f"  Пропускаем батч {batch_num} - товары не найдены")
+                    continue
+                
+                # 2. Получаем ID товаров для запроса инвентаря
+                product_ids = [product.id for product in products]
+                
+                # 3. Получаем информацию об инвентаре для найденных товаров
+                inventory_data = self.query_inventory(
+                    product_ids=product_ids,
+                    limit=batch_size
+                )
+                
+                inventory_items = inventory_data.get("inventoryItems", [])
+                print(f"  Получено элементов инвентаря: {len(inventory_items)}")
+                
+                # 4. Создаем маппинг product_id -> inventory_item для быстрого поиска
+                inventory_map = {}
+                for item in inventory_items:
+                    inventory_map[item.get("productId")] = item
+                
+                # 5. Создаем результат для каждого SKU
+                for product in products:
+                    try:
+                        # Ищем соответствующий элемент инвентаря
+                        inventory_item = inventory_map.get(product.id)
+                        
+                        if not inventory_item:
+                            print(f"    Инвентарь не найден для товара {product.sku} (ID: {product.id})")
+                            continue
+                        
+                        # Получаем variant_id первого варианта
+                        variants = inventory_item.get("variants", [])
+                        if not variants:
+                            print(f"    Варианты не найдены для товара {product.sku}")
+                            continue
+                        
+                        first_variant = variants[0]
+                        variant_id = first_variant.get("variantId")
+                        current_quantity = first_variant.get("quantity", 0)
+                        
+                        if not variant_id:
+                            print(f"    variantId не найден для первого варианта товара {product.sku}")
+                            continue
+                        
+                        # Добавляем информацию в результат
+                        result[product.sku] = {
+                            "product_id": product.id,
+                            "variant_id": variant_id,
+                            "current_quantity": current_quantity,
+                            "inventory_item_id": inventory_item["id"]
+                        }
+                        
+                        print(f"    Получена информация для {product.sku}: product_id={product.id}, variant_id={variant_id}, quantity={current_quantity}")
+                        
+                    except Exception as e:
+                        print(f"    Ошибка при обработке товара {product.sku}: {str(e)}")
+                        continue
+                
+            except Exception as e:
+                print(f"  Ошибка при обработке батча {batch_num}: {str(e)}")
+                continue
+        
+        print(f"Обработка завершена. Получена информация для {len(result)} товаров")
+        return result
+
 
 
 # Пример использования
@@ -605,7 +965,7 @@ if __name__ == "__main__":
     try:
         print("\nПолучение товаров с фильтрацией...")
         product_filter = WixProductFilter(
-            sku_list=["8858849103893_10g", "8850348117043_35g"],
+            sku_list=["8858111000073_50g", "8850348117043_35g"],
             visible=True,
             product_type=ProductType.PHYSICAL
         )

@@ -33,6 +33,7 @@ from app.models.allegro_order import AllegroOrder, AllegroLineItem, AllegroBuyer
 from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.models.operations import Operation
 from app.models.allegro_event_tracker import AllegroEventTracker
+from app.models.wix_integration import WixAccount, WixProductMapping, WixInventorySync, MarketplaceAccount
 
 target_metadata = SQLModel.metadata
 

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from sqlmodel import Session, select
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import func
 from app.core.config import settings
 from celery import Celery, chord, group, chain
 from celery.schedules import crontab, schedule
@@ -41,6 +42,8 @@ from app.models.allegro_order import AllegroOrder
 import csv
 import requests
 from app.repositories.allegro_event_tracker_repository import AllegroEventTrackerRepository
+from app.services.wix_api_service.base import WixApiService, WixInventoryUpdate
+from app.models.warehouse import Product, Stock
 
 def get_redis_client():
     redis_url = os.getenv("CELERY_REDIS_URL", "redis://redis:6379/0")
@@ -183,6 +186,10 @@ DEFAULT_BEAT_SCHEDULE = {
     #     'task': 'app.celery_app.check_and_update_stock',
     #     'schedule': 3600,  # 1 час
     # },
+    'sync-wix-inventory': {
+        'task': 'app.celery_app.sync_wix_inventory',
+        'schedule': 3600,  # 1 час
+    },
 }
 
 def initialize_beat_schedule():
@@ -676,3 +683,190 @@ def process_allegro_order_events(token_id: str):
 def send_message_to_tg(message: str):
     tg_client = TelegramManager(chat_id=os.getenv("NOTIFY_GROUP_ID"))
     tg_client.send_message(message)
+
+@celery.task(name="app.celery_app.sync_wix_inventory")
+def sync_wix_inventory():
+    """
+    Синхронизирует количество товаров между локальной базой данных и Wix.
+    
+    Процесс:
+    1. Получает все SKU и их количество из локальной базы данных
+    2. Получает информацию о товарах в Wix по SKU (product_id, variant_id, текущее количество)
+    3. Вычисляет разницу между локальным и Wix количеством
+    4. Обновляет количество товаров в Wix до соответствия локальной базе
+    
+    Returns:
+        Dict: Результат синхронизации с детальной статистикой
+    """
+    try:
+        session = SessionLocal()
+        wix_service = WixApiService()
+        
+        try:
+            logger.info("Начало синхронизации количества товаров с Wix")
+            
+            # 1. Получаем все товары и их остатки из локальной базы
+            logger.info("Получение товаров из локальной базы данных...")
+            
+            # Запрос для получения всех товаров с суммарным количеством по всем складам
+            products_query = select(
+                Product.sku,
+                Product.name,
+                func.coalesce(func.sum(Stock.quantity), 0).label('total_quantity')
+            ).outerjoin(
+                Stock, Product.sku == Stock.sku
+            ).group_by(
+                Product.sku, Product.name
+            ).having(
+                func.coalesce(func.sum(Stock.quantity), 0) > 0  # Только товары с остатками
+            )
+            
+            result = session.exec(products_query)
+            local_products = result.all()
+            
+            logger.info(f"Найдено {len(local_products)} товаров с остатками в локальной базе")
+            
+            if not local_products:
+                logger.info("Нет товаров с остатками для синхронизации")
+                return {
+                    "status": "success",
+                    "message": "Нет товаров с остатками для синхронизации",
+                    "total_products": 0,
+                    "found_in_wix": 0,
+                    "updated_in_wix": 0,
+                    "errors": 0
+                }
+            
+            # 2. Получаем список всех SKU
+            sku_list = [product.sku for product in local_products]
+            logger.info(f"Получен список из {len(sku_list)} SKU для поиска в Wix")
+            
+            # 3. Получаем информацию о товарах в Wix по SKU
+            logger.info("Получение информации о товарах в Wix...")
+            wix_products_info = wix_service.get_wix_products_info_by_sku_list(sku_list)
+            
+            logger.info(f"Найдено {len(wix_products_info)} товаров в Wix")
+            
+            # 4. Создаем словарь локальных товаров
+            local_products_dict = {
+                product.sku: product.total_quantity 
+                for product in local_products
+            }
+            
+            # 5. Подготавливаем обновления для Wix
+            updates = []
+            found_count = 0
+            error_count = 0
+            
+            for sku, local_quantity in local_products_dict.items():
+                try:
+                    if sku in wix_products_info:
+                        wix_info = wix_products_info[sku]
+                        found_count += 1
+                        
+                        # Получаем текущее количество из Wix
+                        current_wix_quantity = wix_info.get("current_quantity", 0)
+                        
+                        # Проверяем, нужно ли обновление
+                        if current_wix_quantity != local_quantity:
+                            # Создаем обновление для Wix
+                            update = WixInventoryUpdate(
+                                inventory_item_id=wix_info["inventory_item_id"],
+                                variant_id=wix_info["variant_id"],
+                                quantity=abs(local_quantity - current_wix_quantity)
+                            )
+                            updates.append((update, local_quantity > current_wix_quantity))
+                            
+                            logger.info(f"Подготовлено обновление для {sku}: {current_wix_quantity} -> {local_quantity} (diff: {local_quantity - current_wix_quantity})")
+                        else:
+                            logger.debug(f"Количество для {sku} уже актуально: {local_quantity}")
+                    else:
+                        logger.warning(f"Товар с SKU {sku} не найден в Wix")
+                        
+                except Exception as e:
+                    logger.error(f"Ошибка при обработке товара {sku}: {str(e)}")
+                    error_count += 1
+                    continue
+            
+            # 6. Выполняем обновления в Wix
+            updated_count = 0
+            if updates:
+                logger.info(f"Выполнение {len(updates)} обновлений в Wix...")
+                
+                # Разделяем обновления на инкременты и декременты
+                increment_updates = []
+                decrement_updates = []
+                
+                for update, is_increment in updates:
+                    if is_increment:
+                        increment_updates.append(update)
+                    else:
+                        decrement_updates.append(update)
+                
+                logger.info(f"Подготовлено {len(increment_updates)} инкрементов и {len(decrement_updates)} декрементов")
+                
+                # Выполняем групповые обновления
+                try:
+                    # Обновляем инкременты
+                    if increment_updates:
+                        logger.info(f"Выполнение {len(increment_updates)} инкрементов...")
+                        wix_service.update_inventory(increment_updates, increment=True)
+                        updated_count += len(increment_updates)
+                        logger.info(f"Успешно выполнено {len(increment_updates)} инкрементов")
+                    
+                    # Обновляем декременты
+                    if decrement_updates:
+                        logger.info(f"Выполнение {len(decrement_updates)} декрементов...")
+                        wix_service.update_inventory(decrement_updates, increment=False)
+                        updated_count += len(decrement_updates)
+                        logger.info(f"Успешно выполнено {len(decrement_updates)} декрементов")
+                        
+                except Exception as e:
+                    logger.error(f"Ошибка при групповом обновлении: {str(e)}")
+                    error_count += len(updates)
+            else:
+                logger.info("Нет товаров, требующих обновления в Wix")
+            
+            # 7. Формируем результат
+            result = {
+                "status": "success",
+                "message": "Синхронизация завершена",
+                "total_products": len(local_products),
+                "found_in_wix": found_count,
+                "updated_in_wix": updated_count,
+                "errors": error_count,
+                "details": {
+                    "local_products_with_stock": len(local_products),
+                    "wix_products_found": len(wix_products_info),
+                    "updates_prepared": len(updates),
+                    "updates_executed": updated_count
+                }
+            }
+            
+            logger.info(f"Синхронизация завершена: {result}")
+            return result
+            
+        finally:
+            session.close()
+            
+    except Exception as e:
+        logger.error(f"Критическая ошибка при синхронизации с Wix: {str(e)}")
+        return {
+            "status": "error",
+            "message": f"Ошибка синхронизации: {str(e)}",
+            "total_products": 0,
+            "found_in_wix": 0,
+            "updated_in_wix": 0,
+            "errors": 1
+        }
+
+def launch_wix_sync():
+    """
+    Запускает синхронизацию количества товаров с Wix.
+    
+    Returns:
+        celery.result.AsyncResult: Результат выполнения задачи
+    """
+    result = sync_wix_inventory.delay()
+    logger.info(f"Запущена синхронизация Wix с ID задачи: {result.id}")
+    return result
