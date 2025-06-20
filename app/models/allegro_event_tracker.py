@@ -19,4 +19,4 @@ class AllegroEventTracker(SQLModel, table=True):
     token_id: str = Field(index=True, unique=True)
     last_event_id: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow) 
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
