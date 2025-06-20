@@ -269,56 +269,75 @@ class InventoryManager:
         image_col: str = 'Foto',
         header: int = None
     ) -> List[Dict]:
-        '''Импорт прихода из XLSX (bytes): SKU, количество, EAN, название и изображение.'''
+        '''Импорт прихода из XLSX (bytes): SKU, количество, EAN, название и изображение.
+        
+        Если в файле отсутствуют колонки EAN, название или изображение, 
+        то выполняется только пополнение остатков по SKU и количеству.
+        '''
         logging.info("Начало импорта Excel файла")
-        # Автоопределение строки с заголовками
-        if header is None:
-            required_cols = [sku_col, qty_col, ean_col, name_col]
-            header = self.find_header_row(file_bytes, required_cols)
+        
         # Загружаем Excel файл
         wb = openpyxl.load_workbook(BytesIO(file_bytes))
         ws = wb.active
-        headers = [str(cell.value) for cell in ws[header + 1]]
+        header_row = header + 1 if header is not None else 1
+        headers = [str(cell.value) for cell in ws[header_row]]
         logging.info(f"Найдены заголовки: {headers}")
+        
+        # Проверяем наличие обязательных колонок
+        required_cols = [sku_col, qty_col]
         try:
             col_indices = {
                 'sku': headers.index(sku_col),
                 'qty': headers.index(qty_col),
-                'ean': headers.index(ean_col),
-                'name': headers.index(name_col)
             }
         except ValueError as e:
-            raise ValueError(f"Не найдена одна из обязательных колонок. Требуются: {sku_col}, {qty_col}, {ean_col}, {name_col}, {image_col}")
-
-        # Создаем словарь изображений по номерам строк
+            raise ValueError(f"Не найдены обязательные колонки: {sku_col}, {qty_col}")
+        
+        # Проверяем наличие дополнительных колонок для полного режима
+        full_mode = True
+        try:
+            col_indices['ean'] = headers.index(ean_col)
+            col_indices['name'] = headers.index(name_col)
+            logging.info("Обнаружен полный режим импорта - все колонки присутствуют")
+        except ValueError:
+            full_mode = False
+            logging.info("Обнаружен режим пополнения - отсутствуют колонки EAN или название")
+        
+        # Создаем словарь изображений по номерам строк (только в полном режиме)
         images_by_row = {}
         
-        for img in ws._images:
-            coords = img.anchor._from
-            row = coords.row + 1
-            if row > (header + 1):
-                try:
-                    if hasattr(img.ref, 'getvalue'):
-                        image_data = img.ref.getvalue()
-                    elif hasattr(img.ref, '_data'):
-                        image_data = img.ref._data()
-                    elif hasattr(img.ref, 'content'):
-                        image_data = img.ref.content
-                    else:
-                        continue
-                        
-                    # Сжимаем изображение перед сохранением
-                    compressed_image = self.compress_image(image_data)
-                    if compressed_image:
-                        images_by_row[row] = compressed_image
-                except Exception:
-                    continue
+        if full_mode and image_col:
+            try:
+                col_indices['image'] = headers.index(image_col)
+                for img in ws._images:
+                    coords = img.anchor._from
+                    row = coords.row + 1
+                    if row > (header + 1 if header is not None else 1):
+                        try:
+                            if hasattr(img.ref, 'getvalue'):
+                                image_data = img.ref.getvalue()
+                            elif hasattr(img.ref, '_data'):
+                                image_data = img.ref._data()
+                            elif hasattr(img.ref, 'content'):
+                                image_data = img.ref.content
+                            else:
+                                continue
+                                
+                            # Сжимаем изображение перед сохранением
+                            compressed_image = self.compress_image(image_data)
+                            if compressed_image:
+                                images_by_row[row] = compressed_image
+                        except Exception:
+                            continue
+            except ValueError:
+                logging.warning("Колонка изображений не найдена, изображения не будут обработаны")
 
         # Список для хранения информации о обработанных товарах
         processed_products = []
 
         # Обрабатываем каждую строку данных
-        for row_idx, row in enumerate(ws.iter_rows(min_row=header + 2), start=header + 2):
+        start_row = header + 2 if header is not None else 2
+        for row_idx, row in enumerate(ws.iter_rows(min_row=start_row), start=start_row):
             try:
                 sku = str(row[col_indices['sku']].value)
                 
@@ -327,39 +346,50 @@ class InventoryManager:
                     continue
                     
                 qty = int(row[col_indices['qty']].value)
-                ean = str(row[col_indices['ean']].value)
-                name = str(row[col_indices['name']].value)
-                image_data = images_by_row.get(row_idx)
                 
-                with Session(self.engine) as session:
-                    product = session.get(Product, sku)
-                    if not product:
-                        product = Product(sku=sku, eans=[ean], name=name, image=image_data)
-                        session.add(product)
-                    else:
-                        if ean not in product.eans:
-                            product.eans.append(ean)
-                        product.name = name
-                        if image_data:
-                            product.image = image_data
-                        session.add(product)
-                    session.commit()
+                if full_mode:
+                    # Полный режим - создаем/обновляем продукт
+                    ean = str(row[col_indices['ean']].value)
+                    name = str(row[col_indices['name']].value)
+                    image_data = images_by_row.get(row_idx)
+                    
+                    with Session(self.engine) as session:
+                        product = session.get(Product, sku)
+                        if not product:
+                            product = Product(sku=sku, eans=[ean], name=name, image=image_data)
+                            session.add(product)
+                        else:
+                            if ean not in product.eans:
+                                product.eans.append(ean)
+                            product.name = name
+                            if image_data:
+                                product.image = image_data
+                            session.add(product)
+                        session.commit()
+                    
+                    # Добавляем информацию о обработанном товаре
+                    processed_products.append({
+                        "sku": sku,
+                        "quantity": qty,
+                        "ean": ean,
+                        "name": name
+                    })
+                else:
+                    # Режим пополнения - только обновляем остатки
+                    processed_products.append({
+                        "sku": sku,
+                        "quantity": qty
+                    })
                 
-                # Добавляем или обновляем остатки на складе
+                # В любом случае добавляем или обновляем остатки на складе
                 self.restock(sku, warehouse, qty)
                 
-                # Добавляем информацию о обработанном товаре
-                processed_products.append({
-                    "sku": sku,
-                    "quantity": qty,
-                    "ean": ean,
-                    "name": name
-                })
-                
-            except Exception:
+            except Exception as e:
+                logging.warning(f"Ошибка при обработке строки {row_idx}: {str(e)}")
                 continue
         
-        logging.info("Импорт Excel файла завершен")
+        mode_str = "полного импорта" if full_mode else "пополнения остатков"
+        logging.info(f"Импорт Excel файла завершен в режиме {mode_str}")
         return processed_products
 
     def import_transfer_from_excel(
