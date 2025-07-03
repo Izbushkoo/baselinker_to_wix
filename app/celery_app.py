@@ -620,7 +620,22 @@ def process_allegro_order_events(token_id: str):
                 # Если нет сохраненного события, получаем статистику
                 logger.info(f"Нет сохраненного события для токена {token_id}, получаем статистику")
                 stats = api_service.get_order_events_statistics(token.access_token)
-                last_event_id = stats.get("latestEvent", {}).get("id")
+                logger.info(f"Получена статистика: {stats}")
+                
+                # Проверяем структуру ответа
+                if not stats:
+                    logger.error(f"Получена пустая статистика для токена {token_id}")
+                    return {"status": "error", "message": "Получена пустая статистика"}
+                
+                latest_event = stats.get("latestEvent")
+                logger.info(f"latestEvent из статистики: {latest_event}")
+                
+                if not latest_event:
+                    logger.error(f"Поле latestEvent отсутствует в статистике для токена {token_id}")
+                    return {"status": "error", "message": "Поле latestEvent отсутствует в статистике"}
+                
+                last_event_id = latest_event.get("id")
+                logger.info(f"Извлеченный last_event_id: {last_event_id}")
                 
                 if not last_event_id:
                     logger.warning(f"Не удалось получить ID последнего события для токена {token_id}")
@@ -637,7 +652,16 @@ def process_allegro_order_events(token_id: str):
                 limit=100
             )
             
+            logger.info(f"Получены события: {events}")
+            
+            # Проверяем структуру ответа
+            if not events:
+                logger.error(f"Получен пустой ответ событий для токена {token_id}")
+                return {"status": "error", "message": "Получен пустой ответ событий"}
+            
             events_list = events.get("events", [])
+            logger.info(f"Список событий: {events_list}")
+            
             if not events_list:
                 logger.info(f"Нет новых событий для токена {token_id}")
                 return {"status": "success", "message": "Нет новых событий"}

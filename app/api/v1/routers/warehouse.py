@@ -638,7 +638,6 @@ async def compress_images(
 @router.post('/sync-wix/', summary='Синхронизация количества товаров с Wix')
 async def sync_wix_inventory(
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(deps.get_current_user_optional)
 ):
     """
     Запускает синхронизацию количества товаров между локальной базой данных и Wix.
@@ -651,9 +650,7 @@ async def sync_wix_inventory(
     Returns:
         JSONResponse: Результат запуска синхронизации
     """
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Требуется авторизация")
-    
+
     try:
         from app.celery_app import launch_wix_sync
         

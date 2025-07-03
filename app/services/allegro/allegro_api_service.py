@@ -199,6 +199,12 @@ class SyncAllegroApiService(BaseAllegroApiService):
         Returns:
             Dict[str, Any]: Ответ от API с событиями заказов
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"Начинаем получение событий заказов для токена: {token[:10]}...")
+        logger.info(f"Параметры запроса: from_event_id={from_event_id}, types={types}, limit={limit}")
+        
         params = {"limit": min(limit, 1000)}  # Ограничиваем максимальное значение
         
         if from_event_id:
@@ -206,15 +212,30 @@ class SyncAllegroApiService(BaseAllegroApiService):
         if types:
             params["type"] = types
 
+        logger.info(f"Финальные параметры запроса: {params}")
+
         try:
+            logger.info("Отправляем запрос к /order/events")
             response = self.client.get(
                 "/order/events",
                 headers=self._get_headers(token),
                 params=params
             )
+            logger.info(f"Получен ответ с кодом: {response.status_code}")
+            
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            logger.info(f"Получены данные событий: {data}")
+            
+            return data
         except httpx.HTTPError as e:
+            logger.error(f"HTTP ошибка при получении событий заказов: {str(e)}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Код ответа: {e.response.status_code}")
+                logger.error(f"Текст ответа: {e.response.text}")
+            raise ValueError(f"Ошибка при получении событий заказов: {str(e)}")
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка при получении событий заказов: {str(e)}")
             raise ValueError(f"Ошибка при получении событий заказов: {str(e)}")
 
     def get_orders_v2(
@@ -297,14 +318,32 @@ class SyncAllegroApiService(BaseAllegroApiService):
         Returns:
             Dict[str, Any]: Ответ от API со статистикой событий
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"Начинаем получение статистики событий для токена: {token[:10]}...")
+        
         try:
+            logger.info("Отправляем запрос к /order/event-stats")
             response = self.client.get(
                 "/order/event-stats",
                 headers=self._get_headers(token)
             )
+            logger.info(f"Получен ответ с кодом: {response.status_code}")
+            
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            logger.info(f"Получены данные статистики: {data}")
+            
+            return data
         except httpx.HTTPError as e:
+            logger.error(f"HTTP ошибка при получении статистики событий: {str(e)}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Код ответа: {e.response.status_code}")
+                logger.error(f"Текст ответа: {e.response.text}")
+            raise ValueError(f"Ошибка при получении статистики событий: {str(e)}")
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка при получении статистики событий: {str(e)}")
             raise ValueError(f"Ошибка при получении статистики событий: {str(e)}")
 
     def get_offers(
