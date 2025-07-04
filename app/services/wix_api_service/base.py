@@ -6,7 +6,8 @@ from datetime import datetime
 from enum import Enum
 from sqlmodel import SQLModel, Field
 from pydantic import ConfigDict, Field as PydanticField
-from pprint import pprint
+import logging
+logger = logging.getLogger(__name__)
 
 
 class ProductType(str, Enum):
@@ -293,11 +294,11 @@ class WixApiService:
                         wix_product = WixProductAPI(**product)
                         all_products.append(wix_product)
                     except Exception as e:
-                        print(f"Ошибка при валидации товара {product.get('id')}: {str(e)}")
+                        logger.error(f"Ошибка при валидации товара {product.get('id')}: {str(e)}")
                         continue
                     
             except WixApiError as e:
-                print(f"Ошибка при получении товаров для SKU {batch_sku}: {str(e)}")
+                logger.error(f"Ошибка при получении товаров для SKU {batch_sku}: {str(e)}")
                 continue
                 
         return all_products
@@ -347,12 +348,12 @@ class WixApiService:
             "incrementData" if increment else "decrementData": update_data
         }
         
-        print(f"Отправляем {len(updates)} обновлений на {endpoint}:")
-        print(f"Payload: {payload}")
+        logger.info(f"Отправляем {len(updates)} обновлений на {endpoint}:")
+        logger.debug(f"Payload: {payload}")
         
         try:
             self._make_request("POST", endpoint, payload)
-            print(f"Успешно обновлено {len(updates)} товаров")
+            logger.info(f"Успешно обновлено {len(updates)} товаров")
         except WixApiError as e:
             raise WixApiError(f"Ошибка при обновлении стока: {str(e)}")
 
@@ -500,7 +501,7 @@ class WixApiService:
                         wix_product = WixProductAPI(**product)
                         all_products.append(wix_product)
                     except Exception as e:
-                        print(f"Ошибка при валидации товара {product.get('id')}: {str(e)}")
+                        logger.error(f"Ошибка при валидации товара {product.get('id')}: {str(e)}")
                         continue
                 
                 # Если получили меньше товаров чем лимит, значит это последняя страница
@@ -510,7 +511,7 @@ class WixApiService:
                 offset += limit
                 
             except WixApiError as e:
-                print(f"Ошибка при получении товаров (offset={offset}): {str(e)}")
+                logger.error(f"Ошибка при получении товаров (offset={offset}): {str(e)}")
                 break
                 
         return all_products
@@ -534,7 +535,7 @@ class WixApiService:
         
         # Формируем фильтр
         filter_dict = self._build_inventory_filter(filter_data) if filter_data else None
-        print("Применяем фильтр:", filter_dict)
+        logger.debug("Применяем фильтр: %s", filter_dict)
         
         while True:
             try:
@@ -559,8 +560,8 @@ class WixApiService:
                                 variant = WixInventoryVariant.from_dict(variant_data)
                                 variants.append(variant)
                             except Exception as e:
-                                print(f"Ошибка при валидации варианта: {str(e)}")
-                                print("Данные варианта:", json.dumps(variant_data, indent=2))
+                                logger.error(f"Ошибка при валидации варианта: {str(e)}")
+                                logger.debug("Данные варианта: %s", json.dumps(variant_data, indent=2))
                                 continue
                         
                         # Преобразуем preorder_info
@@ -569,8 +570,8 @@ class WixApiService:
                             try:
                                 preorder_info = WixPreorderInfo(**item_data["preorderInfo"])
                             except Exception as e:
-                                print(f"Ошибка при валидации preorderInfo: {str(e)}")
-                                print("Данные preorderInfo:", json.dumps(item_data["preorderInfo"], indent=2))
+                                logger.error(f"Ошибка при валидации preorderInfo: {str(e)}")
+                                logger.debug("Данные preorderInfo: %s", json.dumps(item_data["preorderInfo"], indent=2))
                         
                         # Создаем элемент инвентаря
                         inventory_item = WixInventoryItem(
@@ -585,8 +586,8 @@ class WixApiService:
                         )
                         all_items.append(inventory_item)
                     except Exception as e:
-                        print(f"Ошибка при валидации элемента инвентаря {item_data.get('id')}: {str(e)}")
-                        print("Данные элемента:", json.dumps(item_data, indent=2))
+                        logger.error(f"Ошибка при валидации элемента инвентаря {item_data.get('id')}: {str(e)}")
+                        logger.debug("Данные элемента: %s", json.dumps(item_data, indent=2))
                         continue
                 
                 # Если получили меньше элементов чем лимит, значит это последняя страница
@@ -596,7 +597,7 @@ class WixApiService:
                 offset += limit
                 
             except WixApiError as e:
-                print(f"Ошибка при получении инвентарей (offset={offset}): {str(e)}")
+                logger.error(f"Ошибка при получении инвентарей (offset={offset}): {str(e)}")
                 break
                 
         return all_items
@@ -624,7 +625,7 @@ class WixApiService:
         all_updates = []
         total_sku = len(sku_list)
         
-        print(f"Начинаем обработку {total_sku} SKU батчами по {batch_size}")
+        logger.info(f"Начинаем обработку {total_sku} SKU батчами по {batch_size}")
         
         # Разбиваем список SKU на батчи
         for i in range(0, total_sku, batch_size):
@@ -632,15 +633,15 @@ class WixApiService:
             batch_num = (i // batch_size) + 1
             total_batches = (total_sku + batch_size - 1) // batch_size
             
-            print(f"Обрабатываем батч {batch_num}/{total_batches} ({len(batch_sku)} SKU)")
+            logger.info(f"Обрабатываем батч {batch_num}/{total_batches} ({len(batch_sku)} SKU)")
             
             try:
                 # 1. Получаем товары по SKU для текущего батча
                 products = self.get_products_by_sku(batch_sku, batch_size)
-                print(f"  Найдено товаров в Wix: {len(products)}")
+                logger.info(f"  Найдено товаров в Wix: {len(products)}")
                 
                 if not products:
-                    print(f"  Пропускаем батч {batch_num} - товары не найдены")
+                    logger.info(f"  Пропускаем батч {batch_num} - товары не найдены")
                     continue
                 
                 # 2. Получаем ID товаров для запроса инвентаря
@@ -653,7 +654,7 @@ class WixApiService:
                 )
                 
                 inventory_items = inventory_data.get("inventoryItems", [])
-                print(f"  Получено элементов инвентаря: {len(inventory_items)}")
+                logger.info(f"  Получено элементов инвентаря: {len(inventory_items)}")
                 
                 # 4. Создаем маппинг product_id -> inventory_item для быстрого поиска
                 inventory_map = {}
@@ -667,20 +668,20 @@ class WixApiService:
                         inventory_item = inventory_map.get(product.id)
                         
                         if not inventory_item:
-                            print(f"    Инвентарь не найден для товара {product.sku} (ID: {product.id})")
+                            logger.info(f"    Инвентарь не найден для товара {product.sku} (ID: {product.id})")
                             continue
                         
                         # Получаем variant_id первого варианта
                         variants = inventory_item.get("variants", [])
                         if not variants:
-                            print(f"    Варианты не найдены для товара {product.sku}")
+                            logger.info(f"    Варианты не найдены для товара {product.sku}")
                             continue
                         
                         first_variant = variants[0]
                         variant_id = first_variant.get("variantId")
                         
                         if not variant_id:
-                            print(f"    variantId не найден для первого варианта товара {product.sku}")
+                            logger.info(f"    variantId не найден для первого варианта товара {product.sku}")
                             continue
                         
                         # Создаем модель WixInventoryUpdate
@@ -691,17 +692,17 @@ class WixApiService:
                         )
                         
                         all_updates.append(update)
-                        print(f"    Создана модель обновления для {product.sku} (variant_id: {variant_id})")
+                        logger.info(f"    Создана модель обновления для {product.sku} (variant_id: {variant_id})")
                         
                     except Exception as e:
-                        print(f"    Ошибка при создании модели обновления для {product.sku}: {str(e)}")
+                        logger.error(f"    Ошибка при создании модели обновления для {product.sku}: {str(e)}")
                         continue
                 
             except Exception as e:
-                print(f"  Ошибка при обработке батча {batch_num}: {str(e)}")
+                logger.error(f"  Ошибка при обработке батча {batch_num}: {str(e)}")
                 continue
         
-        print(f"Обработка завершена. Создано {len(all_updates)} моделей обновления")
+        logger.info(f"Обработка завершена. Создано {len(all_updates)} моделей обновления")
         return all_updates
 
     def update_inventory_by_sku_list(
@@ -732,7 +733,7 @@ class WixApiService:
         sku_list = list(sku_quantity_map.keys())
         total_sku = len(sku_list)
         
-        print(f"Начинаем обновление инвентаря для {total_sku} SKU")
+        logger.info(f"Начинаем обновление инвентаря для {total_sku} SKU")
         
         # Получаем готовые модели обновления
         inventory_updates = self.get_inventory_updates_by_sku_list(sku_list, batch_size)
@@ -771,7 +772,7 @@ class WixApiService:
                                 quantity_map[update.inventory_item_id] = quantity
                                 break
                     except Exception as e:
-                        print(f"Ошибка при получении информации об инвентаре для {sku}: {str(e)}")
+                        logger.error(f"Ошибка при получении информации об инвентаре для {sku}: {str(e)}")
                         continue
         
         # Обновляем количество в моделях
@@ -787,7 +788,7 @@ class WixApiService:
             batch_num = (i // batch_size) + 1
             total_batches = (len(inventory_updates) + batch_size - 1) // batch_size
             
-            print(f"Обновляем батч {batch_num}/{total_batches} ({len(batch)} элементов)")
+            logger.info(f"Обновляем батч {batch_num}/{total_batches} ({len(batch)} элементов)")
             
             try:
                 # Получаем текущие количества из Wix
@@ -817,12 +818,12 @@ class WixApiService:
                                 quantity=abs(diff)
                             )
                             increment_updates.append((increment_update, diff > 0))
-                            print(f"    Подготовлено обновление: {current_qty} -> {update.quantity} (diff: {diff})")
+                            logger.info(f"    Подготовлено обновление: {current_qty} -> {update.quantity} (diff: {diff})")
                         else:
-                            print(f"    Количество уже актуально: {current_qty}")
+                            logger.info(f"    Количество уже актуально: {current_qty}")
                             
                     except Exception as e:
-                        print(f"    Ошибка при подготовке обновления: {str(e)}")
+                        logger.error(f"    Ошибка при подготовке обновления: {str(e)}")
                         error_count += 1
                         continue
                 
@@ -831,13 +832,13 @@ class WixApiService:
                     try:
                         self.update_inventory([increment_update], increment=is_increment)
                         updated_count += 1
-                        print(f"    Обновлен товар {increment_update.inventory_item_id}: {'+' if is_increment else '-'}{increment_update.quantity}")
+                        logger.info(f"    Обновлен товар {increment_update.inventory_item_id}: {'+' if is_increment else '-'}{increment_update.quantity}")
                     except Exception as e:
-                        print(f"    Ошибка при обновлении товара {increment_update.inventory_item_id}: {str(e)}")
+                        logger.error(f"    Ошибка при обновлении товара {increment_update.inventory_item_id}: {str(e)}")
                         error_count += 1
                         
             except Exception as e:
-                print(f"Ошибка при обработке батча обновлений {batch_num}: {str(e)}")
+                logger.error(f"Ошибка при обработке батча обновлений {batch_num}: {str(e)}")
                 error_count += len(batch)
                 continue
         
@@ -854,7 +855,7 @@ class WixApiService:
             }
         }
         
-        print(f"Обновление завершено: {result}")
+        logger.info(f"Обновление завершено: {result}")
         return result
 
     def get_wix_products_info_by_sku_list(self, sku_list: List[str], batch_size: int = 100) -> Dict[str, Dict[str, Any]]:
@@ -874,7 +875,7 @@ class WixApiService:
         result = {}
         total_sku = len(sku_list)
         
-        print(f"Начинаем получение информации о {total_sku} товарах в Wix батчами по {batch_size}")
+        logger.info(f"Начинаем получение информации о {total_sku} товарах в Wix батчами по {batch_size}")
         
         # Разбиваем список SKU на батчи
         for i in range(0, total_sku, batch_size):
@@ -882,15 +883,15 @@ class WixApiService:
             batch_num = (i // batch_size) + 1
             total_batches = (total_sku + batch_size - 1) // batch_size
             
-            print(f"Обрабатываем батч {batch_num}/{total_batches} ({len(batch_sku)} SKU)")
+            logger.info(f"Обрабатываем батч {batch_num}/{total_batches} ({len(batch_sku)} SKU)")
             
             try:
                 # 1. Получаем товары по SKU для текущего батча
                 products = self.get_products_by_sku(batch_sku, batch_size)
-                print(f"  Найдено товаров в Wix: {len(products)}")
+                logger.info(f"  Найдено товаров в Wix: {len(products)}")
                 
                 if not products:
-                    print(f"  Пропускаем батч {batch_num} - товары не найдены")
+                    logger.info(f"  Пропускаем батч {batch_num} - товары не найдены")
                     continue
                 
                 # 2. Получаем ID товаров для запроса инвентаря
@@ -903,7 +904,7 @@ class WixApiService:
                 )
                 
                 inventory_items = inventory_data.get("inventoryItems", [])
-                print(f"  Получено элементов инвентаря: {len(inventory_items)}")
+                logger.info(f"  Получено элементов инвентаря: {len(inventory_items)}")
                 
                 # 4. Создаем маппинг product_id -> inventory_item для быстрого поиска
                 inventory_map = {}
@@ -917,13 +918,13 @@ class WixApiService:
                         inventory_item = inventory_map.get(product.id)
                         
                         if not inventory_item:
-                            print(f"    Инвентарь не найден для товара {product.sku} (ID: {product.id})")
+                            logger.info(f"    Инвентарь не найден для товара {product.sku} (ID: {product.id})")
                             continue
                         
                         # Получаем variant_id первого варианта
                         variants = inventory_item.get("variants", [])
                         if not variants:
-                            print(f"    Варианты не найдены для товара {product.sku}")
+                            logger.info(f"    Варианты не найдены для товара {product.sku}")
                             continue
                         
                         first_variant = variants[0]
@@ -931,7 +932,7 @@ class WixApiService:
                         current_quantity = first_variant.get("quantity", 0)
                         
                         if not variant_id:
-                            print(f"    variantId не найден для первого варианта товара {product.sku}")
+                            logger.info(f"    variantId не найден для первого варианта товара {product.sku}")
                             continue
                         
                         # Добавляем информацию в результат
@@ -942,17 +943,17 @@ class WixApiService:
                             "inventory_item_id": inventory_item["id"]
                         }
                         
-                        print(f"    Получена информация для {product.sku}: product_id={product.id}, variant_id={variant_id}, quantity={current_quantity}")
+                        logger.info(f"    Получена информация для {product.sku}: product_id={product.id}, variant_id={variant_id}, quantity={current_quantity}")
                         
                     except Exception as e:
-                        print(f"    Ошибка при обработке товара {product.sku}: {str(e)}")
+                        logger.error(f"    Ошибка при обработке товара {product.sku}: {str(e)}")
                         continue
                 
             except Exception as e:
-                print(f"  Ошибка при обработке батча {batch_num}: {str(e)}")
+                logger.error(f"  Ошибка при обработке батча {batch_num}: {str(e)}")
                 continue
         
-        print(f"Обработка завершена. Получена информация для {len(result)} товаров")
+        logger.info(f"Обработка завершена. Получена информация для {len(result)} товаров")
         return result
 
 
@@ -963,37 +964,37 @@ if __name__ == "__main__":
     
     # Пример получения товаров с фильтрацией
     try:
-        print("\nПолучение товаров с фильтрацией...")
+        logger.info("\nПолучение товаров с фильтрацией...")
         product_filter = WixProductFilter(
             sku_list=["8858111000073_50g", "8850348117043_35g"],
             visible=True,
             product_type=ProductType.PHYSICAL
         )
         filtered_products = service.get_all_products(filter_data=product_filter)
-        print(f"Получено товаров по фильтру: {len(filtered_products)}")
+        logger.info(f"Получено товаров по фильтру: {len(filtered_products)}")
         if filtered_products:
-            print("ID найденных товаров:", " ".join(p.id for p in filtered_products))
+            logger.info("ID найденных товаров:", " ".join(p.id for p in filtered_products))
         
-        print("\nПолучение инвентарей с фильтрацией...")
+        logger.info("\nПолучение инвентарей с фильтрацией...")
         inventory_filter = WixInventoryFilter(
             product_ids=[p.id for p in filtered_products] if filtered_products else None
         )
         filtered_inventory = service.get_all_inventory_items(filter_data=inventory_filter)
-        print(f"Получено инвентарей по фильтру: {len(filtered_inventory)}")
+        logger.info(f"Получено инвентарей по фильтру: {len(filtered_inventory)}")
         if filtered_inventory:
-            print("\nДетали инвентарей:")
+            logger.info("\nДетали инвентарей:")
             for item in filtered_inventory:
-                print(f"\nID: {item.id}")
-                print(f"Product ID: {item.product_id}")
-                print(f"Track Quantity: {item.track_quantity}")
-                print(f"Last Updated: {item.last_updated}")
-                print("Варианты:")
+                logger.info(f"\nID: {item.id}")
+                logger.info(f"Product ID: {item.product_id}")
+                logger.info(f"Track Quantity: {item.track_quantity}")
+                logger.info(f"Last Updated: {item.last_updated}")
+                logger.info("Варианты:")
                 for variant in item.variants:
-                    print(f"  - Variant ID: {variant.variant_id}")
-                    print(f"    В наличии: {variant.in_stock}")
-                    print(f"    Количество: {variant.quantity}")
+                    logger.info(f"  - Variant ID: {variant.variant_id}")
+                    logger.info(f"    В наличии: {variant.in_stock}")
+                    logger.info(f"    Количество: {variant.quantity}")
         
     except WixApiError as e:
-        print(f"Ошибка: {str(e)}")
+        logger.error(f"Ошибка: {str(e)}")
 
 
