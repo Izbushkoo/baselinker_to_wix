@@ -11,7 +11,7 @@ from celery.schedules import crontab, schedule
 
 from app.services.warehouse.manager import Warehouses
 from app.services import baselinker as BL
-from app.services.process_funcs import transform_product
+from app.services.process_funcs import transform_product_for_shoper, transform_product
 from app.schemas.wix_models import WixImportFileModel
 from app.schemas.wix_models import generate_handle_id
 from app.utils.logging_config import logger
@@ -252,10 +252,12 @@ def process_product_chunk(self, baselinker_api_key, inventory_id, products_chunk
                                                                       products=products_chunk))
     logger.info(f"{result}")
 
+    # TODO: Временно используем transform_product_for_shoper, потом переделаем на transform_product
+
     if result["status"] == "SUCCESS":
         # Обработка данных (ваша логика)
         products = result.get("products", {})
-        processed_data = [transform_product(products.get(product_id)).model_dump() for product_id in products_chunk]
+        processed_data = [transform_product_for_shoper(products.get(product_id)).model_dump() for product_id in products_chunk]
         return processed_data
     else:
         raise Exception(f"API вернул неуспешный статус: {result['status']}")

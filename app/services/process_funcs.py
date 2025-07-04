@@ -98,6 +98,58 @@ def transform_product(server_product: dict, lang_code: str = "en") -> DetailedPr
         price=price
     )
 
+def transform_product_for_shoper(server_product: dict, lang_code: str = "en") -> DetailedProduct:
+    """
+    Преобразует данные продукта из ответа сервера в модель DetailedProduct,
+    обрабатывая поле "description|en" в text_fields.
+    """
+    ean = server_product.get("ean", "")
+    sku = server_product.get("sku", "")
+    # Преобразуем словарь stock в список пар [(key, value), ...]
+    # stock = list(server_product.get("stock", {}).items())
+    stock = next(iter(server_product.get("stock", {}).values()), 0)
+
+    text_fields = server_product.get("text_fields", {})
+    images_dict = server_product.get("images", {})
+    images = list(images_dict.values())
+    prices = server_product.get("prices", {})
+    price = get_max_price(prices)
+
+
+    # Обработка поля "description|en" — извлекаем описание, удаляем блоки с изображениями и сохраняем ссылки
+    description_html = text_fields.get(f"description", "")
+
+    # if not description_html:
+    #     lang_code = "pl"
+
+    processed_description, extracted_image_links = process_description(description_html)
+    description = processed_description
+    
+    name = text_fields.get(f"name", "")
+    weight = server_product.get("weight", 0)
+
+    brand = "a1mate"
+    # Если нужно, можно добавить извлечённые ссылки в список изображений
+    images.extend(extracted_image_links)
+
+    # Удаляем дубликаты изображений
+    images = list(set(images))
+
+    # Ограничиваем количество изображений до 15
+    images = images[:15]
+
+
+    return DetailedProduct(
+        ean=ean,
+        sku=sku,
+        name=name,
+        weight=weight,
+        stock=stock,
+        description=description,
+        brand=brand,
+        images=images,
+        price=price
+    )
 
 def first_value(data: dict):
     """
