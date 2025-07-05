@@ -248,11 +248,30 @@ class WixApiService:
     def _make_request(self, method: str, endpoint: str, payload: Optional[Dict] = None) -> Dict:
         """Базовый метод для выполнения запросов к API"""
         url = f"{self.base_url}/{endpoint}"
+        
+        logger.info(f"Отправляем запрос к Wix API: {method} {url}")
+        if payload:
+            logger.debug(f"Payload: {json.dumps(payload, indent=2)}")
+        
         try:
             response = requests.request(method, url, headers=self.headers, json=payload)
+            logger.info(f"Получен ответ от Wix API: {response.status_code}")
+            
+            if response.status_code >= 400:
+                logger.error(f"HTTP ошибка {response.status_code}: {response.text}")
+                logger.error(f"URL: {url}")
+                logger.error(f"Headers: {self.headers}")
+                if payload:
+                    logger.error(f"Payload: {json.dumps(payload, indent=2)}")
+            
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
+            logger.error(f"Ошибка при выполнении запроса к Wix API: {str(e)}")
+            logger.error(f"URL: {url}")
+            logger.error(f"Headers: {self.headers}")
+            if payload:
+                logger.error(f"Payload: {json.dumps(payload, indent=2)}")
             raise WixApiError(f"Ошибка при выполнении запроса к Wix API: {str(e)}")
 
     def get_products_by_sku(self, sku_list: List[str], batch_size: int = 100) -> List[WixProductAPI]:
@@ -269,14 +288,38 @@ class WixApiService:
         if not sku_list:
             return []
 
+        # Ограничиваем размер батча для избежания ошибок API
+        max_batch_size = 50  # Уменьшаем с 100 до 50 для стабильности
+        if batch_size > max_batch_size:
+            batch_size = max_batch_size
+            logger.warning(f"Размер батча уменьшен до {max_batch_size} для стабильности API")
+
         all_products = []
         # Разбиваем список SKU на батчи
         for i in range(0, len(sku_list), batch_size):
             batch_sku = sku_list[i:i + batch_size]
+            logger.info(f"Обрабатываем батч SKU: {len(batch_sku)} элементов")
+            
+            # Проверяем длину SKU в батче
+            total_sku_length = sum(len(sku) for sku in batch_sku)
+            logger.debug(f"Общая длина SKU в батче: {total_sku_length} символов")
+            
+            # Валидируем SKU перед отправкой
+            valid_sku_list = []
+            for sku in batch_sku:
+                if sku and len(sku.strip()) > 0:
+                    valid_sku_list.append(sku.strip())
+                else:
+                    logger.warning(f"Пропущен пустой SKU: '{sku}'")
+            
+            if not valid_sku_list:
+                logger.warning("Батч не содержит валидных SKU, пропускаем")
+                continue
+            
             payload = {
                 "query": {
                     "filter": json.dumps({
-                        "sku": {"$in": batch_sku}
+                        "sku": {"$in": valid_sku_list}
                     }),
                     "paging": {
                         "limit": batch_size
@@ -285,21 +328,39 @@ class WixApiService:
                 }
             }
             
-            try:
-                data = self._make_request("POST", "stores-reader/v1/products/query", payload)
-                products = data.get("products", [])
-                
-                for product in products:
-                    try:
-                        wix_product = WixProductAPI(**product)
-                        all_products.append(wix_product)
-                    except Exception as e:
-                        logger.error(f"Ошибка при валидации товара {product.get('id')}: {str(e)}")
-                        continue
+            logger.info(f"Отправляем запрос для {len(valid_sku_list)} валидных SKU")
+            
+            # Механизм повторных попыток
+            max_retries = 3
+            retry_delay = 1  # секунды
+            
+            for attempt in range(max_retries):
+                try:
+                    data = self._make_request("POST", "stores-reader/v1/products/query", payload)
+                    products = data.get("products", [])
                     
-            except WixApiError as e:
-                logger.error(f"Ошибка при получении товаров для SKU {batch_sku}: {str(e)}")
-                continue
+                    for product in products:
+                        try:
+                            wix_product = WixProductAPI(**product)
+                            all_products.append(wix_product)
+                        except Exception as e:
+                            logger.error(f"Ошибка при валидации товара {product.get('id')}: {str(e)}")
+                            continue
+                    
+                    # Если запрос успешен, выходим из цикла повторных попыток
+                    break
+                    
+                except WixApiError as e:
+                    logger.error(f"Попытка {attempt + 1}/{max_retries} - Ошибка при получении товаров для SKU {valid_sku_list}: {str(e)}")
+                    
+                    if attempt < max_retries - 1:
+                        logger.info(f"Ожидание {retry_delay} секунд перед повторной попыткой...")
+                        import time
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Экспоненциальная задержка
+                    else:
+                        logger.error(f"Все попытки исчерпаны для батча SKU: {valid_sku_list}")
+                        continue
                 
         return all_products
 
