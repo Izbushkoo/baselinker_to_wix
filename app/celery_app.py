@@ -5,6 +5,20 @@ from typing import Optional, Dict, Any
 from sqlmodel import Session, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import func
+import os
+from dotenv import load_dotenv
+
+# Загружаем переменные окружения перед импортом config
+load_dotenv()
+
+# Проверяем, запущено ли приложение в Docker
+is_docker = os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv")
+
+# Если запущено в Docker, перезагружаем переменные из .env.docker
+if is_docker:
+    load_dotenv(".env.docker", override=True)
+    print("Celery: Загружены переменные из .env.docker")
+
 from app.core.config import settings
 from celery import Celery, chord, group, chain
 from celery.schedules import crontab, schedule
@@ -16,8 +30,6 @@ from app.schemas.wix_models import WixImportFileModel
 from app.schemas.wix_models import generate_handle_id
 from app.utils.logging_config import logger
 from app.services.tg_client import TelegramManager
-
-import os
 
 from app.services.allegro.order_service import SyncAllegroOrderService
 from app.services.allegro.allegro_api_service import SyncAllegroApiService, NotFoundDetails
@@ -724,6 +736,28 @@ def sync_wix_inventory():
     Returns:
         Dict: Результат синхронизации с детальной статистикой
     """
+    # Проверяем загрузку переменных Wix в начале задачи
+    wix_api_key = os.getenv("WIX_API_KEY")
+    wix_site_id = os.getenv("WIX_SITE_ID")
+    wix_account_id = os.getenv("WIX_ACCOUNT_ID")
+    
+    logger.info(f"Задача sync_wix_inventory - проверка переменных Wix:")
+    logger.info(f"  WIX_API_KEY: {'Загружен' if wix_api_key else 'НЕ ЗАГРУЖЕН'}")
+    logger.info(f"  WIX_SITE_ID: {'Загружен' if wix_site_id else 'НЕ ЗАГРУЖЕН'}")
+    logger.info(f"  WIX_ACCOUNT_ID: {'Загружен' if wix_account_id else 'НЕ ЗАГРУЖЕН'}")
+    
+    if not wix_api_key or not wix_site_id:
+        error_msg = "Критические переменные Wix не загружены в Celery worker!"
+        logger.error(error_msg)
+        return {
+            "status": "error",
+            "message": error_msg,
+            "total_products": 0,
+            "found_in_wix": 0,
+            "updated_in_wix": 0,
+            "errors": 1
+        }
+    
     try:
         session = SessionLocal()
         wix_service = WixApiService()
@@ -893,6 +927,20 @@ def launch_wix_sync():
     Returns:
         celery.result.AsyncResult: Результат выполнения задачи
     """
+    # Проверяем загрузку переменных Wix
+    wix_api_key = os.getenv("WIX_API_KEY")
+    wix_site_id = os.getenv("WIX_SITE_ID")
+    wix_account_id = os.getenv("WIX_ACCOUNT_ID")
+    
+    logger.info(f"Wix переменные окружения:")
+    logger.info(f"  WIX_API_KEY: {'Загружен' if wix_api_key else 'НЕ ЗАГРУЖЕН'}")
+    logger.info(f"  WIX_SITE_ID: {'Загружен' if wix_site_id else 'НЕ ЗАГРУЖЕН'}")
+    logger.info(f"  WIX_ACCOUNT_ID: {'Загружен' if wix_account_id else 'НЕ ЗАГРУЖЕН'}")
+    
+    if not wix_api_key or not wix_site_id:
+        logger.error("Критические переменные Wix не загружены!")
+        raise ValueError("Переменные WIX_API_KEY и WIX_SITE_ID должны быть установлены")
+    
     result = sync_wix_inventory.delay()
     logger.info(f"Запущена синхронизация Wix с ID задачи: {result.id}")
     return result
