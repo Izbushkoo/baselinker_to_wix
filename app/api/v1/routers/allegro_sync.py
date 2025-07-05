@@ -16,7 +16,7 @@ from app.models.allegro_order import (
     AllegroOrder, AllegroBuyer, AllegroLineItem, OrderLineItem
 )
 from app.services.allegro.data_access import get_token_by_id_sync, get_tokens_list_sync, get_token_by_id
-from app.celery_app import celery
+from app.celery_app import celery, launch_wix_sync
 from app.utils.date_utils import parse_date
 from app.api import deps
 from app.services.allegro.allegro_api_service import AsyncAllegroApiService
@@ -770,4 +770,29 @@ def stop_check_stock_task() -> Dict[str, Any]:
         return {"status": "success", "message": "Периодическая задача проверки стоков остановлена"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка при остановке задачи: {str(e)}")
+
+
+@router.post("/wix-sync")
+def run_wix_sync() -> Dict[str, Any]:
+    """
+    Запускает единоразовую синхронизацию количества товаров с Wix.
+    
+    Returns:
+        Dict[str, Any]: Результат запуска задачи
+    """
+    try:
+        result = launch_wix_sync()
+        
+        return {
+            "status": "success",
+            "message": "Синхронизация Wix запущена",
+            "task_id": result.id,
+            "task_status": "PENDING"
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при запуске синхронизации Wix: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при запуске синхронизации Wix: {str(e)}"
+        )
 
