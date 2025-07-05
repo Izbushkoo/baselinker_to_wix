@@ -762,6 +762,21 @@ def sync_wix_inventory():
         session = SessionLocal()
         wix_service = WixApiService()
         
+        # Тестируем подключение к Wix API
+        connection_test = wix_service.test_connection()
+        if connection_test["status"] == "error":
+            logger.error(f"Ошибка подключения к Wix API: {connection_test['message']}")
+            return {
+                "status": "error",
+                "message": f"Ошибка подключения к Wix API: {connection_test['message']}",
+                "total_products": 0,
+                "found_in_wix": 0,
+                "updated_in_wix": 0,
+                "errors": 1
+            }
+        
+        logger.info("Подключение к Wix API успешно установлено")
+        
         try:
             logger.info("Начало синхронизации количества товаров с Wix")
             

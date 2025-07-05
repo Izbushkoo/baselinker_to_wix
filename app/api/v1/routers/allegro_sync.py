@@ -796,3 +796,26 @@ def run_wix_sync() -> Dict[str, Any]:
             detail=f"Ошибка при запуске синхронизации Wix: {str(e)}"
         )
 
+
+@router.get("/wix-test-connection")
+def test_wix_connection() -> Dict[str, Any]:
+    """
+    Тестирует подключение к Wix API и валидность креденшиалов.
+    
+    Returns:
+        Dict[str, Any]: Результат тестирования подключения
+    """
+    try:
+        from app.services.wix_api_service.base import WixApiService
+        
+        wix_service = WixApiService()
+        result = wix_service.test_connection()
+        
+        return result
+    except Exception as e:
+        logger.error(f"Ошибка при тестировании подключения к Wix: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при тестировании подключения к Wix: {str(e)}"
+        )
+

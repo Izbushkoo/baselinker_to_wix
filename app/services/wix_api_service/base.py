@@ -239,11 +239,24 @@ class WixApiService:
         self.site_id = os.getenv("WIX_SITE_ID")
         self.account_id = os.getenv("WIX_ACCOUNT_ID")
         self.base_url = "https://www.wixapis.com"
+        
+        logger.info(f"Инициализация WixApiService:")
+        logger.info(f"  WIX_API_KEY: {'Загружен' if self.wix_api_key else 'НЕ ЗАГРУЖЕН'}")
+        logger.info(f"  WIX_SITE_ID: {self.site_id}")
+        logger.info(f"  WIX_ACCOUNT_ID: {self.account_id}")
+        logger.info(f"  Base URL: {self.base_url}")
+        
         self.headers = {
             "Authorization": self.wix_api_key,
             "Content-Type": "application/json",
             "wix-site-id": self.site_id,
         }
+        
+        # Проверяем критически важные параметры
+        if not self.wix_api_key:
+            raise ValueError("WIX_API_KEY не установлен")
+        if not self.site_id:
+            raise ValueError("WIX_SITE_ID не установлен")
 
     def _make_request(self, method: str, endpoint: str, payload: Optional[Dict] = None) -> Dict:
         """Базовый метод для выполнения запросов к API"""
@@ -273,6 +286,77 @@ class WixApiService:
             if payload:
                 logger.error(f"Payload: {json.dumps(payload, indent=2)}")
             raise WixApiError(f"Ошибка при выполнении запроса к Wix API: {str(e)}")
+
+    def test_connection(self) -> Dict[str, Any]:
+        """
+        Проверяет подключение к Wix API и валидность креденшиалов.
+        
+        Returns:
+            Dict[str, Any]: Результат проверки подключения
+        """
+        try:
+            logger.info("Тестирование подключения к Wix API...")
+            
+            # Сначала проверим базовый endpoint для сайта
+            logger.info("Проверка базового endpoint...")
+            try:
+                # Простой запрос для проверки доступности API
+                test_payload = {
+                    "query": {
+                        "paging": {
+                            "limit": 1
+                        }
+                    }
+                }
+                
+                response = self._make_request("POST", "stores-reader/v1/products/query", test_payload)
+                
+                logger.info("Подключение к Wix API успешно")
+                return {
+                    "status": "success",
+                    "message": "Подключение к Wix API успешно",
+                    "site_id": self.site_id,
+                    "account_id": self.account_id,
+                    "endpoint": "stores-reader/v1/products/query"
+                }
+                
+            except WixApiError as e:
+                logger.warning(f"Ошибка с основным endpoint: {str(e)}")
+                
+                # Попробуем альтернативный endpoint
+                logger.info("Пробуем альтернативный endpoint...")
+                try:
+                    alt_response = self._make_request("GET", "stores-reader/v1/products", None)
+                    
+                    logger.info("Подключение к Wix API успешно (альтернативный endpoint)")
+                    return {
+                        "status": "success",
+                        "message": "Подключение к Wix API успешно (альтернативный endpoint)",
+                        "site_id": self.site_id,
+                        "account_id": self.account_id,
+                        "endpoint": "stores-reader/v1/products"
+                    }
+                    
+                except WixApiError as alt_e:
+                    logger.error(f"Ошибка с альтернативным endpoint: {str(alt_e)}")
+                    raise e  # Возвращаем исходную ошибку
+            
+        except WixApiError as e:
+            logger.error(f"Ошибка подключения к Wix API: {str(e)}")
+            return {
+                "status": "error",
+                "message": f"Ошибка подключения к Wix API: {str(e)}",
+                "site_id": self.site_id,
+                "account_id": self.account_id
+            }
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка при тестировании подключения: {str(e)}")
+            return {
+                "status": "error",
+                "message": f"Неожиданная ошибка: {str(e)}",
+                "site_id": self.site_id,
+                "account_id": self.account_id
+            }
 
     def get_products_by_sku(self, sku_list: List[str], batch_size: int = 100) -> List[WixProductAPI]:
         """
