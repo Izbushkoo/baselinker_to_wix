@@ -3,7 +3,6 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from sqlmodel import Session, select
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy import func
 import os
 from dotenv import load_dotenv
@@ -20,8 +19,9 @@ if is_docker:
     print("Celery: Загружены переменные из .env.docker")
 
 from app.core.config import settings
-from celery import Celery, chord, group, chain
+from celery import chord, group, chain
 from celery.schedules import crontab, schedule
+from app.celery_shared import celery, SessionLocal, get_allegro_token
 
 from app.services.warehouse.manager import Warehouses
 from app.services import baselinker as BL
@@ -33,12 +33,9 @@ from app.services.tg_client import TelegramManager
 
 from app.services.allegro.order_service import SyncAllegroOrderService
 from app.services.allegro.allegro_api_service import SyncAllegroApiService, NotFoundDetails
-from app.database import engine
 
 import time
 from app.models.allegro_token import AllegroToken
-from app.services.allegro.tokens import check_token_sync
-from app.services.allegro.data_access import get_token_by_id_sync
 from app.utils.date_utils import parse_date
 from app.drive import authenticate_service_account, imperson_auth
 from app.utils.dump_utils import dump_and_upload_to_drive
@@ -164,30 +161,7 @@ class RedisScheduler(PersistentScheduler):
         self.app.conf.beat_schedule = new_schedule
         return self.app.conf.beat_schedule
 
-# Настройки брокера (Redis)
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
-
-celery = Celery(
-    "baselinker_to_wix",
-    broker=CELERY_BROKER_URL,
-    backend=CELERY_BROKER_URL,
-    include=["app.services.allegro.sync_tasks"]
-)
-
-celery.conf.result_backend = "redis://redis:6379/1"
-
-# Настройка Celery
-celery.conf.update(
-    task_serializer="json",
-    result_serializer="json",
-    accept_content=["json"],
-    timezone="UTC",
-    enable_utc=True,
-    worker_hijack_root_logger=False,  # Отключаем перехват root логгера
-    worker_log_format='[%(asctime)s: %(levelname)s/%(processName)s] %(message)s',
-    worker_task_log_format='[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s',
-    broker_connection_retry_on_startup=True  # Добавляем эту настройку для устранения предупреждения
-)
+# Настройки celery импортированы из celery_shared.py
 
 # Определяем расписание по умолчанию
 DEFAULT_BEAT_SCHEDULE = {
@@ -202,7 +176,7 @@ DEFAULT_BEAT_SCHEDULE = {
     'sync-wix-inventory': {
         'task': 'app.celery_app.sync_wix_inventory',
         'schedule': 3600,  # 1 час
-    },
+    }
 }
 
 def initialize_beat_schedule():
@@ -354,42 +328,7 @@ class RateLimiter:
 # Создаем глобальный rate limiter (6000 запросов в минуту)
 allegro_rate_limiter = RateLimiter(max_requests=6000, time_window=60)
 
-# Создаем фабрику сессий
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=Session)
-
-def get_allegro_token(session: Session, token_id: str) -> AllegroToken:
-    """
-    Получает и проверяет токен Allegro из базы данных.
-    
-    Args:
-        session: Сессия SQLModel
-        token_id: ID токена
-        
-    Returns:
-        AllegroToken: Проверенный и обновленный токен
-        
-    Raises:
-        ValueError: Если токен не найден или не удалось его проверить/обновить
-    """
-    # Получаем токен из базы
-    token = get_token_by_id_sync(session, token_id)
-    if not token:
-        raise ValueError(f"Токен Allegro с ID {token_id} не найден в базе данных")
-    
-    # Проверяем и при необходимости обновляем токен
-    result = check_token_sync(token_id)
-    if not result:
-        raise ValueError(f"Не удалось проверить/обновить токен с ID {token_id}")
-        
-    # Обновляем токен в сессии если он был обновлен
-    if result.get('access_token') != token.access_token:
-        token.access_token = result['access_token']
-        token.refresh_token = result['refresh_token']
-        session.add(token)
-        session.commit()
-        session.refresh(token)
-        
-    return token
+# SessionLocal и get_allegro_token импортированы из celery_shared.py
 
 
 @celery.task(name="app.backup_base")

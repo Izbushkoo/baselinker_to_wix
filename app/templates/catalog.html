@@ -48,7 +48,8 @@
             <div class="flex-1 m-0.5">
                 <input type="text"
                        id="stockFilter_mobile"
-                       placeholder="< 999"
+                       placeholder="Макс. остаток"
+                       title="Показать товары с остатком меньше указанного значения"
                        oninput="syncInputs(this, 'stockFilter_desktop'); handleFilterChange();"
                        class="w-full h-10 px-2 rounded border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm text-center"
                        pattern="[0-9]*"
@@ -58,7 +59,8 @@
             <div class="flex-1 m-0.5">
                 <input type="text"
                        id="minStockFilter_mobile"
-                       placeholder="> 999"
+                       placeholder="Мин. остаток"
+                       title="Показать товары с остатком больше или равно указанному значению"
                        oninput="syncInputs(this, 'minStockFilter_desktop'); handleFilterChange();"
                        class="w-full h-10 px-2 rounded border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm text-center"
                        pattern="[0-9]*"
@@ -109,7 +111,7 @@
 <div class="hidden sm:block">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div class="desktop-filters">
-            <div class="grid gap-4" style="grid-template-columns: 1fr 80px 80px 200px 200px 120px;">
+            <div class="grid gap-4" style="grid-template-columns: 1fr 100px 100px 200px 200px 120px;">
                 <div class="relative">
                     <input type="text"
                            id="searchInput_desktop"
@@ -120,22 +122,30 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
                     </svg>
                 </div>
-                <input type="text"
-                       id="stockFilter_desktop"
-                       placeholder="< 999"
-                       oninput="syncInputs(this, 'stockFilter_mobile'); handleFilterChange();"
-                       class="w-full px-2 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-center"
-                       pattern="[0-9]*"
-                       inputmode="numeric"
-                       maxlength="3">
-                <input type="text"
-                       id="minStockFilter_desktop"
-                       placeholder="> 999"
-                       oninput="syncInputs(this, 'minStockFilter_mobile'); handleFilterChange();"
-                       class="w-full px-2 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-center"
-                       pattern="[0-9]*"
-                       inputmode="numeric"
-                       maxlength="3">
+                <div class="relative">
+                    <input type="text"
+                           id="minStockFilter_desktop"
+                           placeholder="Мин."
+                           title="Показать товары с остатком больше или равно указанному значению"
+                           oninput="syncInputs(this, 'minStockFilter_mobile'); handleFilterChange();"
+                           class="w-full px-2 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-center"
+                           pattern="[0-9]*"
+                           inputmode="numeric"
+                           maxlength="3">
+                    <div class="absolute -top-5 left-1/2 transform -translate-x-1/2 text-xs text-gray-500"></div>
+                </div>
+                <div class="relative">
+                    <input type="text"
+                           id="stockFilter_desktop"
+                           placeholder="Макс."
+                           title="Показать товары с остатком меньше указанного значения"
+                           oninput="syncInputs(this, 'stockFilter_mobile'); handleFilterChange();"
+                           class="w-full px-2 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-center"
+                           pattern="[0-9]*"
+                           inputmode="numeric"
+                           maxlength="3">
+                    <div class="absolute -top-5 left-1/2 transform -translate-x-1/2 text-xs text-gray-500"></div>
+                </div>
                 <select id="brandFilter_desktop"
                         onchange="syncInputs(this, 'brandFilter_mobile'); handleFilterChange();"
                         class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
@@ -336,13 +346,15 @@ async function handleFilterChange() {
             if (pageSize) params.append('page_size', pageSize);
             params.append('page', '1');
             
-            // Обработка stock_filter (меньше чем)
-            const stockFilter = stockFilterValue === '' ? -1 : parseInt(stockFilterValue);
-            params.append('stock_filter', stockFilter.toString());
+            // Обработка stock_filter (меньше чем) - добавляем только если поле заполнено
+            if (stockFilterValue !== '' && !isNaN(parseInt(stockFilterValue))) {
+                params.append('stock_filter', parseInt(stockFilterValue).toString());
+            }
             
-            // Обработка min_stock_filter (больше чем)
-            const minStockFilter = minStockFilterValue === '' ? -1 : parseInt(minStockFilterValue);
-            params.append('min_stock_filter', minStockFilter.toString());
+            // Обработка min_stock_filter (больше чем) - добавляем только если поле заполнено
+            if (minStockFilterValue !== '' && !isNaN(parseInt(minStockFilterValue))) {
+                params.append('min_stock_filter', parseInt(minStockFilterValue).toString());
+            }
             
             // Добавляем brand_filter только если он не пустой
             if (brandFilter) params.append('brand_filter', brandFilter);
@@ -479,10 +491,17 @@ async function goToPage(page) {
         search: search,
         page_size: pageSize,
         page: page,
-        stock_filter: stockFilterValue.trim() === '' ? -1 : parseInt(stockFilterValue),
-        min_stock_filter: minStockFilterValue.trim() === '' ? -1 : parseInt(minStockFilterValue),
         sort_order: sortOrder
     });
+    
+    // Добавляем фильтры только если они заполнены
+    if (stockFilterValue.trim() !== '' && !isNaN(parseInt(stockFilterValue))) {
+        params.append('stock_filter', parseInt(stockFilterValue).toString());
+    }
+    
+    if (minStockFilterValue.trim() !== '' && !isNaN(parseInt(minStockFilterValue))) {
+        params.append('min_stock_filter', parseInt(minStockFilterValue).toString());
+    }
     
     // Добавляем brand_filter только если он не пустой
     if (brandFilter) params.append('brand_filter', brandFilter);

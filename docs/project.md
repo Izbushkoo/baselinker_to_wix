@@ -1111,6 +1111,57 @@ graph TD
 #### Celery задачи:
 - `sync_wix_inventory` - Основная задача синхронизации
 
+## Архитектура модулей Celery
+
+### Обзор архитектуры
+После рефакторинга (2024-12-20) архитектура модулей Celery была оптимизирована для устранения циклических зависимостей:
+
+#### Модули и их ответственность:
+
+1. **app/celery_shared.py** - Общие объекты Celery
+   - Инициализация и настройка Celery
+   - Фабрика сессий базы данных (SessionLocal)
+   - Функция получения токенов Allegro (get_allegro_token)
+   - Загрузка переменных окружения
+   - Базовые настройки брокера и бэкенда
+
+2. **app/celery_app.py** - Определения задач Celery
+   - Все Celery задачи и их реализация
+   - Планировщик задач (RedisScheduler)
+   - Инициализация расписания задач
+   - Rate Limiter для API запросов
+   - Служебные функции для обработки данных
+
+3. **app/services/allegro/sync_tasks.py** - Задачи синхронизации Allegro
+   - Специализированные задачи для синхронизации остатков
+   - Импорт общих объектов из celery_shared
+   - Интеграция с warehouse manager
+
+#### Решенные проблемы:
+- **Устранен круговой импорт**: app/celery_app.py → app/services/warehouse/manager.py → app/services/allegro/sync_tasks.py → app/celery_app.py
+- **Разделены обязанности**: общие объекты вынесены в отдельный модуль
+- **Повышена стабильность**: исключена ошибка "partially initialized module"
+
+#### Диаграмма зависимостей:
+
+```mermaid
+graph TD
+    A[app/celery_shared.py] --> B[app/celery_app.py]
+    A --> C[app/services/allegro/sync_tasks.py]
+    D[app/services/warehouse/manager.py] --> C
+    B --> E[Redis Scheduler]
+    B --> F[Task Definitions]
+    A --> G[Celery Instance]
+    A --> H[SessionLocal]
+    A --> I[get_allegro_token]
+```
+
+### Преимущества новой архитектуры:
+- **Отсутствие циклических зависимостей**
+- **Четкое разделение ответственности**
+- **Легкость тестирования и отладки**
+- **Возможность независимого развития модулей**
+
 ## Celery задачи
 
 ### sync_wix_inventory

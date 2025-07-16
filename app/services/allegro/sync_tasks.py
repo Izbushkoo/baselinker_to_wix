@@ -5,7 +5,7 @@
  * @created: 2024-06-13
 """
 
-from app.celery_app import celery, SessionLocal, get_allegro_token
+from app.celery_shared import celery, SessionLocal, get_allegro_token
 from app.models.allegro_token import AllegroToken
 from app.services.warehouse.manager import get_manager
 from app.services.allegro.rate_limiter import AllegroRateLimiter

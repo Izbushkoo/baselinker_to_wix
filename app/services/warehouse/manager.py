@@ -14,6 +14,7 @@ import openpyxl
 from PIL import Image
 import io
 
+from app.celery_shared import celery
 from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.core.config import settings
 from app.services.operations_service import OperationsService, get_operations_service
@@ -166,9 +167,13 @@ class InventoryManager:
             
         if stock.quantity < quantity:
             raise ValueError(f'Недостаточно товара на складе {warehouse}. Запрошено: {quantity}, доступно: {stock.quantity}')
-            
+
         stock.quantity -= quantity
         session.add(stock)
+        session.commit()
+        # Запускаем задачу синхронизации Allegro по имени (без импорта)
+        celery.send_task('app.services.allegro.sync_tasks.sync_allegro_stock_single_product', args=[sku])
+        
         return stock
 
     def remove_from_warehouse(self, sku: str, warehouse: str, quantity: int):
@@ -178,7 +183,6 @@ class InventoryManager:
         try:
             with Session(self.engine) as session:
                 self._remove_from_warehouse_base(session, sku, warehouse, quantity)
-                session.commit()
                 
                 logger.info(f'Успешно списано {quantity} единиц товара {sku} со склада {warehouse}')
                 

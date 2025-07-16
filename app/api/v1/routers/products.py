@@ -45,6 +45,16 @@ async def catalog(
     if not current_user:
         return RedirectResponse(url=f"/login?next=/catalog", status_code=302)
 
+    # Логирование параметров запроса
+    logger.info(f"Catalog request parameters: search={search}, stock_filter={stock_filter}, min_stock_filter={min_stock_filter}, brand_filter={brand_filter}, sort_order={sort_order}")
+
+    # Валидация и автоматическая коррекция фильтров
+    if (stock_filter is not None and min_stock_filter is not None and 
+        stock_filter < min_stock_filter):
+        logger.warning(f"Некорректные значения фильтров: stock_filter={stock_filter} < min_stock_filter={min_stock_filter}. Меняю местами.")
+        stock_filter, min_stock_filter = min_stock_filter, stock_filter
+        logger.info(f"Исправленные параметры: stock_filter={stock_filter}, min_stock_filter={min_stock_filter}")
+
     # Базовый запрос для товаров с подсчетом остатков
     base_query = (
         select(
@@ -66,17 +76,21 @@ async def catalog(
             )
         )
 
+    # Собираем условия фильтров по количеству
+    having_conditions = []
+
     # Фильтр по максимальному количеству
-    if stock_filter is not None and stock_filter >= 0:
-        base_query = base_query.having(
-            func.coalesce(func.sum(Stock.quantity), 0) < stock_filter
-        )
+    if stock_filter is not None:
+        having_conditions.append(func.coalesce(func.sum(Stock.quantity), 0) < stock_filter)
 
     # Фильтр по минимальному количеству
-    if min_stock_filter is not None and min_stock_filter >= 0:
-        base_query = base_query.having(
-            func.coalesce(func.sum(Stock.quantity), 0) >= min_stock_filter
-        )
+    if min_stock_filter is not None:
+        having_conditions.append(func.coalesce(func.sum(Stock.quantity), 0) >= min_stock_filter)
+
+    # Применяем условия, если они есть
+    if having_conditions:
+        from sqlalchemy import and_
+        base_query = base_query.having(and_(*having_conditions))
 
     # Фильтр по бренду
     if brand_filter:
