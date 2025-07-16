@@ -383,7 +383,8 @@ class SyncAllegroApiService(BaseAllegroApiService):
             for external_id in external_ids:
                 if len(external_id) > 100:
                     raise ValueError("Длина external.id не должна превышать 100 символов")
-                params["external.id"] = external_ids
+            # Передаем список external_ids как отдельные параметры
+            params["external.id"] = external_ids
 
         if sort:
             params["sort"] = sort
@@ -402,6 +403,116 @@ class SyncAllegroApiService(BaseAllegroApiService):
             return response.json()
         except httpx.HTTPError as e:
             raise ValueError(f"Ошибка при получении офферов: {str(e)}")
+
+    def update_offer_stock(
+        self,
+        token: str,
+        offer_id: str,
+        stock_available: int
+    ) -> Dict[str, Any]:
+        """
+        Обновляет остаток товара в оффере через групповую операцию изменения количества.
+        
+        Args:
+            token: Токен доступа
+            offer_id: ID оффера для обновления
+            stock_available: Количество доступного товара
+            
+        Returns:
+            Dict[str, Any]: Ответ от API
+            
+        Raises:
+            ValueError: При ошибке обновления остатка
+        """
+        import uuid
+        
+        # Генерируем уникальный UUID для команды
+        command_id = str(uuid.uuid4())
+        
+        # Подготавливаем данные для групповой операции изменения количества
+        update_data = {
+            "modification": {
+                "changeType": "FIXED",  # Устанавливаем точное количество
+                "value": stock_available
+            },
+            "offerCriteria": [{
+                "type": "CONTAINS_OFFERS",
+                "offers": [{
+                    "id": offer_id
+                }]
+            }]
+        }
+        
+        # Заголовки для PUT запроса
+        headers = self._get_headers(token)
+        headers["Content-Type"] = "application/vnd.allegro.public.v1+json"
+        
+        try:
+            response = self.client.put(
+                f"/sale/offer-quantity-change-commands/{command_id}",
+                headers=headers,
+                json=update_data
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise ValueError(f"Ошибка при обновлении остатка оффера {offer_id}: {str(e)}")
+
+    def update_offer(
+        self,
+        token: str,
+        offer_id: str,
+        stock_available: Optional[int] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Обновляет оффер через PATCH запрос (устаревший метод).
+        Для обновления остатков используйте update_offer_stock.
+        
+        Args:
+            token: Токен доступа
+            offer_id: ID оффера для обновления
+            stock_available: Количество доступного товара
+            **kwargs: Дополнительные параметры для обновления
+            
+        Returns:
+            Dict[str, Any]: Ответ от API
+            
+        Raises:
+            ValueError: При ошибке обновления оффера
+        """
+        # Если только обновляем остаток, используем новый метод
+        if stock_available is not None and not kwargs:
+            return self.update_offer_stock(token, offer_id, stock_available)
+        
+        # Подготавливаем данные для обновления
+        update_data = {}
+        
+        if stock_available is not None:
+            update_data["stock"] = {
+                "available": stock_available
+            }
+        
+        # Добавляем дополнительные параметры
+        update_data.update(kwargs)
+        
+        if not update_data:
+            raise ValueError("Не указаны данные для обновления")
+        
+        # Заголовки для PATCH запроса
+        headers = self._get_headers(token)
+        headers["Content-Type"] = "application/vnd.allegro.public.v1+json"
+        
+        try:
+            response = self.client.patch(
+                f"/sale/offers/{offer_id}",
+                headers=headers,
+                json=update_data
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise ValueError(f"Ошибка при обновлении оффера {offer_id}: {str(e)}")
 
 class AsyncAllegroApiService(BaseAllegroApiService):
     def __init__(self, base_url: str = "https://api.allegro.pl"):
@@ -627,7 +738,8 @@ class AsyncAllegroApiService(BaseAllegroApiService):
             for external_id in external_ids:
                 if len(external_id) > 100:
                     raise ValueError("Длина external.id не должна превышать 100 символов")
-                params["external.id"] = external_ids
+            # Передаем список external_ids как отдельные параметры
+            params["external.id"] = external_ids
 
         if sort:
             params["sort"] = sort
@@ -647,4 +759,56 @@ class AsyncAllegroApiService(BaseAllegroApiService):
                 return response.json()
         except httpx.HTTPError as e:
             raise ValueError(f"Ошибка при получении офферов: {str(e)}")
+
+    async def update_offer(
+        self,
+        token: str,
+        offer_id: str,
+        stock_available: Optional[int] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Асинхронная версия обновления оффера через PATCH запрос.
+        
+        Args:
+            token: Токен доступа
+            offer_id: ID оффера для обновления
+            stock_available: Количество доступного товара
+            **kwargs: Дополнительные параметры для обновления
+            
+        Returns:
+            Dict[str, Any]: Ответ от API
+            
+        Raises:
+            ValueError: При ошибке обновления оффера
+        """
+        # Подготавливаем данные для обновления
+        update_data = {}
+        
+        if stock_available is not None:
+            update_data["stock"] = {
+                "available": stock_available
+            }
+        
+        # Добавляем дополнительные параметры
+        update_data.update(kwargs)
+        
+        if not update_data:
+            raise ValueError("Не указаны данные для обновления")
+        
+        # Заголовки для PATCH запроса
+        headers = self._get_headers(token)
+        headers["Content-Type"] = "application/vnd.allegro.public.v1+json"
+        
+        try:
+            async with self.client as client:
+                response = await client.patch(
+                    f"/sale/offers/{offer_id}",
+                    headers=headers,
+                    json=update_data
+                )
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPError as e:
+            raise ValueError(f"Ошибка при обновлении оффера {offer_id}: {str(e)}")
 

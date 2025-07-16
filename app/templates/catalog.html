@@ -41,18 +41,37 @@
             <div class="flex-1 m-0.5">
                 <input type="text"
                        id="searchInput_mobile"
-                       placeholder="Поиск по названию, SKU или EAN"
+                       placeholder="Поиск по названию, SKU, EAN"
                        oninput="syncInputs(this, 'searchInput_desktop'); handleFilterChange();"
                        class="w-full h-10 px-2 rounded border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm">
             </div>
             <div class="flex-1 m-0.5">
                 <input type="text"
                        id="stockFilter_mobile"
-                       placeholder="Остаток меньше чем"
+                       placeholder="< 999"
                        oninput="syncInputs(this, 'stockFilter_desktop'); handleFilterChange();"
-                       class="w-full h-10 px-2 rounded border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm"
+                       class="w-full h-10 px-2 rounded border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm text-center"
                        pattern="[0-9]*"
-                       inputmode="numeric">
+                       inputmode="numeric"
+                       maxlength="3">
+            </div>
+            <div class="flex-1 m-0.5">
+                <input type="text"
+                       id="minStockFilter_mobile"
+                       placeholder="> 999"
+                       oninput="syncInputs(this, 'minStockFilter_desktop'); handleFilterChange();"
+                       class="w-full h-10 px-2 rounded border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm text-center"
+                       pattern="[0-9]*"
+                       inputmode="numeric"
+                       maxlength="3">
+            </div>
+            <div class="flex-1 m-0.5">
+                <select id="brandFilter_mobile"
+                        onchange="syncInputs(this, 'brandFilter_desktop'); handleFilterChange();"
+                        class="w-full h-10 px-2 rounded border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm">
+                    <option value="">Все бренды</option>
+                    <!-- Бренды будут загружены динамически -->
+                </select>
             </div>
             <div class="flex-1 m-0.5">
                 <select id="sortOrder_mobile"
@@ -90,11 +109,11 @@
 <div class="hidden sm:block">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div class="desktop-filters">
-            <div class="grid grid-cols-4 gap-4">
+            <div class="grid gap-4" style="grid-template-columns: 1fr 80px 80px 200px 200px 120px;">
                 <div class="relative">
                     <input type="text"
                            id="searchInput_desktop"
-                           placeholder="Поиск по названию, SKU или EAN"
+                           placeholder="Поиск по названию, SKU, EAN"
                            oninput="syncInputs(this, 'searchInput_mobile'); handleFilterChange();"
                            class="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
                     <svg class="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -103,11 +122,26 @@
                 </div>
                 <input type="text"
                        id="stockFilter_desktop"
-                       placeholder="Остаток меньше чем"
+                       placeholder="< 999"
                        oninput="syncInputs(this, 'stockFilter_mobile'); handleFilterChange();"
-                       class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                       class="w-full px-2 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-center"
                        pattern="[0-9]*"
-                       inputmode="numeric">
+                       inputmode="numeric"
+                       maxlength="3">
+                <input type="text"
+                       id="minStockFilter_desktop"
+                       placeholder="> 999"
+                       oninput="syncInputs(this, 'minStockFilter_mobile'); handleFilterChange();"
+                       class="w-full px-2 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-center"
+                       pattern="[0-9]*"
+                       inputmode="numeric"
+                       maxlength="3">
+                <select id="brandFilter_desktop"
+                        onchange="syncInputs(this, 'brandFilter_mobile'); handleFilterChange();"
+                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                    <option value="">Все бренды</option>
+                    <!-- Бренды будут загружены динамически -->
+                </select>
                 <select id="sortOrder_desktop"
                         onchange="syncInputs(this, 'sortOrder_mobile'); handleFilterChange();"
                         class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
@@ -242,6 +276,8 @@ function getActiveFormElements() {
         searchInput: document.getElementById('searchInput' + suffix),
         pageSizeSelect: document.getElementById('pageSize' + suffix),
         stockFilterInput: document.getElementById('stockFilter' + suffix),
+        minStockFilterInput: document.getElementById('minStockFilter' + suffix),
+        brandFilterSelect: document.getElementById('brandFilter' + suffix),
         sortOrderSelect: document.getElementById('sortOrder' + suffix)
     };
 }
@@ -257,15 +293,19 @@ async function handleFilterChange() {
                 searchInput,
                 pageSizeSelect,
                 stockFilterInput,
+                minStockFilterInput,
+                brandFilterSelect,
                 sortOrderSelect
             } = getActiveFormElements();
             
             // Проверяем наличие элементов
-            if (!searchInput || !pageSizeSelect || !stockFilterInput || !sortOrderSelect) {
+            if (!searchInput || !pageSizeSelect || !stockFilterInput || !minStockFilterInput || !brandFilterSelect || !sortOrderSelect) {
                 console.error('Не найдены активные элементы формы:', {
                     searchInput: !!searchInput,
                     pageSizeSelect: !!pageSizeSelect,
                     stockFilterInput: !!stockFilterInput,
+                    minStockFilterInput: !!minStockFilterInput,
+                    brandFilterSelect: !!brandFilterSelect,
                     sortOrderSelect: !!sortOrderSelect
                 });
                 return;
@@ -275,12 +315,16 @@ async function handleFilterChange() {
             const search = searchInput.value.trim();
             const pageSize = pageSizeSelect.value;
             const stockFilterValue = stockFilterInput.value.trim();
+            const minStockFilterValue = minStockFilterInput.value.trim();
+            const brandFilter = brandFilterSelect.value;
             const sortOrder = sortOrderSelect.value;
             
             console.log('Исходные значения:', {
                 search,
                 pageSize,
                 stockFilterValue,
+                minStockFilterValue,
+                brandFilter,
                 sortOrder
             });
             
@@ -292,9 +336,16 @@ async function handleFilterChange() {
             if (pageSize) params.append('page_size', pageSize);
             params.append('page', '1');
             
-            // Обработка stock_filter
+            // Обработка stock_filter (меньше чем)
             const stockFilter = stockFilterValue === '' ? -1 : parseInt(stockFilterValue);
             params.append('stock_filter', stockFilter.toString());
+            
+            // Обработка min_stock_filter (больше чем)
+            const minStockFilter = minStockFilterValue === '' ? -1 : parseInt(minStockFilterValue);
+            params.append('min_stock_filter', minStockFilter.toString());
+            
+            // Добавляем brand_filter только если он не пустой
+            if (brandFilter) params.append('brand_filter', brandFilter);
             
             // Добавляем sort_order только если он не пустой
             if (sortOrder) params.append('sort_order', sortOrder);
@@ -420,6 +471,8 @@ async function goToPage(page) {
     const search = document.getElementById('searchInput_desktop').value;
     const pageSize = document.getElementById('pageSize_desktop').value;
     const stockFilterValue = document.getElementById('stockFilter_desktop').value;
+    const minStockFilterValue = document.getElementById('minStockFilter_desktop').value;
+    const brandFilter = document.getElementById('brandFilter_desktop').value;
     const sortOrder = document.getElementById('sortOrder_desktop').value || '';
     
     const params = new URLSearchParams({
@@ -427,8 +480,12 @@ async function goToPage(page) {
         page_size: pageSize,
         page: page,
         stock_filter: stockFilterValue.trim() === '' ? -1 : parseInt(stockFilterValue),
+        min_stock_filter: minStockFilterValue.trim() === '' ? -1 : parseInt(minStockFilterValue),
         sort_order: sortOrder
     });
+    
+    // Добавляем brand_filter только если он не пустой
+    if (brandFilter) params.append('brand_filter', brandFilter);
     
         const response = await fetch(`/catalog?${params.toString()}`, {
             headers: {
@@ -607,6 +664,51 @@ function handleCheckboxChange(checkbox) {
     updateExportButton();
 }
 
+// Функция для загрузки списка брендов
+async function loadBrands() {
+    try {
+        const response = await fetch('/api/products/brands');
+        if (!response.ok) {
+            throw new Error('Ошибка при загрузке брендов');
+        }
+        
+        const data = await response.json();
+        const brands = data.brands || [];
+        
+        // Обновляем оба выпадающих списка
+        const brandSelects = [
+            document.getElementById('brandFilter_desktop'),
+            document.getElementById('brandFilter_mobile')
+        ];
+        
+        brandSelects.forEach(select => {
+            if (select) {
+                // Очищаем текущие опции (кроме "Все бренды")
+                const defaultOption = select.querySelector('option[value=""]');
+                select.innerHTML = '';
+                if (defaultOption) {
+                    select.appendChild(defaultOption);
+                } else {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = 'Все бренды';
+                    select.appendChild(option);
+                }
+                
+                // Добавляем бренды
+                brands.forEach(brand => {
+                    const option = document.createElement('option');
+                    option.value = brand;
+                    option.textContent = brand;
+                    select.appendChild(option);
+                });
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка при загрузке брендов:', error);
+    }
+}
+
 // Инициализация обработчиков при загрузке страницы
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOMContentLoaded event fired');
@@ -652,6 +754,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Инициализация состояния при загрузке
     deselectAllProducts();
     updateExportButton();
+    
+    // Загружаем список брендов
+    loadBrands();
     
     // Устанавливаем сохраненное значение количества товаров
     const pageSizeSelect = document.getElementById('pageSize_desktop');

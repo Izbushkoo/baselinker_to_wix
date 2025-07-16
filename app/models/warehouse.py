@@ -12,6 +12,8 @@ class Product(SQLModel, table=True):
     eans: List[str] = Field(sa_column=Column(JSONB), default_factory=list)
     name: str
     image: Optional[bytes] = Field(sa_column=Column(LargeBinary), default=None)
+    is_sync_enabled: bool = Field(default=True, description="Разрешена ли синхронизация товара")
+    brand: Optional[str] = Field(default=None, description="Бренд товара")
     
     # Связи с другими таблицами
     stocks: List["Stock"] = Relationship(

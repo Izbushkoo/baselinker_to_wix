@@ -170,7 +170,8 @@ CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
 celery = Celery(
     "baselinker_to_wix",
     broker=CELERY_BROKER_URL,
-    backend=CELERY_BROKER_URL
+    backend=CELERY_BROKER_URL,
+    include=["app.services.allegro.sync_tasks"]
 )
 
 celery.conf.result_backend = "redis://redis:6379/1"

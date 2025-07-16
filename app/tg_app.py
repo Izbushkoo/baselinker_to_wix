@@ -309,6 +309,7 @@ async def tg_catalog_api(
     search: Optional[str] = None,
     stock_filter: Optional[int] = None,
     min_stock_filter: Optional[int] = None,
+    brand_filter: Optional[str] = None,
     sort_order: Optional[str] = None,
     db: AsyncSession = Depends(deps.get_async_session),
     current_user: Optional[User] = Depends(deps.get_current_user_optional)
@@ -348,6 +349,10 @@ async def tg_catalog_api(
         base_query = base_query.having(
             func.coalesce(func.sum(Stock.quantity), 0) >= min_stock_filter
         )
+
+    # Фильтр по бренду
+    if brand_filter:
+        base_query = base_query.where(Product.brand == brand_filter)
 
     # Создаем подзапрос для корректного подсчета общего количества
     subquery = base_query.subquery()

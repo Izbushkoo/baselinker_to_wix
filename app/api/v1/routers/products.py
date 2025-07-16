@@ -9,6 +9,7 @@ import base64
 from sqlalchemy import or_, text, bindparam
 from fastapi.templating import Jinja2Templates
 from app.api import deps
+from app.api.v1.routers.allegro_sync import get_sync_status
 from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.models.user import User
 from app.services.warehouse.manager import Warehouses
@@ -32,6 +33,7 @@ async def catalog(
     search: Optional[str] = None,
     stock_filter: Optional[int] = None,
     min_stock_filter: Optional[int] = None,
+    brand_filter: Optional[str] = None,
     sort_order: Optional[str] = None,
     db: AsyncSession = Depends(deps.get_async_session),
     current_user: User = Depends(deps.get_current_user_optional)
@@ -75,6 +77,10 @@ async def catalog(
         base_query = base_query.having(
             func.coalesce(func.sum(Stock.quantity), 0) >= min_stock_filter
         )
+
+    # Фильтр по бренду
+    if brand_filter:
+        base_query = base_query.where(Product.brand == brand_filter)
 
     # Создаем подзапрос для корректного подсчета общего количества
     subquery = base_query.subquery()
@@ -121,6 +127,8 @@ async def catalog(
             "id": product.sku,
             "sku": product.sku,
             "name": product.name,
+            "brand": product.brand,
+            "is_sync_enabled": product.is_sync_enabled,
             "eans": product.eans,
             "ean": product.eans[0] if product.eans else None,
             "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
@@ -276,6 +284,7 @@ async def edit_product_form(
     product_data = {
         "sku": product.sku,
         "name": product.name,
+        "brand": product.brand or "",
         "ean": ", ".join(product.eans) if product.eans else "",
         "current_image": base64.b64encode(product.image).decode('utf-8') if product.image else None
     }
@@ -474,6 +483,7 @@ async def update_product(
     request: Request,
     name: Optional[str] = Form(None),
     new_sku: Optional[str] = Form(None),
+    brand: Optional[str] = Form(None),
     ean: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(deps.get_async_session),
@@ -504,6 +514,7 @@ async def update_product(
         old_values = {
             "sku": product.sku,
             "name": product.name,
+            "brand": product.brand,
             "eans": product.eans.copy() if product.eans else []
         }
         
@@ -523,6 +534,9 @@ async def update_product(
         
         if new_sku is not None:
             product.sku = new_sku
+        
+        if brand is not None:
+            product.brand = brand if brand.strip() else None
         
         if ean is not None:
             # Разбиваем строку EAN по запятой и очищаем от пробелов
@@ -572,6 +586,7 @@ async def update_product(
         new_values = {
             "sku": product.sku,
             "name": product.name,
+            "brand": product.brand,
             "eans": product.eans.copy() if product.eans else []
         }
         
@@ -590,4 +605,84 @@ async def update_product(
         raise HTTPException(
             status_code=400,
             detail=f"Не удалось обновить товар: {str(e)}"
+        )
+
+
+@router.post("/{sku}/sync-allegro-toggle")
+async def sync_allegro_toggle(
+    sku: str,
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional),
+    operations_service: OperationsService = Depends(get_operations_service)
+):
+    """
+    Переключает флаг синхронизации товара и, если включено, запускает синхронизацию с Allegro (ждёт результат задачи).
+    Возвращает новый статус флага, сообщение и результат синхронизации (если была).
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Недостаточно прав для изменения настроек синхронизации"
+        )
+    try:
+        # Получаем товар
+        product_query = select(Product).where(Product.sku == sku)
+        result = await db.exec(product_query)
+        product = result.first()
+        if not product:
+            raise HTTPException(status_code=404, detail="Товар не найден")
+        # Переключаем флаг
+        product.is_sync_enabled = not product.is_sync_enabled
+        await db.commit()
+        await db.refresh(product)
+        logger.info(f"Флаг синхронизации для товара {sku} изменен: -> {product.is_sync_enabled}")
+        # Логируем операцию
+        # operations_service.create_product_sync_toggle_operation(...)
+        # Если включили — запускаем синхронизацию и ждём результат
+        sync_result = None
+        if product.is_sync_enabled:
+            from app.services.allegro.sync_tasks import sync_allegro_stock_single_product
+            # Запускаем задачу и ждём результат (timeout 20 сек)
+            task = sync_allegro_stock_single_product.apply_async((sku,))
+            try:
+                sync_result = task.get(timeout=20)
+                logger.info(f"Синхронизация товара {sku} завершена: {sync_result}")
+            except Exception as e:
+                logger.error(f"Ошибка ожидания результата синхронизации: {e}")
+                sync_result = {"success": False, "error": str(e)}
+        return {
+            "success": True,
+            "message": f"Синхронизация для товара {sku} {'включена' if product.is_sync_enabled else 'выключена'}",
+            "is_sync_enabled": product.is_sync_enabled,
+            "sync_result": sync_result
+        }
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Ошибка при переключении флага/синхронизации для товара {sku}: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Не удалось изменить настройки синхронизации/запустить синхронизацию: {str(e)}"
+        )
+
+@router.get("/brands")
+async def get_brands(
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_from_cookie)
+):
+    """
+    Получение списка уникальных брендов товаров
+    """
+    try:
+        # Получаем уникальные бренды, исключая NULL значения
+        query = select(Product.brand).where(Product.brand.is_not(None)).distinct().order_by(Product.brand)
+        result = await db.exec(query)
+        brands = result.all()
+        
+        # Возвращаем список брендов
+        return {"brands": [brand for brand in brands if brand and brand.strip()]}
+    except Exception as e:
+        logger.error(f"Ошибка при получении списка брендов: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Не удалось получить список брендов: {str(e)}"
         )
