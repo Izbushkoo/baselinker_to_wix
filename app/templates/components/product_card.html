@@ -50,40 +50,82 @@
             </div>
             <!-- Правая часть -->
             <div class="flex-shrink-0 text-right flex flex-col items-end gap-2">
-                <!-- Синхронизация с Allegro -->
+                <!-- Управление синхронизацией Allegro -->
                 <div class="flex items-center gap-2">
-                    <span class="text-xs font-medium text-gray-600">Синхронизация остатков:</span>
+                    <span class="text-xs font-medium text-gray-600">Синхронизация Allegro:</span>
                     {% if current_user and current_user.is_admin %}
                     <button type="button"
-                            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 {% if product['is_sync_enabled'] %}bg-green-600{% else %}bg-gray-200{% endif %}"
-                            onclick="syncAllegroToggle(this, '{{ product.sku }}')"
-                            title="Автоматическая синхронизация остатков товара с офферами Allegro. При включении система будет автоматически обновлять количество товара во всех существующих офферах на всех подключенных аккаунтах Allegro при изменении остатков на складе.">
-                        <span class="sr-only">Переключить синхронизацию</span>
-                        <span class="inline-block h-4 w-4 transform rounded-full bg-white transition {% if product['is_sync_enabled'] %}translate-x-6{% else %}translate-x-1{% endif %}"></span>
+                            onclick="window.location.href='/products/{{ product.sku }}/manage'"
+                            class="inline-flex items-center px-3 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded-md hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+                            title="Управление настройками синхронизации с аккаунтами Allegro">
+                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                        Управление
                     </button>
                     {% else %}
-                    <span class="inline-block w-3 h-3 rounded-full mt-1 {% if product['is_sync_enabled'] %}bg-green-500{% else %}bg-gray-400{% endif %}" 
-                          title="Синхронизация с Allegro {{ 'включена' if product['is_sync_enabled'] else 'выключена' }}. Автоматически обновляет остатки товара во всех офферах на всех аккаунтах Allegro."></span>
+                    <button type="button"
+                            onclick="window.location.href='/products/{{ product.sku }}/manage'"
+                            class="inline-flex items-center px-3 py-1 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+                            title="Просмотр настроек синхронизации с аккаунтами Allegro">
+                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                        </svg>
+                        Просмотр
+                    </button>
                     {% endif %}
                 </div>
-                <div class="flex items-center gap-2 justify-end">
-                    <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
-                        {% if product['total_stock'] == 0 %}
-                            bg-red-50 text-red-700
-                        {% elif product['total_stock'] <= 5 %}
-                            bg-yellow-50 text-yellow-700
-                        {% else %}
-                            bg-green-50 text-green-700
-                        {% endif %}">
-                        {% if product['total_stock'] == 0 %}
-                            Нет в наличии
-                        {% elif product['total_stock'] <= 5 %}
-                            Заканчивается
-                        {% else %}
-                            В наличии
-                        {% endif %}
+                            <div class="flex items-center gap-2 justify-end">
+                <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+                    {% if product['total_stock'] == 0 %}
+                        bg-red-50 text-red-700
+                    {% elif product['total_stock'] <= 5 %}
+                        bg-yellow-50 text-yellow-700
+                    {% else %}
+                        bg-green-50 text-green-700
+                    {% endif %}">
+                    {% if product['total_stock'] == 0 %}
+                        Нет в наличии
+                    {% elif product['total_stock'] <= 5 %}
+                        Заканчивается
+                    {% else %}
+                        В наличии
+                    {% endif %}
+                </span>
+            </div>
+            <!-- Блок с ценой -->
+            <div class="mt-2 flex items-center gap-2">
+                <span class="text-sm font-medium text-gray-700">Мин. цена:</span>
+                {% if product.get('min_price') is not none %}
+                    <span class="text-lg font-bold text-blue-600">
+                        {{ "%.2f"|format(product['min_price']) }} PLN
                     </span>
-                </div>
+                    {% if current_user and current_user.is_admin %}
+                        <button type="button"
+                                onclick="editPrice('{{ product.sku }}', '{{ product.min_price }}')"
+                                class="ml-2 text-blue-600 hover:text-blue-800"
+                                title="Редактировать цену">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                        </button>
+                    {% endif %}
+                {% else %}
+                    <span class="text-sm text-gray-500">Не указана</span>
+                    {% if current_user and current_user.is_admin %}
+                        <button type="button"
+                                onclick="editPrice('{{ product.sku }}', '')"
+                                class="ml-2 text-green-600 hover:text-green-800"
+                                title="Добавить цену">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                            </svg>
+                        </button>
+                    {% endif %}
+                {% endif %}
+            </div>
                 <div class="mt-1 text-lg font-bold text-gray-900">
                     {{ product['total_stock'] }} шт.
                 </div>
@@ -212,6 +254,8 @@
     </div>
   </div>
 </div>
+
+
 
 <!-- В конец файла добавим JavaScript для обработки списания -->
 <script>
@@ -485,67 +529,8 @@ function editProduct(button) {
     window.location.href = `/products/${sku}/edit`;
 }
 
-// JS обработчик для синхронизации товара с Allegro
-function syncAllegroToggle(button, sku) {
-    button.disabled = true;
-    const originalContent = button.innerHTML;
-    
-    // Показываем индикатор загрузки
-    button.innerHTML = `
-        <span class="sr-only">Переключить синхронизацию</span>
-        <span class="inline-block h-4 w-4 transform rounded-full bg-white transition">
-            <svg class="w-4 h-4 text-blue-500 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-            </svg>
-        </span>`;
+// Код для тогла синхронизации убран, так как теперь используется кнопка управления
+// которая перенаправляет на страницу /products/{sku}/manage
 
-    fetch(`/api/products/${sku}/sync-allegro-toggle`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-    })
-    .then(response => {
-        if (!response.ok) throw new Error('Ошибка при переключении синхронизации');
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            const isEnabled = data.is_sync_enabled;
-            
-            // Обновить фон кнопки
-            button.classList.toggle('bg-green-600', isEnabled);
-            button.classList.toggle('bg-gray-200', !isEnabled);
-            
-            // Обновить содержимое кнопки
-            button.innerHTML = `
-                <span class="sr-only">Переключить синхронизацию</span>
-                <span class="inline-block h-4 w-4 transform rounded-full bg-white transition ${isEnabled ? 'translate-x-6' : 'translate-x-1'}"></span>`;
-                
-            // Обновить tooltip
-            button.title = `Автоматическая синхронизация остатков товара с офферами Allegro. При включении система будет автоматически обновлять количество товара во всех существующих офферах на всех подключенных аккаунтах Allegro при изменении остатков на складе.`;
-            
-            showNotification(data.message);
-            if (data.sync_result) {
-                if (data.sync_result.success) {
-                    showNotification('Синхронизация завершена успешно');
-                } else {
-                    showNotification(data.sync_result.error || 'Ошибка при синхронизации', 'error');
-                }
-            } else if (!isEnabled) {
-                showNotification('Синхронизация отключена');
-            }
-        } else {
-            showNotification(data.message || 'Ошибка при переключении синхронизации', 'error');
-        }
-    })
-    .catch(error => {
-        showNotification('Ошибка: ' + error.message, 'error');
-    })
-    .finally(() => {
-        // Если произошла ошибка, восстанавливаем исходное содержимое
-        if (button.innerHTML.includes('animate-spin')) {
-            button.innerHTML = originalContent;
-        }
-        button.disabled = false;
-    });
-}
+
 </script>

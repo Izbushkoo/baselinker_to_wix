@@ -12,20 +12,25 @@ from app.api import deps
 from app.api.v1.routers.allegro_sync import get_sync_status
 from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.models.user import User
+from app.models.allegro_token import AllegroToken
+from app.models.product_allegro_sync_settings import ProductAllegroSyncSettings
 from app.services.warehouse.manager import Warehouses
 from app.services.operations_service import OperationsService, OperationType, get_operations_service
+from app.services.prices_service import prices_service
 from app.schemas.product import ProductUpdate, ProductEditForm, ProductResponse
 from PIL import Image
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 web_router = APIRouter()
+catalog_router = APIRouter()  # Отдельный роутер для каталога
 
 templates = Jinja2Templates(directory="app/templates")
 
-@web_router.get("/catalog")
+@catalog_router.get("/catalog")
 async def catalog(
     request: Request,
     page: int = Query(1, ge=1),
@@ -142,7 +147,6 @@ async def catalog(
             "sku": product.sku,
             "name": product.name,
             "brand": product.brand,
-            "is_sync_enabled": product.is_sync_enabled,
             "eans": product.eans,
             "ean": product.eans[0] if product.eans else None,
             "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
@@ -160,6 +164,37 @@ async def catalog(
         
         products_with_stocks.append(product_data)
 
+    # Обогащаем данные о товарах ценами из удаленной БД
+    logger.info(f"[CATALOG] prices_service.is_available(): {prices_service.is_available()}")
+    logger.info(f"[CATALOG] products_with_stocks count: {len(products_with_stocks)}")
+    
+    if prices_service.is_available() and products_with_stocks:
+        try:
+            # Получаем все SKU товаров
+            skus = [product["sku"] for product in products_with_stocks]
+            logger.info(f"[CATALOG] SKUs для получения цен: {skus}")
+            
+            # Получаем цены для всех SKU одним запросом
+            prices_data = prices_service.get_prices_by_skus(skus)
+            logger.info(f"[CATALOG] Полученные цены от сервиса: {prices_data}")
+            
+            # Добавляем цены к данным товаров
+            for product_data in products_with_stocks:
+                sku = product_data["sku"]
+                price_info = prices_data.get(sku)
+                logger.info(f"[CATALOG] SKU {sku}: price_info={price_info}")
+                if price_info:
+                    product_data["min_price"] = price_info.min_price
+                    logger.info(f"[CATALOG] SKU {sku}: установлена min_price={price_info.min_price}")
+                else:
+                    product_data["min_price"] = None
+                    logger.info(f"[CATALOG] SKU {sku}: min_price установлена в None")
+        except Exception as e:
+            logger.error(f"[CATALOG] Error getting prices: {str(e)}")
+            # Если не удалось получить цены, добавляем пустые значения
+            for product_data in products_with_stocks:
+                product_data["min_price"] = None
+
     # Проверяем, является ли запрос AJAX-запросом
     is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
     accept = request.headers.get("accept", "")
@@ -169,6 +204,7 @@ async def catalog(
         # Для AJAX-запросов генерируем HTML для каждой карточки
         products_response = []
         for product_data in products_with_stocks:
+            logger.info(f"[CATALOG] AJAX: product_data для SKU {product_data.get('sku')}: min_price={product_data.get('min_price')}")
             html = templates.get_template("components/product_card.html").render(
                 product=product_data,
                 selected_products=[],
@@ -189,6 +225,11 @@ async def catalog(
 
     # Для обычных запросов возвращаем HTML-страницу
     warehouses = [w.value for w in Warehouses]
+    
+    # Логируем данные товаров перед отправкой в шаблон
+    for product_data in products_with_stocks:
+        logger.info(f"[CATALOG] HTML: product_data для SKU {product_data.get('sku')}: min_price={product_data.get('min_price')}")
+    
     return templates.TemplateResponse(
         "catalog.html",
         {
@@ -250,7 +291,7 @@ async def export_products(
         headers={'Content-Disposition': 'attachment; filename=products_export.xlsx'}
     )
 
-@web_router.get("/products/add", response_class=HTMLResponse)
+@web_router.get("/add", response_class=HTMLResponse)
 async def add_product_form(
     request: Request,
     current_user: User = Depends(deps.get_current_user_from_cookie)
@@ -268,7 +309,7 @@ async def add_product_form(
         }
     )
 
-@web_router.get("/products/{sku}/edit", response_class=HTMLResponse)
+@web_router.get("/{sku}/edit", response_class=HTMLResponse)
 async def edit_product_form(
     request: Request,
     sku: str,
@@ -622,61 +663,327 @@ async def update_product(
         )
 
 
-@router.post("/{sku}/sync-allegro-toggle")
-async def sync_allegro_toggle(
+@router.post("/{sku}/sync-settings")
+async def update_sync_settings(
     sku: str,
+    account_name: str = Form(...),
+    stock_sync_enabled: bool = Form(...),
+    price_sync_enabled: bool = Form(...),
+    price_multiplier: float = Form(default=1.0),
     db: AsyncSession = Depends(deps.get_async_session),
-    current_user: User = Depends(deps.get_current_user_optional),
-    operations_service: OperationsService = Depends(get_operations_service)
+    current_user: User = Depends(deps.get_current_user_optional)
 ):
     """
-    Переключает флаг синхронизации товара и, если включено, запускает синхронизацию с Allegro (ждёт результат задачи).
-    Возвращает новый статус флага, сообщение и результат синхронизации (если была).
+    Создать или обновить настройки синхронизации для товара и аккаунта Allegro.
     """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется аутентификация")
+    
     if not current_user.is_admin:
-        raise HTTPException(
-            status_code=403,
-            detail="Недостаточно прав для изменения настроек синхронизации"
+        raise HTTPException(status_code=403, detail="Доступ запрещен. Требуются права администратора")
+    
+    # Проверяем существование товара
+    product_query = select(Product).where(Product.sku == sku)
+    product_result = await db.exec(product_query)
+    product = product_result.first()
+    
+    if not product:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    
+    # Проверяем существование аккаунта Allegro
+    token_query = select(AllegroToken).where(AllegroToken.account_name == account_name)
+    token_result = await db.exec(token_query)
+    token = token_result.first()
+    
+    if not token:
+        raise HTTPException(status_code=404, detail="Аккаунт Allegro не найден")
+    
+    # Получаем или создаем настройки синхронизации
+    settings_query = select(ProductAllegroSyncSettings).where(
+        ProductAllegroSyncSettings.product_sku == sku,
+        ProductAllegroSyncSettings.allegro_account_name == account_name
+    )
+    settings_result = await db.exec(settings_query)
+    settings = settings_result.first()
+    
+    if settings:
+        # Обновляем существующие настройки
+        settings.stock_sync_enabled = stock_sync_enabled
+        settings.price_sync_enabled = price_sync_enabled
+        settings.price_multiplier = price_multiplier
+        settings.updated_at = datetime.utcnow()
+    else:
+        # Создаем новые настройки
+        settings = ProductAllegroSyncSettings(
+            product_sku=sku,
+            allegro_account_name=account_name,
+            stock_sync_enabled=stock_sync_enabled,
+            price_sync_enabled=price_sync_enabled,
+            price_multiplier=price_multiplier
         )
-    try:
-        # Получаем товар
-        product_query = select(Product).where(Product.sku == sku)
-        result = await db.exec(product_query)
-        product = result.first()
-        if not product:
-            raise HTTPException(status_code=404, detail="Товар не найден")
-        # Переключаем флаг
-        product.is_sync_enabled = not product.is_sync_enabled
-        await db.commit()
-        await db.refresh(product)
-        logger.info(f"Флаг синхронизации для товара {sku} изменен: -> {product.is_sync_enabled}")
-        # Логируем операцию
-        # operations_service.create_product_sync_toggle_operation(...)
-        # Если включили — запускаем синхронизацию и ждём результат
-        sync_result = None
-        if product.is_sync_enabled:
-            from app.services.allegro.sync_tasks import sync_allegro_stock_single_product
-            # Запускаем задачу и ждём результат (timeout 20 сек)
-            task = sync_allegro_stock_single_product.apply_async((sku,))
-            try:
-                sync_result = task.get(timeout=20)
-                logger.info(f"Синхронизация товара {sku} завершена: {sync_result}")
-            except Exception as e:
-                logger.error(f"Ошибка ожидания результата синхронизации: {e}")
-                sync_result = {"success": False, "error": str(e)}
-        return {
-            "success": True,
-            "message": f"Синхронизация для товара {sku} {'включена' if product.is_sync_enabled else 'выключена'}",
-            "is_sync_enabled": product.is_sync_enabled,
-            "sync_result": sync_result
+        db.add(settings)
+    
+    await db.commit()
+    await db.refresh(settings)
+    
+    return {
+        "success": True,
+        "message": f"Настройки синхронизации для аккаунта {account_name} обновлены",
+        "settings": {
+            "product_sku": settings.product_sku,
+            "allegro_account_name": settings.allegro_account_name,
+            "stock_sync_enabled": settings.stock_sync_enabled,
+            "price_sync_enabled": settings.price_sync_enabled,
+            "price_multiplier": float(settings.price_multiplier),
+            "updated_at": settings.updated_at.isoformat()
         }
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Ошибка при переключении флага/синхронизации для товара {sku}: {str(e)}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Не удалось изменить настройки синхронизации/запустить синхронизацию: {str(e)}"
+    }
+
+
+@router.get("/{sku}/sync-settings")
+async def get_sync_settings(
+    sku: str,
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Получить все настройки синхронизации для товара.
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется аутентификация")
+    
+    # Проверяем существование товара
+    product_query = select(Product).where(Product.sku == sku)
+    product_result = await db.exec(product_query)
+    product = product_result.first()
+    
+    if not product:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    
+    # Получаем настройки синхронизации
+    settings_query = select(ProductAllegroSyncSettings).where(
+        ProductAllegroSyncSettings.product_sku == sku
+    )
+    settings_result = await db.exec(settings_query)
+    settings_list = settings_result.all()
+    
+    # Формируем ответ
+    settings_data = []
+    for settings in settings_list:
+        settings_data.append({
+            "product_sku": settings.product_sku,
+            "allegro_account_name": settings.allegro_account_name,
+            "stock_sync_enabled": settings.stock_sync_enabled,
+            "price_sync_enabled": settings.price_sync_enabled,
+            "price_multiplier": float(settings.price_multiplier),
+            "last_stock_sync_at": settings.last_stock_sync_at.isoformat() if settings.last_stock_sync_at else None,
+            "last_price_sync_at": settings.last_price_sync_at.isoformat() if settings.last_price_sync_at else None,
+            "created_at": settings.created_at.isoformat(),
+            "updated_at": settings.updated_at.isoformat()
+        })
+    
+    return {
+        "success": True,
+        "product_sku": sku,
+        "settings": settings_data
+    }
+
+
+@router.post("/{sku}/sync-settings/{account_name}/toggle-stock")
+async def toggle_stock_sync(
+    sku: str,
+    account_name: str,
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Переключить синхронизацию остатков для товара и аккаунта.
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется аутентификация")
+    
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Доступ запрещен. Требуются права администратора")
+    
+    # Получаем или создаем настройки
+    settings_query = select(ProductAllegroSyncSettings).where(
+        ProductAllegroSyncSettings.product_sku == sku,
+        ProductAllegroSyncSettings.allegro_account_name == account_name
+    )
+    settings_result = await db.exec(settings_query)
+    settings = settings_result.first()
+    
+    if not settings:
+        # Создаем новые настройки с включенной синхронизацией остатков
+        settings = ProductAllegroSyncSettings(
+            product_sku=sku,
+            allegro_account_name=account_name,
+            stock_sync_enabled=True,
+            price_sync_enabled=False,
+            price_multiplier=1.0
         )
+        db.add(settings)
+        new_status = True
+    else:
+        # Переключаем статус
+        settings.stock_sync_enabled = not settings.stock_sync_enabled
+        settings.updated_at = datetime.utcnow()
+        new_status = settings.stock_sync_enabled
+    
+    await db.commit()
+    await db.refresh(settings)
+    
+    # Если синхронизация включена, запускаем автоматическую синхронизацию остатков
+    if new_status:
+        from app.celery_app import celery
+        try:
+            celery.send_task(
+                'app.services.allegro.sync_tasks.sync_allegro_stock_single_product_account',
+                args=[sku, account_name]
+            )
+        except Exception as e:
+            # Не прерываем выполнение, если задача не удалась
+            import logging
+            logger = logging.getLogger("allegro.sync")
+            logger.error(f"Ошибка при запуске синхронизации остатков для товара {sku} и аккаунта {account_name}: {str(e)}")
+    
+    return {
+        "success": True,
+        "message": f"Синхронизация остатков для аккаунта {account_name} {'включена' if new_status else 'отключена'}",
+        "stock_sync_enabled": new_status
+    }
+
+
+@router.post("/{sku}/sync-settings/{account_name}/toggle-price")
+async def toggle_price_sync(
+    sku: str,
+    account_name: str,
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Переключить синхронизацию цен для товара и аккаунта.
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется аутентификация")
+    
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Доступ запрещен. Требуются права администратора")
+    
+    # Получаем или создаем настройки
+    settings_query = select(ProductAllegroSyncSettings).where(
+        ProductAllegroSyncSettings.product_sku == sku,
+        ProductAllegroSyncSettings.allegro_account_name == account_name
+    )
+    settings_result = await db.exec(settings_query)
+    settings = settings_result.first()
+    
+    if not settings:
+        # Создаем новые настройки с включенной синхронизацией цен
+        settings = ProductAllegroSyncSettings(
+            product_sku=sku,
+            allegro_account_name=account_name,
+            stock_sync_enabled=True,
+            price_sync_enabled=True,
+            price_multiplier=1.0
+        )
+        db.add(settings)
+        new_status = True
+    else:
+        # Переключаем статус
+        settings.price_sync_enabled = not settings.price_sync_enabled
+        settings.updated_at = datetime.utcnow()
+        new_status = settings.price_sync_enabled
+    
+    await db.commit()
+    await db.refresh(settings)
+    
+    # Если синхронизация включена, запускаем автоматическую синхронизацию цен
+    if new_status:
+        from app.celery_app import celery
+        try:
+            celery.send_task(
+                'app.services.allegro.sync_tasks.sync_allegro_price_single_product_account',
+                args=[sku, account_name]
+            )
+        except Exception as e:
+            # Не прерываем выполнение, если задача не удалась
+            import logging
+            logger = logging.getLogger("allegro.sync")
+            logger.error(f"Ошибка при запуске синхронизации цен для товара {sku} и аккаунта {account_name}: {str(e)}")
+    
+    return {
+        "success": True,
+        "message": f"Синхронизация цен для аккаунта {account_name} {'включена' if new_status else 'отключена'}",
+        "price_sync_enabled": new_status
+    }
+
+
+@router.post("/{sku}/sync-settings/{account_name}/update-multiplier")
+async def update_price_multiplier(
+    sku: str,
+    account_name: str,
+    multiplier: float = Form(...),
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Обновить мультипликатор цены для товара и аккаунта.
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется аутентификация")
+    
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Доступ запрещен. Требуются права администратора")
+    
+    if multiplier <= 0:
+        raise HTTPException(status_code=400, detail="Мультипликатор цены должен быть положительным числом")
+    
+    # Получаем или создаем настройки
+    settings_query = select(ProductAllegroSyncSettings).where(
+        ProductAllegroSyncSettings.product_sku == sku,
+        ProductAllegroSyncSettings.allegro_account_name == account_name
+    )
+    settings_result = await db.exec(settings_query)
+    settings = settings_result.first()
+    
+    if not settings:
+        # Создаем новые настройки с указанным мультипликатором
+        settings = ProductAllegroSyncSettings(
+            product_sku=sku,
+            allegro_account_name=account_name,
+            stock_sync_enabled=True,
+            price_sync_enabled=False,
+            price_multiplier=multiplier
+        )
+        db.add(settings)
+    else:
+        # Обновляем мультипликатор
+        settings.price_multiplier = multiplier
+        settings.updated_at = datetime.utcnow()
+    
+    await db.commit()
+    await db.refresh(settings)
+    
+    # Если синхронизация цен включена, запускаем автоматическую синхронизацию
+    if settings.price_sync_enabled:
+        from app.celery_app import celery
+        try:
+            celery.send_task(
+                'app.services.allegro.sync_tasks.sync_allegro_price_single_product_account',
+                args=[sku, account_name]
+            )
+        except Exception as e:
+            # Не прерываем выполнение, если задача не удалась
+            import logging
+            logger = logging.getLogger("allegro.sync")
+            logger.error(f"Ошибка при запуске синхронизации цен для товара {sku} и аккаунта {account_name}: {str(e)}")
+    
+    return {
+        "success": True,
+        "message": f"Мультипликатор цены для аккаунта {account_name} обновлен",
+        "price_multiplier": float(settings.price_multiplier)
+    }
 
 @router.get("/brands")
 async def get_brands(
@@ -700,3 +1007,130 @@ async def get_brands(
             status_code=500,
             detail=f"Не удалось получить список брендов: {str(e)}"
         )
+
+@web_router.get("/{sku}/manage")
+async def manage_product(
+    request: Request,
+    sku: str,
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Страница управления товаром с настройками синхронизации Allegro.
+    Показывает детальную информацию о товаре и настройки синхронизации для каждого аккаунта.
+    """
+    if not current_user:
+        return RedirectResponse(url=f"/login?next=/products/{sku}/manage", status_code=302)
+    
+    # Получаем товар
+    product_query = select(Product).where(Product.sku == sku)
+    product_result = await db.exec(product_query)
+    product = product_result.first()
+    
+    if not product:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    
+    # Получаем остатки товара по складам
+    stock_query = select(Stock).where(Stock.sku == sku)
+    stock_result = await db.exec(stock_query)
+    stocks = stock_result.all()
+    
+    # Формируем словарь остатков по складам с учетом всех складов
+    stock_by_warehouse = {warehouse.value: 0 for warehouse in Warehouses}
+    for stock in stocks:
+        stock_by_warehouse[stock.warehouse] = stock.quantity
+    total_stock = sum(stock_by_warehouse.values())
+    
+    # Получаем все токены Allegro
+    tokens_query = select(AllegroToken)
+    tokens_result = await db.exec(tokens_query)
+    allegro_tokens = tokens_result.all()
+    
+    # Получаем настройки синхронизации для товара
+    sync_settings_query = select(ProductAllegroSyncSettings).where(
+        ProductAllegroSyncSettings.product_sku == sku
+    )
+    sync_settings_result = await db.exec(sync_settings_query)
+    existing_settings = sync_settings_result.all()
+    
+    # Создаем словарь настроек по аккаунтам
+    settings_by_account = {setting.allegro_account_name: setting for setting in existing_settings}
+    
+    # Подготавливаем данные для шаблона
+    product_data = {
+        'sku': product.sku,
+        'name': product.name,
+        'brand': product.brand,
+        'image': base64.b64encode(product.image).decode('utf-8') if product.image else None,
+        'eans': product.eans,
+        'stocks': stock_by_warehouse,
+        'total_stock': total_stock,
+    }
+    
+    # Получаем данные о цене из удаленной БД
+    logger.info(f"[MANAGE] prices_service.is_available(): {prices_service.is_available()}")
+    if prices_service.is_available():
+        try:
+            logger.info(f"[MANAGE] Получаем цену для SKU: {sku}")
+            price_info = prices_service.get_price_by_sku(sku)
+            logger.info(f"[MANAGE] Полученная цена от сервиса: {price_info}")
+            if price_info:
+                product_data['min_price'] = price_info.min_price
+                logger.info(f"[MANAGE] SKU {sku}: установлена min_price={price_info.min_price}")
+            else:
+                product_data['min_price'] = None
+                logger.info(f"[MANAGE] SKU {sku}: min_price установлена в None (price_info is None)")
+        except Exception as e:
+            logger.error(f"[MANAGE] Error getting price for SKU {sku}: {str(e)}")
+            product_data['min_price'] = None
+    else:
+        product_data['min_price'] = None
+        logger.info(f"[MANAGE] SKU {sku}: min_price установлена в None (prices_service не доступен)")
+    
+    # Подготавливаем данные о токенах с настройками
+    token_settings = []
+    for token in allegro_tokens:
+        account_name = token.account_name or f"Account {token.id_[:8]}"
+        
+        # Получаем существующие настройки или создаем дефолтные
+        settings = settings_by_account.get(account_name)
+        if settings:
+            token_data = {
+                'token_id': token.id_,
+                'account_name': account_name,
+                'description': token.description,
+                'stock_sync_enabled': settings.stock_sync_enabled,
+                'price_sync_enabled': settings.price_sync_enabled,
+                'price_multiplier': float(settings.price_multiplier),
+                'last_stock_sync_at': settings.last_stock_sync_at,
+                'last_price_sync_at': settings.last_price_sync_at,
+                'has_settings': True
+            }
+        else:
+            # Дефолтные настройки для токена без настроек
+            token_data = {
+                'token_id': token.id_,
+                'account_name': account_name,
+                'description': token.description,
+                'stock_sync_enabled': True,  # По умолчанию включено
+                'price_sync_enabled': False,  # По умолчанию выключено
+                'price_multiplier': 1.0,
+                'last_stock_sync_at': None,
+                'last_price_sync_at': None,
+                'has_settings': False
+            }
+        
+        token_settings.append(token_data)
+    
+    # Логируем данные товара перед отправкой в шаблон
+    logger.info(f"[MANAGE] Данные товара для шаблона: SKU={product_data.get('sku')}, min_price={product_data.get('min_price')}")
+    
+    return templates.TemplateResponse(
+        "product_manage.html",
+        {
+            "request": request,
+            "user": current_user,
+            "product": product_data,
+            "allegro_tokens": token_settings
+        }
+    )

@@ -34,7 +34,6 @@ from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.models.operations import Operation
 from app.models.allegro_event_tracker import AllegroEventTracker
 from app.models.product_sync_lock import ProductSyncLock
-# from app.models.wix_integration import WixAccount, WixProductMapping, WixInventorySync 
 
 target_metadata = SQLModel.metadata
 

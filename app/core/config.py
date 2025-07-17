@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     POSTGRES_DB: str
     SQLALCHEMY_DATABASE_URI: Optional[PostgresDsn] = None
     SQLALCHEMY_DATABASE_URI_ASYNC: Optional[PostgresDsn] = None
+    
+    # Удаленная БД для цен
+    PRICES_DB_URI: Optional[str] = None
+    PRICES_DB_URI_ASYNC: Optional[str] = None
+    
     ALLEGRO_CLIENT_ID: str
     ALLEGRO_CLIENT_SECRET: str
 

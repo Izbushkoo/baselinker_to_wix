@@ -748,9 +748,3 @@ class InventoryManager:
                 }
         
         return result
-
-    def get_sync_enabled_products(self) -> List[Product]:
-        '''Возвращает список товаров, для которых разрешена синхронизация (is_sync_enabled=True).'''
-        with Session(self.engine) as session:
-            products = session.exec(select(Product).where(Product.is_sync_enabled == True)).all()
-        return products

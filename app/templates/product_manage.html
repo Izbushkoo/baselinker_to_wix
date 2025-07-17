@@ -1,0 +1,888 @@
+{% extends "base.html" %}
+
+{% block title %}Управление товаром {{ product.name }} - {{ product.sku }}{% endblock %}
+
+{% block content %}
+{% if not user %}
+<script>
+    window.location.href = '{{ url_for("login", next=request.path) }}';
+</script>
+{% else %}
+
+<div class="container mx-auto px-4 py-8">
+    <!-- Хлебные крошки -->
+    <nav class="mb-6 text-sm">
+        <ol class="flex items-center space-x-2 text-gray-600">
+            <li><a href="/catalog" class="hover:text-blue-600">Каталог</a></li>
+            <li><span class="text-gray-400">/</span></li>
+            <li class="text-gray-900 font-medium">{{ product.name }}</li>
+        </ol>
+    </nav>
+
+    <!-- Заголовок -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-2">Управление товаром</h1>
+        <p class="text-gray-600">Настройки синхронизации с аккаунтами Allegro</p>
+    </div>
+
+    <!-- Информация о товаре -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+        <div class="flex items-start gap-6">
+            <!-- Изображение товара -->
+            <div class="flex-shrink-0">
+                {% if product.image %}
+                <img src="data:image/jpeg;base64,{{ product.image }}" 
+                     alt="{{ product.name }}"
+                     class="w-32 h-32 object-contain rounded-lg border">
+                {% else %}
+                <div class="w-32 h-32 flex items-center justify-center bg-gray-100 rounded-lg border">
+                    <svg class="w-12 h-12 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Информация о товаре -->
+            <div class="flex-grow">
+                <h2 class="text-2xl font-bold text-gray-900 mb-4">{{ product.name }}</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-700 mb-2">Основная информация</h3>
+                        <div class="space-y-2 text-sm">
+                            <div><span class="font-medium">SKU:</span> {{ product.sku }}</div>
+                            <div><span class="font-medium">Бренд:</span> {{ product.brand or "Не указан" }}</div>
+                            {% if product.eans %}
+                            <div><span class="font-medium">EAN:</span> {{ product.eans|join(", ") }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-700 mb-2">Остатки на складах</h3>
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="text-sm font-medium text-gray-900">Управление остатками</h4>
+                                {% if user.is_admin %}
+                                <button 
+                                    type="button"
+                                    onclick="openTransferModal()"
+                                    class="px-3 py-1 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700">
+                                    Переместить товар
+                                </button>
+                                {% endif %}
+                            </div>
+                            
+                            <div class="space-y-3">
+                                {% for warehouse, quantity in product.stocks.items() %}
+                                <div class="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
+                                    <div class="flex items-center space-x-3">
+                                        <span class="text-sm font-medium text-gray-900">{{ warehouse }}</span>
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {% if quantity > 0 %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+                                            {{ quantity }} шт.
+                                        </span>
+                                    </div>
+                                    
+                                    {% if user.is_admin %}
+                                    <div class="flex items-center space-x-2">
+                                        <input type="number" 
+                                               min="1" 
+                                               value="1"
+                                               class="w-16 px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                               data-warehouse="{{ warehouse }}"
+                                               data-sku="{{ product.sku }}"
+                                               data-current-quantity="{{ quantity }}"
+                                               id="qty-{{ warehouse }}"
+                                        >
+                                        <button 
+                                            type="button"
+                                            onclick="removeFromStock(this)"
+                                            class="px-3 py-1 text-xs text-white bg-red-500 hover:bg-red-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                            {% if quantity == 0 %}disabled{% endif %}
+                                            data-warehouse="{{ warehouse }}"
+                                            data-sku="{{ product.sku }}"
+                                            data-current-quantity="{{ quantity }}"
+                                        >
+                                            Списать
+                                        </button>
+                                        <button 
+                                            type="button"
+                                            onclick="addToStock(this)"
+                                            class="px-3 py-1 text-xs text-white bg-green-500 hover:bg-green-600 rounded-md transition-colors"
+                                            data-warehouse="{{ warehouse }}"
+                                            data-sku="{{ product.sku }}"
+                                            data-current-quantity="{{ quantity }}"
+                                        >
+                                            Пополнить
+                                        </button>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                                
+                                <div class="border-t pt-3 mt-3">
+                                    <div class="flex justify-between items-center font-medium">
+                                        <span class="text-sm text-gray-900">Итого:</span>
+                                        <span class="text-lg {% if product.total_stock > 0 %}text-green-600{% else %}text-red-600{% endif %}" id="total-stock">
+                                            {{ product.total_stock }} шт.
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Блок с ценой -->
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-700 mb-2">Минимальная цена товара</h3>
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            {% if product.min_price is not none %}
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <span class="text-lg font-bold text-blue-600">
+                                        {{ "%.2f"|format(product.min_price) }} PLN
+                                    </span>
+                                </div>
+                                {% if user.is_admin %}
+                                <button type="button"
+                                        onclick="openPriceEditModal()"
+                                        class="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                                    Изменить
+                                </button>
+                                {% endif %}
+                            </div>
+                            {% else %}
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm text-gray-500">Цена не указана</span>
+                                {% if user.is_admin %}
+                                <button type="button"
+                                        onclick="openPriceEditModal()"
+                                        class="px-3 py-1 text-sm bg-green-600 text-white rounded-md hover:bg-green-700">
+                                    Добавить
+                                </button>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Настройки синхронизации -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-6">Настройки синхронизации с Allegro</h2>
+        
+        {% if not allegro_tokens %}
+        <div class="text-center py-8">
+            <div class="text-gray-500 mb-4">
+                <svg class="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p class="text-lg">Аккаунты Allegro не найдены</p>
+                <p class="text-sm">Добавьте аккаунты Allegro для настройки синхронизации</p>
+            </div>
+            <a href="/connect_allegro" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Добавить аккаунт Allegro
+            </a>
+        </div>
+        {% else %}
+        <div class="space-y-6">
+            {% for token in allegro_tokens %}
+            <div class="border rounded-lg p-4 bg-gray-50">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-900">{{ token.account_name }}</h3>
+                        {% if token.description %}
+                        <p class="text-sm text-gray-600">{{ token.description }}</p>
+                        {% endif %}
+                    </div>
+                    <div class="text-right">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            Активен
+                        </span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <!-- Синхронизация остатков -->
+                    <div class="bg-white rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <h4 class="text-sm font-medium text-gray-900">Синхронизация остатков</h4>
+                            {% if user.is_admin %}
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" 
+                                       class="sr-only peer"
+                                       {% if token.stock_sync_enabled %}checked{% endif %}
+                                       onchange="toggleStockSync('{{ product.sku }}', '{{ token.account_name }}', this)">
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                            {% else %}
+                            <span class="inline-block w-3 h-3 rounded-full {% if token.stock_sync_enabled %}bg-green-500{% else %}bg-gray-400{% endif %}"></span>
+                            {% endif %}
+                        </div>
+                        <p class="text-xs text-gray-500 mb-2">
+                            {% if token.stock_sync_enabled %}
+                            Остатки синхронизируются автоматически
+                            {% else %}
+                            Синхронизация остатков отключена
+                            {% endif %}
+                        </p>
+                        {% if token.last_stock_sync_at %}
+                        <p class="text-xs text-gray-400">
+                            Последняя синхронизация: {{ token.last_stock_sync_at.strftime('%d.%m.%Y %H:%M') }}
+                        </p>
+                        {% endif %}
+                    </div>
+
+                    <!-- Синхронизация цен -->
+                    <div class="bg-white rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <h4 class="text-sm font-medium text-gray-900">Синхронизация цен</h4>
+                            {% if user.is_admin %}
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" 
+                                       class="sr-only peer"
+                                       {% if token.price_sync_enabled %}checked{% endif %}
+                                       onchange="togglePriceSync('{{ product.sku }}', '{{ token.account_name }}', this)">
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                            {% else %}
+                            <span class="inline-block w-3 h-3 rounded-full {% if token.price_sync_enabled %}bg-green-500{% else %}bg-gray-400{% endif %}"></span>
+                            {% endif %}
+                        </div>
+                        <p class="text-xs text-gray-500 mb-2">
+                            {% if token.price_sync_enabled %}
+                            Цены синхронизируются автоматически
+                            {% else %}
+                            Синхронизация цен отключена
+                            {% endif %}
+                        </p>
+                        {% if token.last_price_sync_at %}
+                        <p class="text-xs text-gray-400">
+                            Последняя синхронизация: {{ token.last_price_sync_at.strftime('%d.%m.%Y %H:%M') }}
+                        </p>
+                        {% endif %}
+                    </div>
+
+                    <!-- Мультипликатор цены -->
+                    <div class="bg-white rounded-lg p-4">
+                        <h4 class="text-sm font-medium text-gray-900 mb-2">Мультипликатор цены</h4>
+                        <div class="flex items-center space-x-2">
+                            {% if user.is_admin %}
+                            <input type="number" 
+                                   step="0.01" 
+                                   min="0.01" 
+                                   max="10" 
+                                   value="{{ token.price_multiplier }}"
+                                   class="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                   id="multiplier_{{ token.account_name }}">
+                            <button type="button" 
+                                    class="px-3 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    onclick="updateMultiplier('{{ product.sku }}', '{{ token.account_name }}', document.getElementById('multiplier_{{ token.account_name }}').value)">
+                                Применить
+                            </button>
+                            {% else %}
+                            <span class="flex-1 px-3 py-2 bg-gray-100 border border-gray-300 rounded-md text-sm text-gray-700">
+                                {{ token.price_multiplier }}
+                            </span>
+                            {% endif %}
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2">
+                            {% if token.price_multiplier == 1.0 %}
+                            Цена без изменений
+                            {% elif token.price_multiplier > 1.0 %}
+                            Наценка {{ ((token.price_multiplier - 1) * 100)|round(1) }}%
+                            {% else %}
+                            Скидка {{ ((1 - token.price_multiplier) * 100)|round(1) }}%
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Кнопки действий -->
+    <div class="mt-8 flex justify-between">
+        <a href="/catalog" class="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+            ← Назад к каталогу
+        </a>
+        {% if user.is_admin %}
+        <div class="space-x-2">
+            <a href="/products/{{ product.sku }}/edit" class="px-4 py-2 text-blue-700 bg-blue-100 border border-blue-300 rounded-lg hover:bg-blue-200">
+                Редактировать товар
+            </a>
+            <button onclick="syncAllAccounts()" class="px-4 py-2 text-white bg-green-600 rounded-lg hover:bg-green-700">
+                Синхронизировать все аккаунты
+            </button>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Уведомления -->
+<div id="notification" class="fixed top-4 right-4 z-50 hidden">
+    <div class="max-w-sm bg-white border border-gray-200 rounded-lg shadow-lg p-4">
+        <div class="flex items-center">
+            <div class="flex-shrink-0">
+                <svg id="notification-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+            </div>
+            <div class="ml-3">
+                <p id="notification-message" class="text-sm text-gray-700"></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно редактирования цены -->
+<div id="priceEditModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-lg max-w-md w-full p-6 relative" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Редактирование цены</h3>
+        <form id="priceEditForm">
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">SKU товара:</label>
+                <input type="text" id="priceEditSku" value="{{ product.sku }}" class="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100" readonly>
+            </div>
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Минимальная цена (PLN):</label>
+                <input type="number" id="priceEditPrice" step="0.01" min="0" value="{{ product.min_price or '' }}" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button type="button" onclick="closePriceEditModal()" class="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300">
+                    Отмена
+                </button>
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                    Сохранить
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Модальное окно трансфера товаров -->
+<div id="transferModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-lg max-w-md w-full p-6 relative" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Перемещение товара</h3>
+        <form id="transferForm">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">SKU товара:</label>
+                    <input type="text" id="transferSku" value="{{ product.sku }}" class="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100" readonly>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Откуда:</label>
+                    <select id="transferFrom" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                        <option value="">Выберите склад</option>
+                        {% for warehouse, quantity in product.stocks.items() %}
+                        {% if quantity > 0 %}
+                        <option value="{{ warehouse }}">{{ warehouse }} ({{ quantity }} шт.)</option>
+                        {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Куда:</label>
+                    <select id="transferTo" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                        <option value="">Выберите склад</option>
+                        {% for warehouse, quantity in product.stocks.items() %}
+                        <option value="{{ warehouse }}">{{ warehouse }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Количество:</label>
+                    <input type="number" id="transferQuantity" min="1" value="1" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                
+
+            </div>
+            
+            <div class="flex justify-end gap-2 mt-6">
+                <button type="button" onclick="closeTransferModal()" class="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300">
+                    Отмена
+                </button>
+                <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
+                    Переместить
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Модальное окно для ошибок -->
+<div id="errorModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-lg max-w-sm w-full p-6 relative" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-semibold text-red-600 mb-4">Ошибка</h3>
+        <p id="errorMessage" class="text-sm text-gray-700 mb-6"></p>
+        <div class="text-right">
+            <button id="errorCloseBtn" class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md">
+                Закрыть
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+// Функция для отображения уведомлений
+function showNotification(message, type = 'success') {
+    const notification = document.getElementById('notification');
+    const messageEl = document.getElementById('notification-message');
+    const iconEl = document.getElementById('notification-icon');
+    
+    messageEl.textContent = message;
+    
+    // Настройка цвета и иконки в зависимости от типа
+    if (type === 'success') {
+        iconEl.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />';
+        iconEl.className = 'w-5 h-5 text-green-500';
+    } else if (type === 'error') {
+        iconEl.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />';
+        iconEl.className = 'w-5 h-5 text-red-500';
+    }
+    
+    notification.classList.remove('hidden');
+    setTimeout(() => {
+        notification.classList.add('hidden');
+    }, 5000);
+}
+
+// Переключение синхронизации остатков
+function toggleStockSync(sku, accountName, checkbox) {
+    const isEnabled = checkbox.checked;
+    
+    fetch(`/api/products/${sku}/sync-settings/${accountName}/toggle-stock`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message, 'success');
+        } else {
+            checkbox.checked = !isEnabled; // Возвращаем обратно
+            showNotification(data.message || 'Ошибка при переключении синхронизации', 'error');
+        }
+    })
+    .catch(error => {
+        checkbox.checked = !isEnabled; // Возвращаем обратно
+        showNotification('Ошибка при переключении синхронизации', 'error');
+    });
+}
+
+// Переключение синхронизации цен
+function togglePriceSync(sku, accountName, checkbox) {
+    const isEnabled = checkbox.checked;
+    
+    fetch(`/api/products/${sku}/sync-settings/${accountName}/toggle-price`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message, 'success');
+        } else {
+            checkbox.checked = !isEnabled; // Возвращаем обратно
+            showNotification(data.message || 'Ошибка при переключении синхронизации', 'error');
+        }
+    })
+    .catch(error => {
+        checkbox.checked = !isEnabled; // Возвращаем обратно
+        showNotification('Ошибка при переключении синхронизации', 'error');
+    });
+}
+
+// Обновление мультипликатора цены
+function updateMultiplier(sku, accountName, multiplier) {
+    const formData = new FormData();
+    formData.append('multiplier', multiplier);
+    
+    fetch(`/api/products/${sku}/sync-settings/${accountName}/update-multiplier`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message, 'success');
+        } else {
+            showNotification(data.message || 'Ошибка при обновлении мультипликатора', 'error');
+        }
+    })
+    .catch(error => {
+        showNotification('Ошибка при обновлении мультипликатора', 'error');
+    });
+}
+
+// Синхронизация всех аккаунтов
+function syncAllAccounts() {
+    // TODO: Реализовать синхронизацию всех аккаунтов
+    showNotification('Функция синхронизации всех аккаунтов будет реализована позже', 'info');
+}
+
+// Функции для работы с модальным окном редактирования цены
+function openPriceEditModal() {
+    const modal = document.getElementById('priceEditModal');
+    console.log('[LOG] Открытие модального окна редактирования цены для SKU:', document.getElementById('priceEditSku').value);
+    modal.classList.remove('hidden');
+}
+
+function closePriceEditModal() {
+    const modal = document.getElementById('priceEditModal');
+    modal.classList.add('hidden');
+}
+
+// Функция для открытия модального окна перемещения товара
+function openTransferModal() {
+    const modal = document.getElementById('transferModal');
+    modal.classList.remove('hidden');
+}
+
+function closeTransferModal() {
+    const modal = document.getElementById('transferModal');
+    modal.classList.add('hidden');
+}
+
+// Обработчик отправки формы редактирования цены
+document.addEventListener('DOMContentLoaded', function() {
+    const priceEditForm = document.getElementById('priceEditForm');
+    const priceEditModal = document.getElementById('priceEditModal');
+    
+    // Обработка отправки формы
+    priceEditForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const sku = document.getElementById('priceEditSku').value;
+        const price = document.getElementById('priceEditPrice').value;
+        console.log('[LOG] Отправка запроса на обновление цены:', {sku, min_price: price});
+        
+        if (!price || parseFloat(price) < 0) {
+            showNotification('Пожалуйста, введите корректную цену', 'error');
+            return;
+        }
+        
+        // Отправляем запрос на обновление цены
+        fetch(`/api/prices/${sku}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                min_price: parseFloat(price)
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                console.error('[LOG] Ошибка при обновлении цены:', response.status, response.statusText);
+                throw new Error('Ошибка при обновлении цены');
+            }
+            return response.json();
+        })
+        .then(data => {
+            closePriceEditModal();
+            showNotification('Цена успешно обновлена! Обновите страницу для отображения изменений.', 'success');
+        })
+        .catch(error => {
+            console.error('[LOG] Ошибка при обновлении цены:', error);
+            showNotification('Ошибка при обновлении цены: ' + error.message, 'error');
+        });
+    });
+    
+    // Закрытие модального окна по клику на фон
+    priceEditModal.addEventListener('click', function(e) {
+        if (e.target === priceEditModal) {
+            closePriceEditModal();
+        }
+    });
+    
+    // Закрытие модального окна по нажатию Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closePriceEditModal();
+        }
+    });
+});
+
+// Функция для отображения ошибок
+function showErrorModal(message) {
+    const modal = document.getElementById('errorModal');
+    const messageEl = document.getElementById('errorMessage');
+    messageEl.textContent = message;
+    modal.classList.remove('hidden');
+}
+
+// Закрытие модального окна ошибок
+document.getElementById('errorCloseBtn').addEventListener('click', function() {
+    document.getElementById('errorModal').classList.add('hidden');
+});
+
+// Функция для списания товара со склада
+function removeFromStock(button) {
+    const input = button.parentElement.querySelector('input[type="number"]');
+    const quantity = parseInt(input.value);
+    const warehouse = button.dataset.warehouse;
+    const sku = button.dataset.sku;
+    const currentQuantity = parseInt(button.dataset.currentQuantity);
+
+    if (isNaN(quantity) || quantity < 1) {
+        showErrorModal('Пожалуйста, введите корректное количество');
+        return;
+    }
+
+    if (quantity > currentQuantity) {
+        showErrorModal(`Невозможно списать ${quantity} единиц товара. На складе ${warehouse} доступно только ${currentQuantity} шт.`);
+        return;
+    }
+
+    // Отключаем кнопку на время запроса
+    button.disabled = true;
+
+    fetch('/api/warehouse/remove/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            sku: sku,
+            warehouse: warehouse,
+            quantity: quantity
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Ошибка при списании');
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Обновляем количество на складе
+        const newQuantity = currentQuantity - quantity;
+        button.dataset.currentQuantity = newQuantity;
+        input.dataset.currentQuantity = newQuantity;
+        
+        // Обновляем отображение количества
+        const quantityBadge = button.parentElement.parentElement.querySelector('.inline-flex');
+        quantityBadge.textContent = `${newQuantity} шт.`;
+        
+        // Обновляем класс для цвета
+        if (newQuantity === 0) {
+            quantityBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800';
+            button.disabled = true;
+        } else {
+            quantityBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800';
+        }
+        
+        // Обновляем общее количество
+        updateTotalStock();
+        
+        // Сбрасываем значение input
+        input.value = 1;
+        
+        showNotification('Товар успешно списан', 'success');
+    })
+    .catch(error => {
+        showErrorModal('Ошибка при списании товара: ' + error.message);
+    })
+    .finally(() => {
+        if (parseInt(button.dataset.currentQuantity) > 0) {
+            button.disabled = false;
+        }
+    });
+}
+
+// Функция для пополнения товара на складе
+function addToStock(button) {
+    const input = button.parentElement.querySelector('input[type="number"]');
+    const quantity = parseInt(input.value);
+    const warehouse = button.dataset.warehouse;
+    const sku = button.dataset.sku;
+    const currentQuantity = parseInt(button.dataset.currentQuantity);
+
+    if (isNaN(quantity) || quantity < 1) {
+        showErrorModal('Пожалуйста, введите корректное количество');
+        return;
+    }
+
+    // Отключаем кнопку на время запроса
+    button.disabled = true;
+
+    fetch('/api/warehouse/add/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            sku: sku,
+            warehouse: warehouse,
+            quantity: quantity
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Ошибка при пополнении');
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Обновляем количество на складе
+        const newQuantity = currentQuantity + quantity;
+        button.dataset.currentQuantity = newQuantity;
+        input.dataset.currentQuantity = newQuantity;
+        
+        // Обновляем отображение количества
+        const quantityBadge = button.parentElement.parentElement.querySelector('.inline-flex');
+        quantityBadge.textContent = `${newQuantity} шт.`;
+        quantityBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800';
+        
+        // Активируем кнопку "Списать" если она была неактивна
+        const removeButton = button.parentElement.querySelector('[onclick="removeFromStock(this)"]');
+        if (removeButton.disabled) {
+            removeButton.disabled = false;
+        }
+        
+        // Обновляем общее количество
+        updateTotalStock();
+        
+        // Сбрасываем значение input
+        input.value = 1;
+        
+        showNotification('Товар успешно пополнен', 'success');
+    })
+    .catch(error => {
+        showErrorModal('Ошибка при пополнении товара: ' + error.message);
+    })
+    .finally(() => {
+        button.disabled = false;
+    });
+}
+
+// Функция для обновления общего количества товара
+function updateTotalStock() {
+    const totalStockElement = document.getElementById('total-stock');
+    const allQuantityBadges = document.querySelectorAll('[data-current-quantity]');
+    
+    let totalStock = 0;
+    allQuantityBadges.forEach(element => {
+        if (element.tagName === 'BUTTON') {
+            totalStock += parseInt(element.dataset.currentQuantity);
+        }
+    });
+    
+    totalStockElement.textContent = `${totalStock} шт.`;
+    
+    // Обновляем цвет в зависимости от количества
+    if (totalStock === 0) {
+        totalStockElement.className = 'text-lg text-red-600';
+    } else {
+        totalStockElement.className = 'text-lg text-green-600';
+    }
+}
+
+// Обработчик формы трансфера
+document.getElementById('transferForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const sku = document.getElementById('transferSku').value;
+    const fromWarehouse = document.getElementById('transferFrom').value;
+    const toWarehouse = document.getElementById('transferTo').value;
+    const quantity = parseInt(document.getElementById('transferQuantity').value);
+    
+    if (fromWarehouse === toWarehouse) {
+        showErrorModal('Склад отправления и назначения не могут быть одинаковыми');
+        return;
+    }
+    
+    if (isNaN(quantity) || quantity < 1) {
+        showErrorModal('Пожалуйста, введите корректное количество');
+        return;
+    }
+    
+    fetch('/api/warehouse/transfer-item/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            sku: sku,
+            from_warehouse: fromWarehouse,
+            to_warehouse: toWarehouse,
+            quantity: quantity
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Ошибка при перемещении');
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Обновляем отображение остатков
+        location.reload(); // Простое решение - перезагрузка страницы
+        
+        closeTransferModal();
+        showNotification('Товар успешно перемещен', 'success');
+    })
+    .catch(error => {
+        showErrorModal('Ошибка при перемещении товара: ' + error.message);
+    });
+});
+
+// Валидация количества при вводе
+document.addEventListener('DOMContentLoaded', function() {
+    const quantityInputs = document.querySelectorAll('input[type="number"]');
+    quantityInputs.forEach(input => {
+        input.addEventListener('input', function() {
+            const value = parseInt(this.value);
+            if (value < 1) {
+                this.value = 1;
+            }
+        });
+    });
+    
+    // Обработчики для закрытия модальных окон
+    const transferModal = document.getElementById('transferModal');
+    const errorModal = document.getElementById('errorModal');
+    
+    // Закрытие модального окна трансфера по клику на фон
+    transferModal.addEventListener('click', function(e) {
+        if (e.target === transferModal) {
+            closeTransferModal();
+        }
+    });
+    
+    // Закрытие модального окна ошибок по клику на фон
+    errorModal.addEventListener('click', function(e) {
+        if (e.target === errorModal) {
+            errorModal.classList.add('hidden');
+        }
+    });
+    
+    // Закрытие модальных окон по нажатию Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeTransferModal();
+            errorModal.classList.add('hidden');
+        }
+    });
+});
+
+</script>
+{% endif %}
+{% endblock %} 

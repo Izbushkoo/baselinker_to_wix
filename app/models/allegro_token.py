@@ -12,7 +12,7 @@ class AllegroToken(SQLModel, table=True):
 
     id_: Optional[str] = Field(primary_key=True, default_factory=uuid_as_string)
     belongs_to: str = Field(nullable=False, default="1")
-    account_name: Optional[str] = Field(default=None, nullable=True)
+    account_name: Optional[str] = Field(default=None, nullable=True, unique=True)
     description: Optional[str] = Field(default=None, nullable=True)
     access_token: str
     refresh_token: str
