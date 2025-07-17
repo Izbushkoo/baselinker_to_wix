@@ -213,7 +213,11 @@ def sync_allegro_price_single_product_account(sku: str, account_name: str):
     logger.info(f"[AllegroSync] Старт синхронизации цены товара {sku} для аккаунта {account_name}")
     
     from app.models.allegro_token import AllegroToken
+    from app.models.warehouse import Product
+    from app.services.allegro.allegro_api_service import SyncAllegroApiService
+    from app.services.exchange_service import NBPClient
     from sqlmodel import select
+    from decimal import Decimal
     
     with SessionLocal() as session:
         # Найдем токен для данного аккаунта
@@ -230,11 +234,122 @@ def sync_allegro_price_single_product_account(sku: str, account_name: str):
             logger.info(f"[AllegroSync] Синхронизация цен для товара {sku} и аккаунта {account_name} отключена")
             return {"success": False, "error": "Синхронизация цен отключена", "sku": sku, "account_name": account_name}
         
-    # Запускаем синхронизацию через существующую задачу
-    result = sync_allegro_offers_batch.apply_async(args=[token.id_, [sku]])
+        # Получаем товар из БД
+        product = session.exec(select(Product).where(Product.sku == sku)).first()
+        if not product:
+            logger.error(f"[AllegroSync] Товар с SKU {sku} не найден в БД")
+            return {"success": False, "error": "Товар не найден", "sku": sku}
+        
+        # Получаем цену товара из сервиса цен
+        from app.services.prices_service import prices_service
+        price_data = prices_service.get_price_by_sku(sku)
+        if not price_data or price_data.min_price <= 0:
+            logger.warning(f"[AllegroSync] У товара {sku} не указана минимальная цена")
+            return {"success": False, "error": "Минимальная цена не указана", "sku": sku}
+        
+        # Получаем мультипликатор цены для данного аккаунта
+        sync_settings = sync_service.get_account_sync_settings_sync(sku, account_name)
+        price_multiplier = sync_settings.price_multiplier if sync_settings else Decimal("1.0")
+        
+        # Рассчитываем итоговую цену в PLN
+        base_price_pln = price_data.min_price
+        final_price_pln = base_price_pln * price_multiplier
+        
+        logger.info(f"[AllegroSync] Товар {sku}: базовая цена {base_price_pln} PLN, мультипликатор {price_multiplier}, итоговая цена {final_price_pln} PLN")
     
-    logger.info(f"[AllegroSync] Синхронизация цены товара {sku} для аккаунта {account_name} запущена. Время: {time.time() - start:.2f} сек")
-    return {"success": True, "sku": sku, "account_name": account_name, "token_id": token.id_, "task_id": result.id}
+    # Инициализируем API сервис
+    allegro_api = SyncAllegroApiService()
+    
+    try:
+        # Получаем оффер по SKU
+        offers_response = allegro_api.get_offers(token.access_token, external_ids=[sku])
+        offers = offers_response.get("offers", []) if isinstance(offers_response, dict) else []
+        
+        if not offers:
+            logger.warning(f"[AllegroSync] Оффер для SKU {sku} не найден в аккаунте {account_name}")
+            return {"success": False, "error": "Оффер не найден", "sku": sku, "account_name": account_name}
+        
+        logger.info(f"[AllegroSync] Найдено {len(offers)} офферов для SKU {sku} в аккаунте {account_name}")
+        
+        # Обрабатываем каждый найденный оффер
+        updated_offers = []
+        skipped_offers = []
+        
+        for offer in offers:
+            offer_id = offer.get("id")
+            
+            # Получаем текущую цену и валюту оффера
+            current_price_info = offer.get("sellingMode", {}).get("price", {})
+            current_currency = current_price_info.get("currency", "PLN")
+            current_amount = current_price_info.get("amount", "0")
+            
+            logger.info(f"[AllegroSync] Текущая цена оффера {offer_id}: {current_amount} {current_currency}")
+            
+            # Конвертируем цену в валюту оффера
+            # if current_currency == "PLN":
+            #     target_price = final_price_pln
+            # else:
+            #     try:
+            #         target_price = NBPClient.convert(final_price_pln, current_currency)
+            #         logger.info(f"[AllegroSync] Конвертация цены: {final_price_pln} PLN -> {target_price} {current_currency}")
+            #     except Exception as e:
+            #         logger.error(f"[AllegroSync] Ошибка конвертации валюты для {current_currency}: {e}")
+            #         return {"success": False, "error": f"Ошибка конвертации валюты: {e}", "sku": sku}
+            
+            # Всегда используем PLN
+            target_price = final_price_pln
+            target_currency = "PLN"
+            
+            # Сравниваем цены
+            current_price_decimal = Decimal(current_amount)
+            if abs(current_price_decimal - target_price) < Decimal("0.01"):  # Разница менее 1 цента
+                logger.info(f"[AllegroSync] Цена оффера {offer_id} актуальна: {current_amount} {current_currency}")
+                skipped_offers.append({"offer_id": offer_id, "reason": "Price up to date"})
+                continue
+            
+            # Обновляем цену оффера
+            target_price_str = str(target_price)
+            
+            # Логируем данные перед отправкой в API
+            logger.info(f"[AllegroSync] Отправка запроса на обновление цены: offer_id={offer_id}, price={target_price_str}, currency={target_currency}")
+            
+            # Проверяем формат цены (должна быть без научной нотации)
+            try:
+                # Форматируем цену, чтобы избежать научной нотации
+                formatted_price = f"{target_price:.2f}"
+                logger.info(f"[AllegroSync] Отформатированная цена: {formatted_price}")
+                update_result = allegro_api.update_offer_price(token.access_token, offer_id, formatted_price, target_currency)
+            except Exception as api_error:
+                logger.error(f"[AllegroSync] Детальная ошибка API: {api_error}")
+                raise
+            
+            logger.info(f"[AllegroSync] Цена оффера {offer_id} обновлена: {current_amount} -> {target_price_str} {target_currency}")
+            updated_offers.append({
+                "offer_id": offer_id,
+                "old_price": current_amount,
+                "new_price": target_price_str,
+                "currency": target_currency
+            })
+        
+        # Если ни один оффер не был обновлен
+        if not updated_offers:
+            logger.info(f"[AllegroSync] Все офферы для SKU {sku} имеют актуальные цены")
+            return {"success": True, "sku": sku, "account_name": account_name, "updated": False, "reason": "All prices up to date", "offers_processed": len(offers)}
+        
+    except Exception as e:
+        logger.error(f"[AllegroSync] Ошибка синхронизации цены товара {sku} для аккаунта {account_name}: {e}")
+        return {"success": False, "error": str(e), "sku": sku, "account_name": account_name}
+    
+    logger.info(f"[AllegroSync] Синхронизация цены товара {sku} для аккаунта {account_name} завершена. Время: {time.time() - start:.2f} сек")
+    return {
+        "success": True, 
+        "sku": sku, 
+        "account_name": account_name, 
+        "updated": True, 
+        "updated_offers": updated_offers,
+        "skipped_offers": skipped_offers,
+        "offers_processed": len(offers)
+    }
 
 @celery.task
 def sync_allegro_offers_batch(token_id: int, skus: list[str]):

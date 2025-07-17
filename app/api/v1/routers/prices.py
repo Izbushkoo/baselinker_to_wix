@@ -133,8 +133,11 @@ async def update_price(
         updated_price = prices_service.update_price(sku, price_data)
         logger.info(f"[API] Цена обновлена: {updated_price}")
         if not updated_price:
-            logger.warning(f"[API] 404 Price not found: {sku}")
-            raise HTTPException(status_code=404, detail="Price not found")
+            # Если цены не найдено, создаем новую запись
+            logger.info(f"[API] Цена не найдена для SKU {sku}, создаем новую запись")
+            create_data = PriceDataCreate(sku=sku, min_price=price_data.min_price)
+            updated_price = prices_service.create_price(create_data)
+            logger.info(f"[API] Новая цена создана: {updated_price}")
         return updated_price
     except HTTPException:
         raise

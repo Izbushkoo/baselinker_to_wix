@@ -374,6 +374,29 @@ class ProductAllegroSyncService:
         else:
             return False
 
+    def get_account_sync_settings_sync(
+        self, 
+        product_sku: str, 
+        account_name: str
+    ) -> Optional[ProductAllegroSyncSettings]:
+        """
+        Синхронная версия метода get_account_sync_settings для использования в Celery задачах.
+        
+        Args:
+            product_sku: SKU товара
+            account_name: Название аккаунта Allegro
+            
+        Returns:
+            Настройки синхронизации или None, если не найдены
+        """
+        query = select(ProductAllegroSyncSettings).where(
+            ProductAllegroSyncSettings.product_sku == product_sku,
+            ProductAllegroSyncSettings.allegro_account_name == account_name
+        )
+        
+        result = self.session.exec(query)
+        return result.first()
+
     def should_sync_product_sync(
         self, 
         product_sku: str, 

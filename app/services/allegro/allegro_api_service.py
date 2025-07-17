@@ -504,7 +504,7 @@ class SyncAllegroApiService(BaseAllegroApiService):
         headers["Content-Type"] = "application/vnd.allegro.public.v1+json"
         
         try:
-            response = self.client.patch(
+            response = self.client.put(
                 f"/sale/offers/{offer_id}",
                 headers=headers,
                 json=update_data
@@ -513,6 +513,56 @@ class SyncAllegroApiService(BaseAllegroApiService):
             return response.json()
         except httpx.HTTPError as e:
             raise ValueError(f"Ошибка при обновлении оффера {offer_id}: {str(e)}")
+
+    def update_offer_price(
+        self,
+        token: str,
+        offer_id: str,
+        price_amount: str,
+        price_currency: str = "PLN"
+    ) -> Dict[str, Any]:
+        """
+        Обновляет цену оффера через PUT запрос с использованием change-price-commands.
+        
+        Args:
+            token: Токен доступа
+            offer_id: ID оффера для обновления
+            price_amount: Новая цена в виде строки (для избежания ошибок округления)
+            price_currency: Валюта цены (ISO 4217)
+            
+        Returns:
+            Dict[str, Any]: Ответ от API
+            
+        Raises:
+            ValueError: При ошибке обновления цены
+        """
+        import uuid
+        
+        # Генерируем уникальный UUID для команды
+        command_id = str(uuid.uuid4())
+        
+        update_data = {
+            "id": command_id,
+            "input": {
+                "buyNowPrice": {
+                    "amount": price_amount,
+                    "currency": price_currency
+                }
+            }
+        }
+        
+        endpoint = f"/offers/{offer_id}/change-price-commands/{command_id}"
+        
+        try:
+            response = self.client.put(
+                endpoint,
+                headers=self._get_headers(token),
+                json=update_data
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise ValueError(f"Ошибка при обновлении цены оффера {offer_id}: {str(e)}")
 
 class AsyncAllegroApiService(BaseAllegroApiService):
     def __init__(self, base_url: str = "https://api.allegro.pl"):
@@ -812,3 +862,59 @@ class AsyncAllegroApiService(BaseAllegroApiService):
         except httpx.HTTPError as e:
             raise ValueError(f"Ошибка при обновлении оффера {offer_id}: {str(e)}")
 
+    async def update_offer_price(
+        self,
+        token: str,
+        offer_id: str,
+        price_amount: str,
+        price_currency: str
+    ) -> Dict[str, Any]:
+        """
+        Асинхронная версия обновления цены оффера через PUT запрос с использованием change-price-commands.
+        
+        Args:
+            token: Токен доступа
+            offer_id: ID оффера для обновления
+            price_amount: Новая цена в виде строки (для избежания ошибок округления)
+            price_currency: Валюта цены (ISO 4217)
+            
+        Returns:
+            Dict[str, Any]: Ответ от API
+            
+        Raises:
+            ValueError: При ошибке обновления цены
+        """
+        import uuid
+        
+        # Генерируем уникальный UUID для команды
+        command_id = str(uuid.uuid4())
+        
+        update_data = {
+            "id": command_id,
+            "input": {
+                "buyNowPrice": {
+                    "amount": price_amount,
+                    "currency": price_currency
+                }
+            }
+        }
+        
+        # Детальное логирование
+        import logging
+        logger = logging.getLogger("allegro.api")
+        endpoint = f"/offers/{offer_id}/change-price-commands/{command_id}"
+        logger.info(f"[AllegroAPI-Async] PUT запрос к {endpoint}")
+        logger.info(f"[AllegroAPI-Async] Данные: {update_data}")
+        logger.info(f"[AllegroAPI-Async] Headers: {self._get_headers(token)}")
+        
+        try:
+            async with self.client as client:
+                response = await client.put(
+                    endpoint,
+                    headers=self._get_headers(token),
+                    json=update_data
+                )
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPError as e:
+            raise ValueError(f"Ошибка при обновлении цены оффера {offer_id}: {str(e)}")

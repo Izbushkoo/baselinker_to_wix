@@ -415,7 +415,7 @@ def refresh_token(account_name: str) -> Optional[AllegroToken]:
             
             token.access_token = token_data["access_token"]
             token.refresh_token = token_data["refresh_token"]
-            token.expires_at = datetime.now() + timedelta(seconds=token_data["expires_in"])
+            # Поле expires_at отсутствует в модели, убираем его обновление
             session.add(token)
             session.commit()
             session.refresh(token)
@@ -444,9 +444,7 @@ def get_token(account_name: str) -> Optional[AllegroToken]:
         if not token:
             return None
         
-        # Если токен истекает в течение 5 минут, обновляем его
-        if token.expires_at <= datetime.now() + timedelta(minutes=5):
-            return refresh_token(account_name)
-        
+        # Возвращаем токен без проверки времени истечения
+        # API Allegro сам вернет ошибку 401, если токен истек
         return token
 

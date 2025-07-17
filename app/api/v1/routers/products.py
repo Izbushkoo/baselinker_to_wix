@@ -18,9 +18,12 @@ from app.services.warehouse.manager import Warehouses
 from app.services.operations_service import OperationsService, OperationType, get_operations_service
 from app.services.prices_service import prices_service
 from app.schemas.product import ProductUpdate, ProductEditForm, ProductResponse
+from app.celery_app import celery
 from PIL import Image
 import logging
 from datetime import datetime
+from app.services.allegro.allegro_api_service import SyncAllegroApiService
+from app.services.allegro.tokens import get_token
 
 logger = logging.getLogger(__name__)
 
@@ -835,7 +838,6 @@ async def toggle_stock_sync(
     
     # Если синхронизация включена, запускаем автоматическую синхронизацию остатков
     if new_status:
-        from app.celery_app import celery
         try:
             celery.send_task(
                 'app.services.allegro.sync_tasks.sync_allegro_stock_single_product_account',
@@ -900,7 +902,6 @@ async def toggle_price_sync(
     
     # Если синхронизация включена, запускаем автоматическую синхронизацию цен
     if new_status:
-        from app.celery_app import celery
         try:
             celery.send_task(
                 'app.services.allegro.sync_tasks.sync_allegro_price_single_product_account',
@@ -967,7 +968,6 @@ async def update_price_multiplier(
     
     # Если синхронизация цен включена, запускаем автоматическую синхронизацию
     if settings.price_sync_enabled:
-        from app.celery_app import celery
         try:
             celery.send_task(
                 'app.services.allegro.sync_tasks.sync_allegro_price_single_product_account',
@@ -984,6 +984,84 @@ async def update_price_multiplier(
         "message": f"Мультипликатор цены для аккаунта {account_name} обновлен",
         "price_multiplier": float(settings.price_multiplier)
     }
+
+
+@router.post("/{sku}/sync-settings/{account_name}/sync-price")
+async def sync_price_single_product_account(
+    sku: str,
+    account_name: str,
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Запустить синхронизацию цены для конкретного товара и аккаунта Allegro.
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется аутентификация")
+    
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Доступ запрещен. Требуются права администратора")
+    
+    # Проверяем существование товара
+    product_query = select(Product).where(Product.sku == sku)
+    product_result = await db.exec(product_query)
+    product = product_result.first()
+    
+    if not product:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    
+    # Проверяем существование аккаунта Allegro
+    token_query = select(AllegroToken).where(AllegroToken.account_name == account_name)
+    token_result = await db.exec(token_query)
+    token = token_result.first()
+    
+    if not token:
+        raise HTTPException(status_code=404, detail="Аккаунт Allegro не найден")
+    
+    # Проверяем настройки синхронизации
+    settings_query = select(ProductAllegroSyncSettings).where(
+        ProductAllegroSyncSettings.product_sku == sku,
+        ProductAllegroSyncSettings.allegro_account_name == account_name
+    )
+    settings_result = await db.exec(settings_query)
+    settings = settings_result.first()
+    
+    if not settings or not settings.price_sync_enabled:
+        raise HTTPException(
+            status_code=400, 
+            detail="Синхронизация цен для этого товара и аккаунта не включена"
+        )
+    
+    # Получаем цену товара из сервиса цен
+    price_data = prices_service.get_price_by_sku(sku)
+    if not price_data or price_data.min_price <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="У товара не указана минимальная цена"
+        )
+    
+    # Запускаем задачу синхронизации цены
+    try:
+        task = celery.send_task(
+            'app.services.allegro.sync_tasks.sync_allegro_price_single_product_account',
+            args=[sku, account_name]
+        )
+        
+        return {
+            "success": True,
+            "message": f"Синхронизация цены для товара {sku} и аккаунта {account_name} запущена",
+            "task_id": task.id,
+            "sku": sku,
+            "account_name": account_name
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("allegro.sync")
+        logger.error(f"Ошибка при запуске синхронизации цены для товара {sku} и аккаунта {account_name}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при запуске синхронизации цены: {str(e)}"
+        )
 
 @router.get("/brands")
 async def get_brands(
@@ -1134,3 +1212,133 @@ async def manage_product(
             "allegro_tokens": token_settings
         }
     )
+
+@router.get("/{sku}/offers/{account_name}")
+async def get_product_offers(
+    sku: str,
+    account_name: str,
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Получает список оферт для товара в конкретном аккаунте Allegro.
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    
+    try:
+        logger.info(f"[OFFERS] Запрос оферт для SKU {sku} в аккаунте {account_name}")
+        
+        # Получаем токен аккаунта
+        token = get_token(account_name)
+        
+        if not token:
+            logger.error(f"[OFFERS] Токен для аккаунта {account_name} не найден")
+            raise HTTPException(status_code=404, detail="Аккаунт Allegro не найден")
+        
+        # Проверяем валидность токена
+        if not token.access_token:
+            logger.error(f"[OFFERS] Access token отсутствует для аккаунта {account_name}")
+            raise HTTPException(status_code=500, detail="Токен доступа недействителен")
+        
+        logger.info(f"[OFFERS] Токен найден для аккаунта {account_name}")
+        
+        # Проверяем существование товара
+        product_query = select(Product).where(Product.sku == sku)
+        product_result = await db.exec(product_query)
+        product = product_result.first()
+        
+        if not product:
+            logger.error(f"[OFFERS] Товар с SKU {sku} не найден")
+            raise HTTPException(status_code=404, detail="Товар не найден")
+        
+        logger.info(f"[OFFERS] Товар найден: {product.name}")
+        
+        # Создаем API сервис для работы с Allegro
+        api_service = SyncAllegroApiService()
+        logger.info(f"[OFFERS] Сервис API создан")
+        
+        # Получаем оферты, используя SKU как external_id
+        logger.info(f"[OFFERS] Запрос к API Allegro для external_id={sku}")
+        offers_data = api_service.get_offers(
+            token=token.access_token,
+            external_ids=[sku],
+            limit=50
+        )
+        
+        logger.info(f"[OFFERS] Получен ответ от API: {offers_data.keys() if offers_data else 'None'}")
+        
+        # Обрабатываем данные оферт для фронтенда
+        processed_offers = []
+        offers_list = offers_data.get("offers", [])
+        logger.info(f"[OFFERS] Количество оферт в ответе: {len(offers_list)}")
+        
+        for offer in offers_list:
+            logger.debug(f"[OFFERS] Обработка оферты: {offer.get('id')}")
+            
+            # Получаем цену из saleInfo.currentPrice, если доступно, иначе из sellingMode.price
+            sale_info = offer.get("saleInfo", {})
+            selling_mode = offer.get("sellingMode", {})
+            current_price = sale_info.get("currentPrice") or {}
+            selling_price = selling_mode.get("price") or {}
+            
+            # Приоритет: saleInfo.currentPrice > sellingMode.price
+            price_amount = current_price.get("amount") or selling_price.get("amount")
+            price_currency = current_price.get("currency") or selling_price.get("currency")
+            
+            # Извлекаем основные данные оферты
+            offer_info = {
+                "id": offer.get("id"),
+                "name": offer.get("name"),
+                "status": offer.get("publication", {}).get("status"),
+                
+                # Текущая цена (приоритет saleInfo.currentPrice)
+                "price": {
+                    "amount": price_amount,
+                    "currency": price_currency
+                },
+                
+                # Остатки
+                "stock": offer.get("stock", {}),
+                
+                # Статус публикации
+                "publication": offer.get("publication", {}),
+                
+                # Детальная информация (для развернутого блока)
+                "details": {
+                    "category": offer.get("category", {}),
+                    "primaryImage": offer.get("primaryImage", {}),
+                    "sellingMode": selling_mode,
+                    "saleInfo": sale_info,
+                    "stock": offer.get("stock", {}),
+                    "stats": offer.get("stats", {}),
+                    "publication": offer.get("publication", {}),
+                    "delivery": offer.get("delivery", {}),
+                    "external": offer.get("external", {}),
+                    "afterSalesServices": offer.get("afterSalesServices", {}),
+                    "additionalServices": offer.get("additionalServices", {}),
+                    "b2b": offer.get("b2b", {}),
+                    "fundraisingCampaign": offer.get("fundraisingCampaign", {})
+                }
+            }
+            processed_offers.append(offer_info)
+        
+        logger.info(f"[OFFERS] Обработано оферт: {len(processed_offers)}")
+        
+        return {
+            "success": True,
+            "offers": processed_offers,
+            "count": len(processed_offers),
+            "total_count": offers_data.get("totalCount", 0),
+            "sku": sku,
+            "account_name": account_name
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[OFFERS] Ошибка при получении оферт для SKU {sku} в аккаунте {account_name}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при получении оферт: {str(e)}"
+        )

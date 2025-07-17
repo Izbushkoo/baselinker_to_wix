@@ -697,6 +697,9 @@ class InventoryManager:
                 session.add(stock)
                 session.commit()
                 
+                # Запускаем задачу синхронизации Allegro по имени (без импорта)
+                celery.send_task('app.services.allegro.sync_tasks.sync_allegro_stock_single_product', args=[sku])
+                
                 logging.info(
                     f"Успешно добавлено {quantity} единиц товара {sku} "
                     f"на склад {warehouse}"

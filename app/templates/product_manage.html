@@ -88,7 +88,7 @@
                                     <div class="flex items-center space-x-2">
                                         <input type="number" 
                                                min="1" 
-                                               value="1"
+                                               value="0"
                                                class="w-16 px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                data-warehouse="{{ warehouse }}"
                                                data-sku="{{ product.sku }}"
@@ -258,9 +258,9 @@
                         </div>
                         <p class="text-xs text-gray-500 mb-2">
                             {% if token.price_sync_enabled %}
-                            Цены синхронизируются автоматически
+                            Цена синхронизируется автоматически
                             {% else %}
-                            Синхронизация цен отключена
+                            Синхронизация цены отключена
                             {% endif %}
                         </p>
                         {% if token.last_price_sync_at %}
@@ -277,11 +277,12 @@
                             {% if user.is_admin %}
                             <input type="number" 
                                    step="0.01" 
-                                   min="0.01" 
+                                   min="0.1" 
                                    max="10" 
                                    value="{{ token.price_multiplier }}"
                                    class="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                   id="multiplier_{{ token.account_name }}">
+                                   id="multiplier_{{ token.account_name }}"
+                                   oninput="updateMultiplierText('{{ token.account_name }}', this.value)">
                             <button type="button" 
                                     class="px-3 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     onclick="updateMultiplier('{{ product.sku }}', '{{ token.account_name }}', document.getElementById('multiplier_{{ token.account_name }}').value)">
@@ -293,7 +294,7 @@
                             </span>
                             {% endif %}
                         </div>
-                        <p class="text-xs text-gray-500 mt-2">
+                        <p class="text-xs text-gray-500 mt-2" id="multiplier_text_{{ token.account_name }}">
                             {% if token.price_multiplier == 1.0 %}
                             Цена без изменений
                             {% elif token.price_multiplier > 1.0 %}
@@ -302,6 +303,40 @@
                             Скидка {{ ((1 - token.price_multiplier) * 100)|round(1) }}%
                             {% endif %}
                         </p>
+                        {% if user.is_admin and token.price_sync_enabled %}
+                        <button type="button" 
+                                class="mt-2 px-2 py-1 bg-green-500 text-white text-xs rounded-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500"
+                                onclick="syncPriceForAccount('{{ product.sku }}', '{{ token.account_name }}')">
+                            Синхронизировать цену
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Блок оферт -->
+                <div class="mt-4 bg-white rounded-lg border border-gray-200">
+                    <div class="p-4 border-b border-gray-200">
+                        <div class="flex items-center justify-between">
+                            <h4 class="text-sm font-medium text-gray-900">Оферты</h4>
+                            <button type="button"
+                                    class="p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md"
+                                    onclick="refreshOffers('{{ token.account_name }}')"
+                                    title="Обновить оферты">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="p-4">
+                        <div id="offers-list-{{ token.account_name }}">
+                            <!-- Здесь будут отображаться оферты -->
+                            <div class="text-center py-4 text-gray-500" id="offers-loading-{{ token.account_name }}">
+                                <div class="spinner border-t-2 border-blue-600 border-solid rounded-full w-6 h-6 mx-auto mb-2 animate-spin"></div>
+                                Загрузка оферт...
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -473,6 +508,8 @@ function toggleStockSync(sku, accountName, checkbox) {
     .then(data => {
         if (data.success) {
             showNotification(data.message, 'success');
+            // Триггерим событие обновления настроек синхронизации для автообновления оферт
+            document.dispatchEvent(new CustomEvent('syncSettingsUpdated'));
         } else {
             checkbox.checked = !isEnabled; // Возвращаем обратно
             showNotification(data.message || 'Ошибка при переключении синхронизации', 'error');
@@ -498,6 +535,8 @@ function togglePriceSync(sku, accountName, checkbox) {
     .then(data => {
         if (data.success) {
             showNotification(data.message, 'success');
+            // Триггерим событие обновления настроек синхронизации для автообновления оферт
+            document.dispatchEvent(new CustomEvent('syncSettingsUpdated'));
         } else {
             checkbox.checked = !isEnabled; // Возвращаем обратно
             showNotification(data.message || 'Ошибка при переключении синхронизации', 'error');
@@ -522,6 +561,8 @@ function updateMultiplier(sku, accountName, multiplier) {
     .then(data => {
         if (data.success) {
             showNotification(data.message, 'success');
+            // Триггерим событие обновления для автообновления оферт
+            document.dispatchEvent(new CustomEvent('priceUpdated'));
         } else {
             showNotification(data.message || 'Ошибка при обновлении мультипликатора', 'error');
         }
@@ -531,10 +572,62 @@ function updateMultiplier(sku, accountName, multiplier) {
     });
 }
 
+// Функция для динамического обновления текста мультипликатора
+function updateMultiplierText(accountName, multiplier) {
+    const textElement = document.getElementById(`multiplier_text_${accountName}`);
+    const value = parseFloat(multiplier);
+    
+    if (isNaN(value) || value <= 0) {
+        textElement.textContent = 'Некорректное значение';
+        return;
+    }
+    
+    if (value === 1.0) {
+        textElement.textContent = 'Цена без изменений';
+    } else if (value > 1.0) {
+        const markup = ((value - 1) * 100).toFixed(1);
+        textElement.textContent = `Наценка ${markup}%`;
+    } else {
+        const discount = ((1 - value) * 100).toFixed(1);
+        textElement.textContent = `Скидка ${discount}%`;
+    }
+}
+
 // Синхронизация всех аккаунтов
 function syncAllAccounts() {
     // TODO: Реализовать синхронизацию всех аккаунтов
     showNotification('Функция синхронизации всех аккаунтов будет реализована позже', 'info');
+}
+
+// Синхронизация цены для конкретного аккаунта
+function syncPriceForAccount(sku, accountName) {
+    const button = event.target;
+    button.disabled = true;
+    button.textContent = 'Синхронизируется...';
+    
+    fetch(`/api/products/${sku}/sync-settings/${accountName}/sync-price`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message, 'success');
+            // Триггерим событие обновления для автообновления оферт
+            document.dispatchEvent(new CustomEvent('priceUpdated'));
+        } else {
+            showNotification(data.message || 'Ошибка при синхронизации цены', 'error');
+        }
+    })
+    .catch(error => {
+        showNotification('Ошибка при синхронизации цены: ' + error.message, 'error');
+    })
+    .finally(() => {
+        button.disabled = false;
+        button.textContent = 'Синхронизировать цену';
+    });
 }
 
 // Функции для работы с модальным окном редактирования цены
@@ -598,6 +691,8 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(data => {
             closePriceEditModal();
             showNotification('Цена успешно обновлена! Обновите страницу для отображения изменений.', 'success');
+            // Триггерим событие обновления цены для автообновления оферт
+            document.dispatchEvent(new CustomEvent('priceUpdated'));
         })
         .catch(error => {
             console.error('[LOG] Ошибка при обновлении цены:', error);
@@ -677,6 +772,12 @@ function removeFromStock(button) {
         button.dataset.currentQuantity = newQuantity;
         input.dataset.currentQuantity = newQuantity;
         
+        // Обновляем также кнопку "Пополнить" для этого склада
+        const addButton = button.parentElement.querySelector('[onclick="addToStock(this)"]');
+        if (addButton) {
+            addButton.dataset.currentQuantity = newQuantity;
+        }
+        
         // Обновляем отображение количества
         const quantityBadge = button.parentElement.parentElement.querySelector('.inline-flex');
         quantityBadge.textContent = `${newQuantity} шт.`;
@@ -696,6 +797,8 @@ function removeFromStock(button) {
         input.value = 1;
         
         showNotification('Товар успешно списан', 'success');
+        // Триггерим событие обновления остатков для автообновления оферт
+        document.dispatchEvent(new CustomEvent('stockUpdated'));
     })
     .catch(error => {
         showErrorModal('Ошибка при списании товара: ' + error.message);
@@ -746,16 +849,19 @@ function addToStock(button) {
         button.dataset.currentQuantity = newQuantity;
         input.dataset.currentQuantity = newQuantity;
         
+        // Обновляем также кнопку "Списать" для этого склада
+        const removeButton = button.parentElement.querySelector('[onclick="removeFromStock(this)"]');
+        if (removeButton) {
+            removeButton.dataset.currentQuantity = newQuantity;
+            if (removeButton.disabled) {
+                removeButton.disabled = false;
+            }
+        }
+        
         // Обновляем отображение количества
         const quantityBadge = button.parentElement.parentElement.querySelector('.inline-flex');
         quantityBadge.textContent = `${newQuantity} шт.`;
         quantityBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800';
-        
-        // Активируем кнопку "Списать" если она была неактивна
-        const removeButton = button.parentElement.querySelector('[onclick="removeFromStock(this)"]');
-        if (removeButton.disabled) {
-            removeButton.disabled = false;
-        }
         
         // Обновляем общее количество
         updateTotalStock();
@@ -764,6 +870,8 @@ function addToStock(button) {
         input.value = 1;
         
         showNotification('Товар успешно пополнен', 'success');
+        // Триггерим событие обновления остатков для автообновления оферт
+        document.dispatchEvent(new CustomEvent('stockUpdated'));
     })
     .catch(error => {
         showErrorModal('Ошибка при пополнении товара: ' + error.message);
@@ -776,13 +884,12 @@ function addToStock(button) {
 // Функция для обновления общего количества товара
 function updateTotalStock() {
     const totalStockElement = document.getElementById('total-stock');
-    const allQuantityBadges = document.querySelectorAll('[data-current-quantity]');
+    // Используем только кнопки "Списать" чтобы избежать дублирования
+    const removeButtons = document.querySelectorAll('button[onclick="removeFromStock(this)"]');
     
     let totalStock = 0;
-    allQuantityBadges.forEach(element => {
-        if (element.tagName === 'BUTTON') {
-            totalStock += parseInt(element.dataset.currentQuantity);
-        }
+    removeButtons.forEach(button => {
+        totalStock += parseInt(button.dataset.currentQuantity);
     });
     
     totalStockElement.textContent = `${totalStock} шт.`;
@@ -846,7 +953,8 @@ document.getElementById('transferForm').addEventListener('submit', function(e) {
 
 // Валидация количества при вводе
 document.addEventListener('DOMContentLoaded', function() {
-    const quantityInputs = document.querySelectorAll('input[type="number"]');
+    // Применяем валидацию только к полям количества, исключая мультипликаторы
+    const quantityInputs = document.querySelectorAll('input[type="number"]:not([id^="multiplier_"]):not([id="priceEditPrice"])');
     quantityInputs.forEach(input => {
         input.addEventListener('input', function() {
             const value = parseInt(this.value);
@@ -880,6 +988,310 @@ document.addEventListener('DOMContentLoaded', function() {
             closeTransferModal();
             errorModal.classList.add('hidden');
         }
+    });
+});
+
+// Переменная для хранения загруженных оферт
+const offersCache = {};
+
+// Функция для обновления оферт
+function refreshOffers(accountName) {
+    // Очищаем кеш
+    delete offersCache[accountName];
+    
+    // Показываем индикатор загрузки
+    const listContainer = document.getElementById(`offers-list-${accountName}`);
+    listContainer.innerHTML = `
+        <div class="text-center py-4 text-gray-500">
+            <div class="spinner border-t-2 border-blue-600 border-solid rounded-full w-6 h-6 mx-auto mb-2 animate-spin"></div>
+            Обновление оферт...
+        </div>
+    `;
+    
+    // Загружаем оферты заново
+    loadOffers(accountName);
+}
+
+// Функция для загрузки оферт
+function loadOffers(accountName) {
+    const sku = '{{ product.sku }}';
+    const listContainer = document.getElementById(`offers-list-${accountName}`);
+    
+    fetch(`/api/products/${sku}/offers/${accountName}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                offersCache[accountName] = data.offers;
+                displayOffers(accountName, data.offers);
+            } else {
+                throw new Error(data.message || 'Неизвестная ошибка');
+            }
+        })
+        .catch(error => {
+            console.error('Ошибка при загрузке оферт:', error);
+            listContainer.innerHTML = `
+                <div class="text-center py-4 text-red-500">
+                    <div class="mb-2">
+                        <svg class="w-8 h-8 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.232 15.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                    </div>
+                    <p class="text-sm">Ошибка загрузки оферт</p>
+                    <p class="text-xs text-gray-500 mt-1">${error.message}</p>
+                    <button onclick="refreshOffers('${accountName}')" class="mt-2 px-3 py-1 bg-blue-600 text-white text-xs rounded-md hover:bg-blue-700">
+                        Повторить
+                    </button>
+                </div>
+            `;
+        });
+}
+
+// Функция для отображения оферт
+function displayOffers(accountName, offers) {
+    const listContainer = document.getElementById(`offers-list-${accountName}`);
+    
+    if (!offers || offers.length === 0) {
+        listContainer.innerHTML = `
+            <div class="text-center py-4 text-gray-500">
+                <div class="mb-2">
+                    <svg class="w-8 h-8 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-6m-2-4h-2m0 0v-2a2 2 0 011-1h2m-3 0H9l3 4 3-4z" />
+                    </svg>
+                </div>
+                <p class="text-sm">Оферты не найдены</p>
+                <p class="text-xs text-gray-400 mt-1">Для этого товара нет активных оферт в данном аккаунте</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const offersHtml = offers.map(offer => `
+        <div class="border border-gray-200 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors" id="offer-container-${accountName}-${offer.id}">
+            <div class="p-4 cursor-pointer" onclick="toggleOfferDetails('${accountName}', '${offer.id}')">
+                <div class="flex items-center justify-between">
+                    <div class="flex-1">
+                        <h5 class="font-medium text-gray-900 text-base">Оферта ${offer.id}</h5>
+                        <div class="mt-1 flex items-center space-x-3">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeClass(offer.status)}">
+                                ${getStatusText(offer.status)}
+                            </span>
+                            <span class="text-xs text-gray-500">
+                                Доступно: ${offer.stock.available || 0} шт. | Продано: ${offer.stock.sold || 0} шт.
+                            </span>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-lg font-bold text-blue-600">
+                            Текущая цена: ${offer.price.amount ? `${parseFloat(offer.price.amount).toFixed(2)} ${offer.price.currency || 'PLN'}` : 'Цена не указана'}
+                        </div>
+                        <svg class="w-4 h-4 text-gray-400 transform transition-transform duration-200 mx-auto mt-1" id="arrow-${accountName}-${offer.id}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="offer-details-${accountName}-${offer.id}" class="hidden border-t border-gray-200 bg-white">
+                <div class="p-4">
+                    <!-- Детали будут загружены при клике -->
+                </div>
+            </div>
+        </div>
+    `).join('');
+    
+    listContainer.innerHTML = offersHtml;
+}
+
+// Функция для переключения деталей оферты
+function toggleOfferDetails(accountName, offerId) {
+    const details = document.getElementById(`offer-details-${accountName}-${offerId}`);
+    const arrow = document.getElementById(`arrow-${accountName}-${offerId}`);
+    
+    if (details.classList.contains('hidden')) {
+        details.classList.remove('hidden');
+        arrow.style.transform = 'rotate(180deg)';
+        
+        // Загружаем детали оферты
+        loadOfferDetails(accountName, offerId);
+    } else {
+        details.classList.add('hidden');
+        arrow.style.transform = 'rotate(0deg)';
+    }
+}
+
+// Функция для загрузки деталей оферты
+function loadOfferDetails(accountName, offerId) {
+    const offers = offersCache[accountName];
+    const offer = offers.find(o => o.id === offerId);
+    
+    if (!offer) {
+        console.error('Оферта не найдена в кеше');
+        return;
+    }
+    
+    const detailsContainer = document.getElementById(`offer-details-${accountName}-${offerId}`);
+    const details = offer.details;
+    
+    // Формируем HTML с деталями
+    const detailsHtml = `
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Основная информация -->
+            <div class="space-y-3">
+                <div class="bg-gray-50 rounded-lg p-3">
+                    <h6 class="text-sm font-medium text-gray-900 mb-2">Основная информация</h6>
+                    <div class="space-y-1 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Название:</span>
+                            <span class="font-medium text-right">${offer.name || 'Без названия'}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">ID оферты:</span>
+                            <span class="font-medium">${offer.id}</span>
+                        </div>
+                        ${details.external?.id ? `
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Внешний ID:</span>
+                            <span class="font-medium">${details.external.id}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+                
+                <div class="bg-gray-50 rounded-lg p-3">
+                    <h6 class="text-sm font-medium text-gray-900 mb-2">Статистика</h6>
+                    <div class="space-y-1 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Наблюдатели:</span>
+                            <span class="font-medium">${details.stats?.watchersCount || 0}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Просмотры:</span>
+                            <span class="font-medium">${details.stats?.visitsCount || 0}</span>
+                        </div>
+                        ${details.saleInfo?.biddersCount ? `
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Участники торгов:</span>
+                            <span class="font-medium">${details.saleInfo.biddersCount}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Публикация и условия -->
+            <div class="space-y-3">
+                <div class="bg-gray-50 rounded-lg p-3">
+                    <h6 class="text-sm font-medium text-gray-900 mb-2">Публикация</h6>
+                    <div class="space-y-1 text-sm">
+                        ${details.publication?.startedAt ? `
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Опубликована:</span>
+                            <span class="font-medium">${new Date(details.publication.startedAt).toLocaleDateString('ru-RU')}</span>
+                        </div>
+                        ` : ''}
+                        ${details.publication?.endingAt ? `
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Окончание:</span>
+                            <span class="font-medium">${new Date(details.publication.endingAt).toLocaleDateString('ru-RU')}</span>
+                        </div>
+                        ` : ''}
+                        ${details.publication?.marketplaces?.base?.id ? `
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Маркетплейс:</span>
+                            <span class="font-medium">${details.publication.marketplaces.base.id}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+                
+                ${details.sellingMode ? `
+                <div class="bg-gray-50 rounded-lg p-3">
+                    <h6 class="text-sm font-medium text-gray-900 mb-2">Условия продажи</h6>
+                    <div class="space-y-1 text-sm">
+                        ${details.sellingMode.format ? `
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Формат:</span>
+                            <span class="font-medium">${details.sellingMode.format === 'BUY_NOW' ? 'Купить сейчас' : details.sellingMode.format}</span>
+                        </div>
+                        ` : ''}
+                        ${details.sellingMode.minimalPrice ? `
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Мин. цена:</span>
+                            <span class="font-medium">${parseFloat(details.sellingMode.minimalPrice.amount).toFixed(2)} ${details.sellingMode.minimalPrice.currency}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+    
+    detailsContainer.innerHTML = detailsHtml;
+}
+
+// Функция для автообновления оферт при изменениях на странице
+function setupAutoRefresh() {
+    // Слушаем события изменения цен, остатков и настроек синхронизации
+    document.addEventListener('priceUpdated', function() {
+        refreshAllOffers();
+    });
+    
+    document.addEventListener('stockUpdated', function() {
+        refreshAllOffers();
+    });
+    
+    document.addEventListener('syncSettingsUpdated', function() {
+        refreshAllOffers();
+    });
+}
+
+// Функция для обновления всех оферт
+function refreshAllOffers() {
+    const offersSections = document.querySelectorAll('[id^="offers-list-"]');
+    offersSections.forEach(section => {
+        const accountName = section.id.replace('offers-list-', '');
+        // Задержка в 3 секунды для корректного обновления после изменений
+        setTimeout(() => refreshOffers(accountName), 3000);
+    });
+}
+
+// Вспомогательные функции для статусов
+function getStatusBadgeClass(status) {
+    switch (status) {
+        case 'ACTIVE': return 'bg-green-100 text-green-800';
+        case 'INACTIVE': return 'bg-gray-100 text-gray-800';
+        case 'ACTIVATING': return 'bg-yellow-100 text-yellow-800';
+        case 'ENDED': return 'bg-red-100 text-red-800';
+        default: return 'bg-gray-100 text-gray-800';
+    }
+}
+
+function getStatusText(status) {
+    switch (status) {
+        case 'ACTIVE': return 'Активна';
+        case 'INACTIVE': return 'Неактивна';
+        case 'ACTIVATING': return 'Активируется';
+        case 'ENDED': return 'Завершена';
+        default: return status || 'Неизвестно';
+    }
+}
+
+// Автоматическая загрузка оферт при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    // Инициализируем автообновление
+    setupAutoRefresh();
+    
+    // Загружаем оферты для всех аккаунтов, найденных на странице
+    const offersSections = document.querySelectorAll('[id^="offers-list-"]');
+    offersSections.forEach(section => {
+        const accountName = section.id.replace('offers-list-', '');
+        loadOffers(accountName);
     });
 });
 
