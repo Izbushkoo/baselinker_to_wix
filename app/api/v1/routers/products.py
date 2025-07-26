@@ -1190,7 +1190,7 @@ async def manage_product(
                 'token_id': token.id_,
                 'account_name': account_name,
                 'description': token.description,
-                'stock_sync_enabled': True,  # По умолчанию включено
+                'stock_sync_enabled': False,  # По умолчанию включено
                 'price_sync_enabled': False,  # По умолчанию выключено
                 'price_multiplier': 1.0,
                 'last_stock_sync_at': None,
