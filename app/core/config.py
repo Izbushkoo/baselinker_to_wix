@@ -1,4 +1,5 @@
 import os
+import logging
 import secrets
 from typing import Any, Dict, List, Optional, Union
 
@@ -90,3 +91,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+logging.info(f"settings {settings}")
