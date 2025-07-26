@@ -6,7 +6,6 @@ from sqlmodel import Session, select
 from sqlalchemy import func
 import os
 from dotenv import load_dotenv
-
 # Загружаем переменные окружения перед импортом config
 load_dotenv()
 
@@ -19,6 +18,7 @@ if is_docker:
     print("Celery: Загружены переменные из .env.docker")
 
 from app.core.config import settings
+from app.core.security import create_access_token
 from celery import chord, group, chain
 from celery.schedules import crontab, schedule
 from app.celery_shared import celery, SessionLocal, get_allegro_token
@@ -53,6 +53,8 @@ import requests
 from app.repositories.allegro_event_tracker_repository import AllegroEventTrackerRepository
 from app.services.wix_api_service.base import WixApiService, WixInventoryUpdate
 from app.models.warehouse import Product, Stock
+from app.services.Allegro_Microservice.tokens_endpoint import AllegroTokenMicroserviceClient
+from app.services.Allegro_Microservice.orders_endpoint import OrdersClient
 
 def get_redis_client():
     redis_url = os.getenv("CELERY_REDIS_URL", "redis://redis:6379/0")
@@ -493,49 +495,97 @@ def sync_allegro_orders_immediate(token_id: str, from_date: Optional[str] = None
 def check_and_update_stock():
     """
     Проверяет все заказы для всех токенов и пытается произвести списание товаров,
-    если они еще не были списаны (is_stock_updated = False).
+    если они еще не были списаны (stock_updated = False).
+    Использует микросервис для получения заказов.
     """
     try:
+        # Создаем JWT токен для работы с микросервисом
+        jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
+        base_url = settings.MICRO_SERVICE_URL
+        
+        # Инициализируем клиенты микросервиса
+        token_client = AllegroTokenMicroserviceClient(
+            jwt_token=jwt_token,
+            base_url=base_url
+        )
+        orders_client = OrdersClient(
+            jwt_token=jwt_token,
+            base_url=base_url
+        )
+
+        # Получаем все токены через микросервис
+        tokens = token_client.get_tokens(per_page=100)
+        logging.info(f"tokens response {tokens}")
+
+        
+        if not tokens:
+            logger.info("Нет токенов Allegro в базе данных")
+            return {"status": "success", "message": "Нет токенов для обработки"}
+
+        total_processed = 0
+        total_updated = 0
+        
+        # Создаем сессию БД для работы со stock_service
         session = SessionLocal()
         try:
-            # Получаем все токены
-            tokens_query = select(AllegroToken)
-            tokens = session.exec(tokens_query).all()
-            
-            if not tokens:
-                logger.info("Нет токенов Allegro в базе данных")
-                return {"status": "success", "message": "Нет токенов для обработки"}
-
-            total_processed = 0
-            total_updated = 0
-            stock_service = AllegroStockService(session, manager.get_manager())
+            stock_service = AllegroStockService(manager.get_manager())
 
             for token in tokens:
-                # Получаем все заказы для токена, где is_stock_updated = False
-                orders_query = select(AllegroOrder).where(
-                    AllegroOrder.token_id == token.id_,
-                    AllegroOrder.is_stock_updated == False
-                )
-                orders = session.exec(orders_query).all()
-
-                logger.info(f"Найдено {len(orders)} необработанных заказов для токена {token.id_}")
-
-                for order in orders:
+                token_id = token.get("id")
+                logger.info(f"Обрабатываем токен {token_id}")
+                
+                # Получаем все заказы для токена с фильтром stock_updated = False
+                # Используем пагинацию для получения всех заказов
+                offset = 0
+                limit = 100
+                all_orders = []
+                
+                while True:
                     try:
-                        if stock_service.process_order_stock_update(order, warehouse=manager.Warehouses.A.value):
+                        orders_response = orders_client.get_orders(
+                            token_id=token_id,
+                            stock_updated=False,  # Фильтр по флагу обновления стока
+                            limit=limit,
+                            offset=offset
+                        )
+                        orders = orders_response.get("orders", [])
+                        
+                        if not orders:
+                            break
+                            
+                        all_orders.extend(orders)
+                        
+                        # Если получили меньше заказов чем лимит, значит это последняя страница
+                        if len(orders) < limit:
+                            break
+                            
+                        offset += limit
+                        
+                    except Exception as e:
+                        logger.error(f"Ошибка при получении заказов для токена {token_id} (offset: {offset}): {str(e)}")
+                        break
+
+                logger.info(f"Найдено {len(all_orders)} необработанных заказов для токена {token_id}")
+
+                for order_data in all_orders:
+                    try:
+                        
+                        # Пытаемся произвести списание товаров
+                        if stock_service.process_order_stock_update(order_data, warehouse=manager.Warehouses.A.value, token_id=token_id):
                             total_updated += 1
                         total_processed += 1
+                        
                     except Exception as e:
-                        logger.error(f"Ошибка при обработке заказа {order.id}: {str(e)}")
+                        logger.error(f"Ошибка при обработке заказа {order_data.get('allegro_order_id')}: {str(e)}")
                         continue
 
             logger.info(f"Обработано заказов: {total_processed}, успешно списано: {total_updated}")
             return {
-                "status": "success", 
+                "status": "success",
                 "total_processed": total_processed,
                 "total_updated": total_updated
             }
-
+            
         finally:
             session.close()
 

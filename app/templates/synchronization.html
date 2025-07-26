@@ -11,14 +11,17 @@
         <div class="flex justify-between items-center mb-6">
             <h1 class="text-2xl font-bold text-white">Управление синхронизацией</h1>
             <div class="flex space-x-4">
-                <button onclick="checkStocks()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-indigo-500">
+                <button onclick="checkStocks()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-indigo-500 transition-all duration-200">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                     </svg>
-                    Списать заказы(Несписанные)
+                    Списать заказы (Несписанные)
                 </button>
-                <a href="/connect_allegro" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-primary-500">
-                    + Подключить аккаунт
+                <a href="/connect_allegro" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-emerald-500 transition-all duration-200">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    Подключить аккаунт
                 </a>
             </div>
         </div>
@@ -27,41 +30,65 @@
             {% for token in tokens %}
             <div class="bg-gray-800 rounded-lg shadow overflow-hidden">
                 <div class="p-4 relative">
-                    <a href="/allegro/orders/{{ token.id_ }}" class="absolute inset-0 z-10"></a>
-                    <div class="flex items-center justify-between relative z-20 pointer-events-none">
+                    <a href="/allegro/orders/{{ token.id }}/{{ token.account_name }}" class="absolute inset-0 z-10"></a>
+                    <div class="flex items-stretch justify-between relative z-20 pointer-events-none">
                         <div>
                             <div class="text-xl font-semibold text-white">{{ token.account_name }}</div>
-                            <div class="text-sm text-gray-400">ID: {{ token.id_ }}</div>
+                            <div class="text-sm text-gray-400">ID: {{ token.id }}</div>
                             <div class="mt-2">
                                 <div class="flex items-center space-x-2">
                                     <span class="text-sm text-gray-400">Статус синхронизации:</span>
-                                    <span id="sync-status-{{ token.id_ }}" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium">
+                                    <span id="sync-status-{{ token.id }}" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium">
                                         <span class="h-2 w-2 rounded-full mr-1"></span>
                                         <span class="status-text">Проверка...</span>
                                     </span>
                                 </div>
                             </div>
                         </div>
-                        <div class="flex space-x-2 pointer-events-auto">
-                            <button onclick="event.stopPropagation(); startSync('{{ token.id_ }}')" class="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-green-500">
-                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                Запустить
-                            </button>
-                            <button onclick="event.stopPropagation(); stopSync('{{ token.id_ }}')" class="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-red-500">
-                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                                Остановить
-                            </button>
-                            <button onclick="event.stopPropagation(); syncNow('{{ token.id_ }}')" class="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-blue-500">
-                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                </svg>
-                                Синхронизировать сейчас
-                            </button>
-                            <button onclick="event.stopPropagation(); deleteAccount('{{ token.id_ }}')" class="inline-flex items-center px-3 py-2 border border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-300 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-gray-500">
+                        <div class="flex items-stretch space-x-2 pointer-events-auto">
+                            <div class="flex flex-col justify-between space-y-2 h-full min-h-[120px]">
+                                <button onclick="event.stopPropagation(); startSync('{{ token.id }}')" class="inline-flex items-center justify-center px-4 py-3 border border-transparent rounded text-sm font-medium text-white bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 focus:outline-none focus:ring-1 focus:ring-green-500 transition-all duration-200 flex-1">
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                    Запустить
+                                </button>
+                                <button onclick="event.stopPropagation(); stopSync('{{ token.id }}')" class="inline-flex items-center justify-center px-4 py-3 border border-transparent rounded text-sm font-medium text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 focus:outline-none focus:ring-1 focus:ring-red-500 transition-all duration-200 flex-1">
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                    Остановить
+                                </button>
+                            </div>
+                            <div class="bg-gray-700 rounded-lg p-3 border border-gray-600">
+                                <div class="flex items-center justify-between mb-2">
+                                    <div class="flex items-center space-x-2">
+                                        <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                        <span class="text-sm font-medium text-blue-400">Синхронизировать заказы с даты:</span>
+                                    </div>
+                                </div>
+                                <div class="flex items-center space-x-3">
+                                    <input
+                                        type="date"
+                                        id="sync-date-{{ token.id }}"
+                                        class="flex-1 px-3 py-2 text-sm border border-gray-500 rounded-md bg-gray-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                        style="color-scheme: dark;"
+                                        onclick="event.stopPropagation();"
+                                    />
+                                    <button onclick="event.stopPropagation(); syncNow('{{ token.id }}')" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-blue-500 transition-all duration-200">
+                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                        </svg>
+                                        Синхронизировать
+                                    </button>
+                                </div>
+                                <div class="mt-2 text-xs text-gray-400">
+                                    Загрузит заказы начиная с выбранной даты
+                                </div>
+                            </div>
+                            <button onclick="event.stopPropagation(); deleteAccount('{{ token.id }}')" class="inline-flex items-center px-3 py-2 border border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-300 bg-gray-800 hover:bg-gradient-to-r hover:from-gray-700 hover:to-gray-600 hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-gray-500 transition-all duration-200">
                                 <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>
@@ -130,11 +157,34 @@ async function stopSync(tokenId) {
 
 async function syncNow(tokenId) {
     try {
-        const response = await fetch(`/api/allegro_sync/sync-immediate/${tokenId}`, {
+        const dateInput = document.getElementById(`sync-date-${tokenId}`);
+        const selectedDate = dateInput.value; // YYYY-MM-DD формат от date picker
+        
+        let fromDate = null;
+        if (selectedDate) {
+            // Конвертируем из YYYY-MM-DD в DD-MM-YYYY для API
+            fromDate = convertDateToApiFormat(selectedDate);
+        }
+        
+        // Формируем URL с параметром даты если она указана
+        let url = `/api/allegro_sync/sync-immediate/${tokenId}`;
+        if (fromDate) {
+            url += `?from_date=${encodeURIComponent(fromDate)}`;
+        }
+        
+        const response = await fetch(url, {
             method: 'POST'
         });
+        
         if (response.ok) {
-            showNotification('Синхронизация запущена', 'success');
+            const message = fromDate
+                ? `Синхронизация запущена с даты ${fromDate}`
+                : 'Синхронизация запущена';
+            showNotification(message, 'success');
+            
+            // Устанавливаем текущую дату после успешного запуска
+            const today = new Date();
+            dateInput.value = today.toISOString().split('T')[0];
         } else {
             const data = await response.json();
             showNotification(`Ошибка: ${data.detail}`, 'error');
@@ -216,7 +266,21 @@ function initStatusUpdates() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', initStatusUpdates);
+function setCurrentDateForDatePickers() {
+    const today = new Date();
+    const currentDate = today.toISOString().split('T')[0]; // Формат YYYY-MM-DD
+    
+    // Устанавливаем текущую дату для всех date picker'ов
+    const dateInputs = document.querySelectorAll('input[type="date"][id^="sync-date-"]');
+    dateInputs.forEach(input => {
+        input.value = currentDate;
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    initStatusUpdates();
+    setCurrentDateForDatePickers();
+});
 
 function showNotification(message, type = 'info') {
     const colors = {
@@ -258,5 +322,16 @@ function showNotification(message, type = 'info') {
         }, 500);
     }, 3000);
 }
+
+function convertDateToApiFormat(dateString) {
+    // Конвертируем YYYY-MM-DD в DD-MM-YYYY
+    if (!dateString) return null;
+    
+    const parts = dateString.split('-');
+    if (parts.length !== 3) return null;
+    
+    const [year, month, day] = parts;
+    return `${day}-${month}-${year}`;
+}
 </script>
-{% endblock %} 
+{% endblock %}

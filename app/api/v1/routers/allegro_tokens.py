@@ -1,7 +1,10 @@
+
+from requests.exceptions import HTTPError
 import logging
-from typing import List, Dict, Any
+import json
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Cookie
 from fastapi.responses import JSONResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -14,6 +17,9 @@ from app.models.user import User as UserModel
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
 from app.core.config import settings
+from app.core.security import create_access_token
+from app.services.Allegro_Microservice.tokens_endpoint import AllegroTokenMicroserviceClient
+
 
 router = APIRouter()
 web_router = APIRouter()
@@ -39,9 +45,16 @@ async def get_tokens(
     user_id: str,
     database: AsyncSession = Depends(deps.get_async_session)
 ):
+
     """Получает список всех токенов для пользователя."""
+    micro_token_client = AllegroTokenMicroserviceClient(
+        base_url=settings.MICRO_SERVICE_URL,
+        jwt_token=create_access_token(user_id=settings.PROJECT_NAME),
+        timeout=10
+    )
     logging.info(f"Access to allegro tokens list")
-    tokens = await get_tokens_list(database, user_id)
+
+    tokens = micro_token_client.get_user_tokens()
     return [TokenOfAllegro(**token.model_dump(exclude_none=True)) for token in tokens]
 
 
@@ -56,13 +69,38 @@ async def add_account(account_data: TokenOfAllegro, database: AsyncSession = Dep
 
 @router.post("/initialize")
 async def initialize_token(request: InitializeRequest):
+
+    micro_token_client = AllegroTokenMicroserviceClient(
+        base_url=settings.MICRO_SERVICE_URL,
+        jwt_token=create_access_token(user_id=settings.PROJECT_NAME),
+        timeout=10
+    )
+
     """Инициализирует новый токен используя Device Flow."""
-    try:
-        auth_data = allegro_tokens.initialize_device_flow(request.account_name)
+    try: 
+        auth_data = micro_token_client.initialize_auth(request.account_name)
+
         return auth_data
+
+    except HTTPError as http_err:
+        # HTTPError.response — это объект requests.Response
+        resp = http_err.response
+        body = resp.json()
+        raw = body.get("detail", body)
+        # пробуем вычитать JSON, иначе — текст
+        detail = raw if isinstance(raw, str) else json.dumps(raw)
+        # пробрасываем код и тело из микросервиса
+        raise HTTPException(status_code=resp.status_code, detail=detail)
+
     except Exception as e:
         logging.error(f"Error initializing auth: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    # try:
+    #     auth_data = allegro_tokens.initialize_device_flow(request.account_name)
+    #     return auth_data
+    # except Exception as e:
+    #     logging.error(f"Error initializing auth: {str(e)}")
+    #     raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{token_id}")
@@ -84,62 +122,76 @@ async def delete_token_route(
     database: AsyncSession = Depends(deps.get_async_session)
 ):
     """Удаляет токен по ID и все связанные заказы и связанные сущности."""
-    logging.info(f"Access to allegro tokens add")
-    from sqlalchemy import text
+    logging.info(f"Access to allegro tokens delete")
+    # from sqlalchemy import text
     try:
-        # 1. Удаляем связи в таблице order_line_items
-        delete_items = text("""
-            DELETE FROM order_line_items 
-            WHERE order_id IN (
-                SELECT id FROM allegro_orders WHERE token_id = :token_id
-            )
-        """).bindparams(token_id=token_id)
-        await database.exec(delete_items)
+    #     # 1. Удаляем связи в таблице order_line_items
+    #     delete_items = text("""
+    #         DELETE FROM order_line_items 
+    #         WHERE order_id IN (
+    #             SELECT id FROM allegro_orders WHERE token_id = :token_id
+    #         )
+    #     """).bindparams(token_id=token_id)
+    #     await database.exec(delete_items)
         
-        # 2. Удаляем заказы
-        delete_orders = text("""
-            DELETE FROM allegro_orders 
-            WHERE token_id = :token_id
-        """).bindparams(token_id=token_id)
-        await database.exec(delete_orders)
+    #     # 2. Удаляем заказы
+    #     delete_orders = text("""
+    #         DELETE FROM allegro_orders 
+    #         WHERE token_id = :token_id
+    #     """).bindparams(token_id=token_id)
+    #     await database.exec(delete_orders)
         
-        # 3. Удаляем неиспользуемые товарные позиции
-        delete_unused_items = text("""
-            DELETE FROM allegro_line_items 
-            WHERE id NOT IN (
-                SELECT line_item_id FROM order_line_items
-            )
-        """)
-        await database.exec(delete_unused_items)
+    #     # 3. Удаляем неиспользуемые товарные позиции
+    #     delete_unused_items = text("""
+    #         DELETE FROM allegro_line_items 
+    #         WHERE id NOT IN (
+    #             SELECT line_item_id FROM order_line_items
+    #         )
+    #     """)
+    #     await database.exec(delete_unused_items)
         
-        # 4. Удаляем неиспользуемых покупателей
-        delete_unused_buyers = text("""
-            DELETE FROM allegro_buyers 
-            WHERE id NOT IN (
-                SELECT buyer_id FROM allegro_orders
-            )
-        """)
-        await database.exec(delete_unused_buyers)
+    #     # 4. Удаляем неиспользуемых покупателей
+    #     delete_unused_buyers = text("""
+    #         DELETE FROM allegro_buyers 
+    #         WHERE id NOT IN (
+    #             SELECT buyer_id FROM allegro_orders
+    #         )
+    #     """)
+    #     await database.exec(delete_unused_buyers)
         
-        await database.flush()
+    #     await database.flush()
         
-        # 5. Удаляем сам токен
-        token = await delete_token(database, token_id)
-        await database.commit()
+    #     # 5. Удаляем сам токен
+    #     token = await delete_token(database, token_id)
+    #     await database.commit()
+        token_client = AllegroTokenMicroserviceClient(
+            jwt_token=create_access_token(
+                user_id=settings.PROJECT_NAME
+            ),
+            base_url=settings.MICRO_SERVICE_URL
+        )
+
+        token = token_client.delete_token(token_id=token_id)
     except Exception as e:
         logging.error(f"Ошибка при удалении токена и заказов: {e}")
         await database.rollback()
         raise HTTPException(500, "Ошибка при удалении токена и связанных заказов")
-    else:
-        return TokenOfAllegro(**token.model_dump(exclude_none=True))
 
 
-@router.get("/check/{device_code}")
-async def check_auth_status(device_code: str, account_name: str):
-    """Проверяет статус авторизации по device_code."""
+@router.get("/check/{task_id}")
+async def check_auth_status(task_id: str, account_name: str):
+
+    """Проверяет статус авторизации по device_code и account_name"""
+
+    micro_token_client = AllegroTokenMicroserviceClient(
+        base_url=settings.MICRO_SERVICE_URL,
+        jwt_token=create_access_token(user_id=settings.PROJECT_NAME),
+        timeout=10
+    )
+
     try:
-        status = allegro_tokens.check_auth_status(device_code, account_name)
-        return {"status": status}
+        status = micro_token_client.get_auth_task_status(task_id)
+        return status
     except Exception as e:
         logging.error(f"Error checking auth status: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

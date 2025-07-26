@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     
     ALLEGRO_CLIENT_ID: str
     ALLEGRO_CLIENT_SECRET: str
+    MICRO_SERVICE_URL: str
 
     @field_validator("SQLALCHEMY_DATABASE_URI", mode='before')
     def assemble_db_connection(cls, v: Optional[str], values: ValidationInfo) -> Any:

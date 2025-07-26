@@ -26,7 +26,10 @@ from pydantic import BaseModel, Field
 from openpyxl.styles import Font, Alignment
 from urllib.parse import quote
 from app.services.operations_service import OperationsService, get_operations_service
+from app.services.Allegro_Microservice.orders_endpoint import OrdersClient
 from app.models.operations import OperationType
+from app.core.security import create_access_token
+from app.core.config import settings
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -49,6 +52,7 @@ class AddItem(BaseModel):
     quantity: int
 
 class SaleFromOrder(BaseModel):
+    token_id: str
     order_id: str
     line_items: List[dict]
     warehouse: str = Field(default=Warehouses.A.value, description="Склад для списания товаров")
@@ -561,15 +565,21 @@ async def sale_from_order(
     '''Списывает товары из заказа как продажу только если все товары есть в наличии.'''
     try:
         # Сначала проверяем наличие всех товаров
+        logging.info(f"line items {sale_data.line_items}")
         for item in sale_data.line_items:
-            if 'external_id' in item and item['external_id']:
-                stocks = manager.get_stock_by_sku(item['external_id'])
-                if not stocks or sale_data.warehouse not in stocks or stocks[sale_data.warehouse] < 1:
+            logging.info(f"{item}")
+            sku = item.get("offer", {}).get('external', {}).get("id")
+            quantity = item.get("quantity", 0)
+
+            logging.info(f"{sku}: {quantity} ps.")
+            if sku:
+                stocks = manager.get_stock_by_sku(sku)
+                if not stocks or sale_data.warehouse not in stocks or stocks[sale_data.warehouse] < quantity:
                     return JSONResponse(
                         status_code=400,
                         content={
                             'status': 'error',
-                            'message': f'Товар {item["external_id"]} отсутствует на складе {sale_data.warehouse}'
+                            'message': f'Товар {sku} отсутствует на складе {sale_data.warehouse}'
                         }
                     )
 
@@ -577,16 +587,18 @@ async def sale_from_order(
         # Если все товары есть в наличии, выполняем списание
         operations_service = get_operations_service()
         for item in sale_data.line_items:
-            if 'external_id' in item and item['external_id']:
+            sku = item.get("offer", {}).get('external', {}).get("id")
+            quantity = item.get("quantity", 0)
+            if sku:
                 try:
                     manager.remove_as_sale(
-                        sku=item['external_id'],
+                        sku=sku,
                         warehouse=sale_data.warehouse,
-                        quantity=1  # Списываем по одной единице для каждой позиции
+                        quantity=quantity
                     )
                     products.append({
-                        'sku': item['external_id'],
-                        'quantity': 1
+                        'sku': sku,
+                        'quantity': quantity
                     })
                     # Создаем запись операции для каждого списанного товара
                     
@@ -595,7 +607,7 @@ async def sale_from_order(
                         status_code=400,
                         content={
                             'status': 'error',
-                            'message': f'Ошибка при списании товара {item["external_id"]}: {str(e)}'
+                            'message': f'Ошибка при списании товара {sku}: {str(e)}'
                         }
                     )
 
@@ -606,12 +618,26 @@ async def sale_from_order(
             comment=f"Списание товара выполнено через кнопку 'списать'\n",
             products_data=products
         )
-        update_stmt = update(AllegroOrder).where(
-            AllegroOrder.id == sale_data.order_id
-        ).values(is_stock_updated=True)
+
+        orders_client = OrdersClient(
+            jwt_token=create_access_token(
+                user_id=settings.PROJECT_NAME
+            ),
+            base_url=settings.MICRO_SERVICE_URL
+        )
+
+        orders_client.update_stock_status(
+            token_id=sale_data.token_id,
+            order_id=sale_data.order_id,
+            is_stock_updated=True
+        )
+
+        # update_stmt = update(AllegroOrder).where(
+        #     AllegroOrder.id == sale_data.order_id
+        # ).values(is_stock_updated=True)
         
-        await db.exec(update_stmt)
-        await db.commit()
+        # await db.exec(update_stmt)
+        # await db.commit()
         
         return JSONResponse({
             'status': 'success',

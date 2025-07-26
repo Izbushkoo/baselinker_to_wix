@@ -18,9 +18,10 @@ router = APIRouter()
 web_router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
-@web_router.get("/allegro/orders/{token_id}", response_class=HTMLResponse)
+@web_router.get("/allegro/orders/{token_id}/{account_name}", response_class=HTMLResponse)
 async def get_orders_page(
     token_id: str,
+    account_name: str,
     request: Request,
     database: AsyncSession = Depends(deps.get_async_session),
     current_user: User = Depends(deps.get_current_user_optional)
@@ -29,21 +30,22 @@ async def get_orders_page(
     if not current_user:
         return RedirectResponse(url=f"/login?next=/allegro/orders/{token_id}", status_code=302)
 
-    # Получаем информацию о токене
-    result = await database.exec(
-        select(AllegroToken).where(AllegroToken.id_ == token_id)
-    )
-    token = result.first()
+    # # Получаем информацию о токене
+    # result = await database.exec(
+    #     select(AllegroToken).where(AllegroToken.id_ == token_id)
+    # )
+    # token = result.first()
     
-    if not token:
-        raise HTTPException(status_code=404, detail="Аккаунт не найден")
+    # if not token:
+    #     raise HTTPException(status_code=404, detail="Аккаунт не найден")
+
 
     return templates.TemplateResponse(
         "allegro_orders.html",
         {
             "request": request,
             "user": current_user,
-            "account_name": token.account_name,
+            "account_name": account_name,
             "token_id": token_id
         }
     )

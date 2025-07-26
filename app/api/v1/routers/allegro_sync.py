@@ -5,6 +5,7 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import Session, select, func, text
 from datetime import timedelta, datetime
+from uuid import UUID
 import os
 import logging
 import redis
@@ -23,6 +24,11 @@ from app.services.allegro.allegro_api_service import AsyncAllegroApiService
 from app.data_access.allegro_order_repository import AllegroOrderRepository
 from app.services.allegro.tokens import check_token
 from app.utils.logging_config import logger
+from app.services.Allegro_Microservice.tokens_endpoint import AllegroTokenMicroserviceClient
+from app.services.Allegro_Microservice.orders_endpoint import OrdersClient
+from app.services.Allegro_Microservice.sync_endpoint import SyncClient
+from app.core.security import create_access_token
+from app.core.config import settings
 
 router = APIRouter()
 web_router = APIRouter()
@@ -246,22 +252,25 @@ def sync_immediate(
         token_id: ID токена
         from_date: Дата в формате DD-MM-YYYY, с которой начать синхронизацию (опционально)
     """
-    # Проверяем существование токена
-    token = get_token_by_id_sync(db, token_id)
-    if not token:
-        raise HTTPException(status_code=404, detail="Токен не найден")
 
     try:
         # Парсим дату
         parsed_date = parse_date(from_date)
-        
-        # Запускаем задачу немедленной синхронизации
-        task = celery.send_task('app.celery_app.sync_allegro_orders_immediate', args=[token_id, parsed_date])
+        sync_client = SyncClient(
+            jwt_token=create_access_token(
+                user_id=settings.PROJECT_NAME,
+            ),
+            base_url=settings.MICRO_SERVICE_URL
+        )
+        task = sync_client.start_sync(
+            token_id=token_id,
+            sync_from_date=parsed_date
+        )
         
         return {
             "status": "success",
             "message": "Задача немедленной синхронизации запущена",
-            "task_id": task.id,
+            "task_id": task.get("task_id"),
             "from_date": from_date
         }
     except ValueError as e:
@@ -275,7 +284,6 @@ def sync_immediate(
 @router.get("/orders/{token_id}")
 async def get_all_orders(
     token_id: str,
-    database: AsyncSession = Depends(deps.get_async_session),
     limit: int = Query(100, ge=1, le=1000, description="Количество заказов на странице"),
     offset: int = Query(0, ge=0, description="Смещение для пагинации"), 
     status: Optional[str] = Query(None, description="Фильтр по статусу заказа"),
@@ -295,90 +303,53 @@ async def get_all_orders(
         to_date: Фильтр по дате окончания
     """
     try:
-        # Формируем базовый запрос с сортировкой по дате обновления
-        query = select(AllegroOrder).where(AllegroOrder.token_id == token_id).order_by(AllegroOrder.updated_at.desc())
-        
-        # Применяем фильтры
-        if status:
-            query = query.where(AllegroOrder.status == status)
-            
-        if from_date:
-            parsed_from_date = parse_date(from_date)
-            query = query.where(AllegroOrder.updated_at >= parsed_from_date)
-            
-        if to_date:
-            parsed_to_date = parse_date(to_date)
-            query = query.where(AllegroOrder.updated_at <= parsed_to_date)
-            
-        # Получаем общее количество заказов
-        count_query = select(func.count()).select_from(query.subquery())
-        total_count = await database.scalar(count_query)
-        
-        # Применяем пагинацию
-        query = query.offset(offset).limit(limit)
-        
-        # Получаем заказы
-        result = await database.exec(query)
-        orders = result.all()
-        
-        # Формируем ответ
+        orders_client = OrdersClient(
+            jwt_token=create_access_token(
+                user_id=settings.PROJECT_NAME
+            ),
+            base_url=settings.MICRO_SERVICE_URL
+        )
+        result = orders_client.get_orders(
+            token_id=UUID(token_id),
+            limit=limit,
+            offset=offset,
+            status=status,
+            from_date=from_date,
+            to_date=to_date
+        )
+
+        orders = result.get("orders", [])
+        pagination = result.get("pagination", {})
+
         orders_data = []
         for order in orders:
-            # Загружаем связанные данные
-            buyer = await database.get(AllegroBuyer, order.buyer_id) if order.buyer_id else None
+            technical_flags = order.get("technical_flags", {})
             
             # Загружаем позиции заказа
-            order_items_query = select(OrderLineItem).where(OrderLineItem.order_id == order.id)
-            order_items_result = await database.exec(order_items_query)
-            order_items = order_items_result.all()
+            line_items = order.get("lineItems", [])
             
-            # Загружаем детали позиций
-            line_items = []
-            for item in order_items:
-                line_item = await database.get(AllegroLineItem, item.line_item_id)
-                if line_item:
-                    line_items.append({
-                        "id": line_item.id,
-                        "offer_id": line_item.offer_id,
-                        "offer_name": line_item.offer_name,
-                        "external_id": line_item.external_id,
-                        "original_price": line_item.original_price,
-                        "price": line_item.price
-                    })
             
             order_dict = {
-                "id": order.id,
-                "status": order.status,
-                "is_stock_updated": order.is_stock_updated,
-                "updated_at": order.updated_at.isoformat() if order.updated_at else None,
-                "belongs_to": order.belongs_to,
-                "token_id": order.token_id,
-                "buyer": None,
-                "payment": order.payment,
-                "fulfillment": order.fulfillment,
-                "delivery": order.delivery,
-                "line_items": line_items
+                "id": order.get("id"),
+                "status": order.get("status"),
+                "is_stock_updated": technical_flags.get("is_stock_updated"),
+                "has_invoice_created": technical_flags.get("has_invoice_created"),
+                "updated_at": order.get("updatedAt") if order.get("updatedAt") else None,
+                "token_id": order.get("token_id") or None,
+                "buyer": order.get("buyer", {}),
+                "payment": order.get("payment", {}),
+                "fulfillment": order.get("fulfillment", {}),
+                "delivery": order.get("delivery", {}),
+                "line_items": line_items,
+                "summary": order.get("summary", {})
             }
-            
-            # Добавляем данные покупателя
-            if buyer:
-                order_dict["buyer"] = {
-                    "id": buyer.id,
-                    "email": buyer.email,
-                    "login": buyer.login,
-                    "first_name": buyer.first_name,
-                    "last_name": buyer.last_name,
-                    "company_name": buyer.company_name,
-                    "phone_number": buyer.phone_number,
-                    "address": buyer.address
-                }
             
             orders_data.append(order_dict)
         
         return {
-            "total": total_count,
-            "offset": offset,
-            "limit": limit,
+            "total": pagination.get("total"),
+            "offset": pagination.get("offset"),
+            "limit": pagination.get("limit"),
             "orders": orders_data
         }
         
@@ -386,6 +357,72 @@ async def get_all_orders(
         logger.error(f"Ошибка при получении заказов: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/orders/search/{token_id}/{query}")
+async def search_orders(
+    token_id: str,
+    query: str,
+    limit: int = Query(100, ge=1, le=1000, description="Количество заказов на странице"),
+):
+    """
+    Получает все заказы для указанного токена из базы данных.
+    
+    Args:
+        token_id: ID токена Allegro
+        query: Поисковой запрос
+        limit: Количество заказов в ответе
+    """
+    try:
+        orders_client = OrdersClient(
+            jwt_token=create_access_token(
+                user_id=settings.PROJECT_NAME
+            ),
+            base_url=settings.MICRO_SERVICE_URL
+        )
+        result = orders_client.search_orders(
+            token_id=UUID(token_id),
+            query=query,
+            limit=limit,
+        )
+
+        orders = result.get("orders", [])
+        logging.info(f"orders result {orders}")
+        pagination = result.get("pagination", {})
+
+        orders_data = []
+        for order in orders:
+            technical_flags = order.get("technical_flags", {})
+            logging.info(f"{technical_flags}")
+            # Загружаем позиции заказа
+            line_items = order.get("lineItems", [])
+            
+            
+            order_dict = {
+                "id": order.get("id"),
+                "status": order.get("status"),
+                "is_stock_updated": technical_flags.get("is_stock_updated"),
+                "has_invoice_created": technical_flags.get("has_invoice_created"),
+                "updated_at": order.get("updatedAt") if order.get("updatedAt") else None,
+                "token_id": order.get("token_id") or None,
+                "buyer": order.get("buyer", {}),
+                "payment": order.get("payment", {}),
+                "fulfillment": order.get("fulfillment", {}),
+                "delivery": order.get("delivery", {}),
+                "line_items": line_items
+            }
+            
+            orders_data.append(order_dict)
+        
+        return {
+            "total": pagination.get("total"),
+            "offset": pagination.get("offset"),
+            "limit": pagination.get("limit"),
+            "orders": orders_data
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка при получении заказов: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/orders/{token_id}")
 async def delete_all_orders(
@@ -505,7 +542,16 @@ async def get_synchronization_page(
             {"request": request, "user": user}
         )
 
-    tokens = get_tokens_list_sync(db)
+    # tokens = get_tokens_list_sync(db)
+    micro_service_client = AllegroTokenMicroserviceClient(
+        jwt_token=create_access_token(
+            user_id=settings.PROJECT_NAME
+        )
+    )
+
+    tokens = micro_service_client.get_tokens(per_page=20)
+    logging.info(f"{tokens}")
+
     return templates.TemplateResponse(
         "synchronization.html",
         {"request": request, "tokens": tokens, "user": user}
@@ -516,58 +562,25 @@ def start_events_task(token_id: str, db: Session = Depends(get_db)) -> Dict[str,
     """
     Запускает периодическую задачу обработки событий заказов для указанного токена.
     """
-    # Проверяем существование токена
-    token = get_token_by_id_sync(db, token_id)
-    if not token:
-        raise HTTPException(status_code=404, detail="Токен не найден")
-
     try:
-        # Формируем новое расписание для задачи
-        events_entry = {
-            "task": "app.celery_app.process_allegro_order_events",
-            "schedule": 300,  # 300 секунд = 5 минут
-            "args": [token_id]
-        }
-
-        client = get_redis_client()
-        schedule_raw = client.get("celery_beat_schedule")
-        if schedule_raw:
-            schedule = json.loads(schedule_raw.decode("utf-8"))
-        else:
-            schedule = {}
-
-        # Обновляем расписание для задачи
-        schedule[f"process-allegro-order-events-{token_id}"] = events_entry
-
-        client.set("celery_beat_schedule", json.dumps(schedule))
-        
-        # Запускаем первую обработку немедленно
-        events_task = celery.send_task(
-            'app.celery_app.process_allegro_order_events',
-            args=[token_id]
+        sync_client = SyncClient(
+            base_url=settings.MICRO_SERVICE_URL,
+            jwt_token=create_access_token(
+                user_id=settings.PROJECT_NAME
+            )
         )
-        
-        logger.info(f"Запущена задача обработки событий для токена {token_id}, task_id: {events_task.id}")
+
+        task = sync_client.activate_sync(token_id=token_id, interval_minutes=15)
+        logger.info(f"Запущена задача обработки событий для токена {token_id}")
         
         return {
             "status": "success",
-            "message": "Задача обработки событий успешно запущена",
-            "tasks": {
-                "events": {
-                    "task_id": events_task.id,
-                    "schedule": {
-                        "name": "process_allegro_order_events",
-                        "interval": "Каждые 5 минут",
-                        "next_run": (datetime.now() + timedelta(minutes=5)).isoformat()
-                    }
-                }
-            }
+            "message": "Задача обработки событий успешно запущена"
         }
     except Exception as e:
-        logger.error(f"Ошибка при запуске задачи обработки событий для токена {token_id}: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Ошибка при запуске задачи обработки событий: {str(e)}"
+            detail=f"Ошибка при запуске синхронизации: {str(e)}"
         )
 
 @router.post("/stop-events/{token_id}")
@@ -575,32 +588,25 @@ def stop_events_task(token_id: str, db: Session = Depends(get_db)) -> Dict[str, 
     """
     Останавливает периодическую задачу обработки событий заказов для указанного токена.
     """
-    # Проверяем существование токена
-    token = get_token_by_id_sync(db, token_id)
-    if not token:
-        raise HTTPException(status_code=404, detail="Токен не найден")
-
     try:
-        client = get_redis_client()
-        schedule_raw = client.get("celery_beat_schedule")
-        if schedule_raw:
-            schedule = json.loads(schedule_raw.decode("utf-8"))
-        else:
-            schedule = {}
+        sync_client = SyncClient(
+            base_url=settings.MICRO_SERVICE_URL,
+            jwt_token=create_access_token(
+                user_id=settings.PROJECT_NAME
+            )
+        )
 
-        events_key = f"process-allegro-order-events-{token_id}"
-        if events_key in schedule:
-            del schedule[events_key]
+        task = sync_client.deactivate_sync(token_id=token_id)
 
-        client.set("celery_beat_schedule", json.dumps(schedule))
         return {
             "status": "success",
             "message": "Задача обработки событий успешно остановлена"
         }
+    
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Ошибка при остановке задачи обработки событий: {str(e)}"
+            detail=f"Ошибка при остановке синхронизации: {str(e)}"
         )
 
 @router.get("/status-events/{token_id}")
@@ -608,29 +614,25 @@ def get_events_status(token_id: str, db: Session = Depends(get_db)) -> Dict[str,
     """
     Получает статус задачи обработки событий для указанного токена.
     """
-    # Проверяем существование токена
-    token = get_token_by_id_sync(db, token_id)
-    if not token:
-        raise HTTPException(status_code=404, detail="Токен не найден")
-        
-    client = get_redis_client()
-    schedule_raw = client.get("celery_beat_schedule")
-    if schedule_raw:
-        schedule = json.loads(schedule_raw.decode("utf-8"))
-    else:
-        schedule = {}
+    try:
+        sync_client = SyncClient(
+            base_url=settings.MICRO_SERVICE_URL,
+            jwt_token=create_access_token(
+                user_id=settings.PROJECT_NAME
+            )
+        )
 
-    events_task = f"process-allegro-order-events-{token_id}" in schedule
-
-    return {
-        "status": "active" if events_task else "inactive",
-        "tasks": {
-            "process_allegro_order_events": {
-                "active": events_task,
-                "schedule": "Каждые 5 минут" if events_task else None
-            }
+        task = sync_client.get_token_sync_status(token_id=UUID(token_id))
+        logging.info(f"task response {task}")
+        return {
+            "status": "active" if task.get("is_active", False) else "inactive",
+            "task": task
         }
-    }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при остановке синхронизации: {str(e)}"
+        )
 
 @router.get("/orders/{token_id}/{order_id}")
 async def get_order_by_id(
@@ -706,21 +708,35 @@ async def mark_order_stock_updated(
     order_id: str,
     database: AsyncSession = Depends(deps.get_async_session)
 ):
+
+
     """
     Пометить заказ как списанный (is_stock_updated=True) по token_id и order_id.
     """
     try:
-        query = select(AllegroOrder).where(AllegroOrder.token_id == token_id, AllegroOrder.id == order_id)
-        result = await database.exec(query)
-        order = result.first()
-        if not order:
-            raise HTTPException(status_code=404, detail="Order not found")
-        if order.is_stock_updated:
-            return {"status": "already_marked"}
-        order.is_stock_updated = True
-        database.add(order)
-        await database.commit()
-        return {"status": "success"}
+        orders_client = OrdersClient(
+            jwt_token=create_access_token(
+                user_id=settings.PROJECT_NAME
+            ),
+            base_url=settings.MICRO_SERVICE_URL
+        )
+
+        marked = orders_client.update_stock_status(
+            token_id=token_id,
+            order_id=order_id,
+            is_stock_updated=True
+        )   
+        # query = select(AllegroOrder).where(AllegroOrder.token_id == token_id, AllegroOrder.id == order_id)
+        # result = await database.exec(query)
+        # order = result.first()
+        # if not order:
+        #     raise HTTPException(status_code=404, detail="Order not found")
+        # if order.is_stock_updated:
+        #     return {"status": "already_marked"}
+        # order.is_stock_updated = True
+        # database.add(order)
+        # await database.commit()
+        return marked 
     except Exception as e:
         logger.error(f"Ошибка при пометке заказа как списанного: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

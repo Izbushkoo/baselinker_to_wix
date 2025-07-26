@@ -96,9 +96,9 @@ async function changePage(delta) {
 function doOrderSearch() {
     const searchInput = document.getElementById('search-input');
     const searchTerm = searchInput.value.trim();
-    if (searchTerm.length === 36) {
+    if (searchTerm.length > 3) {
         // Поиск по API по order_id
-        fetch(`/api/allegro_sync/orders/{{ token_id }}/${searchTerm}`)
+        fetch(`/api/allegro_sync/orders/search/{{ token_id }}/${searchTerm}`)
             .then(response => response.json())
             .then(data => {
                 displayOrders(data.orders);
@@ -296,7 +296,7 @@ function displayOrders(orders) {
     orders.forEach(order => {
         const orderElement = document.createElement('div');
         orderElement.className = 'bg-gray-800 rounded-lg shadow overflow-hidden relative';
-        
+        console.log(order)
         // Получаем статусы
         const orderStatus = getOrderStatus(order);
         const shipmentStatus = getShipmentStatus(order);
@@ -313,7 +313,7 @@ function displayOrders(orders) {
             const shipmentStatusText = getShipmentStatus(order);
             const isCancelled = order.status === 'CANCELLED' || shipmentStatusText.includes('Отменен продавцом');
             if (!isCancelled) {
-                actionButtons += `<button onclick="event.stopPropagation(); saleFromOrder('${order.id}')"
+                actionButtons += `<button onclick="event.stopPropagation(); saleFromOrder('${order.id}', '{{ token_id }}')"
                     class="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">Списать</button>`;
             }
             // Кнопка "Пометить списанным" — всегда, если не списан
@@ -352,6 +352,7 @@ function displayOrders(orders) {
                             return '';
                         })()}
                         ${getOrderStatus(order)}
+
                     </div>
                 </div>
                 <div class="flex items-center justify-end w-full mt-2 gap-2">
@@ -371,7 +372,6 @@ function displayOrders(orders) {
                         </div>
                     </div>
                 ` : ''}
-
                 ${order.delivery ? `
                     <div class="mb-4">
                         <h3 class="text-sm font-medium text-gray-400 mb-2">Адрес доставки</h3>
@@ -395,17 +395,21 @@ function displayOrders(orders) {
                             ${order.line_items.map(item => `
                                 <div class="bg-gray-700 p-3 rounded-lg">
                                     <div class="grid grid-cols-2 gap-2 text-sm text-white">
-                                        <div class="col-span-2 font-medium">${item.offer_name}</div>
-                                        <div>SKU: <button onclick="copyToClipboard('${item.external_id || '-'}', this)" class="font-mono text-blue-400 hover:text-blue-600 focus:outline-none">${item.external_id || '-'}</button></div>
-                                        <div>ID: ${item.offer_id}</div>
+                                        <div class="col-span-2 font-medium">${item.offer.name}</div>
+                                        <div>SKU: <button onclick="copyToClipboard('${item.offer.external.id || '-'}', this)" class="font-mono text-blue-400 hover:text-blue-600 focus:outline-none">${item.offer.external.id || '-'}</button></div>
+                                        <div>Offer ID: ${item.offer.id}</div>
+                                        <div>Кол-во: ${item.quantity}</div>
                                         <div>Цена: ${formatPrice(item.price)}</div>
-                                        <div>Оригинальная цена: ${formatPrice(item.original_price)}</div>
+                                        <div>Оригинальная цена: ${formatPrice(item.originalPrice)}</div>
                                     </div>
                                 </div>
                             `).join('')}
                         </div>
                     </div>
                 ` : ''}
+
+                <!-- Полная цена заказа -->
+                <span class="ml-auto text-white font-medium">Полная цена: ${formatPrice(order.summary.totalToPay)}</span>
             </div>
         `;
 
@@ -456,7 +460,7 @@ function showNotification(message, type = 'info') {
     }, 3000);
 }
 
-async function saleFromOrder(orderId) {
+async function saleFromOrder(orderId, tokenId) {
     try {
         // Находим заказ в массиве allOrders
         const order = allOrders.find(o => o.id === orderId);
@@ -472,6 +476,7 @@ async function saleFromOrder(orderId) {
             },
             body: JSON.stringify({
                 order_id: orderId,
+                token_id: tokenId,
                 line_items: order.line_items,
                 warehouse: 'Ирина' // Используем склад по умолчанию
             })

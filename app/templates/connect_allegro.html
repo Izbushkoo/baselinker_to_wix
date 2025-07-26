@@ -101,14 +101,14 @@ document.getElementById('connectForm').addEventListener('submit', async (e) => {
         }
 
         const data = await response.json();
-        showAuthModal(data.verification_uri_complete, data.interval, data.device_code, formData.account_name);
+        showAuthModal(data.verification_uri_complete, data.interval, data.task_id, formData.account_name);
     } catch (error) {
         console.error('Ошибка:', error);
         showNotification(error.message, 'error');
     }
 });
 
-function showAuthModal(authUrl, interval, deviceCode, accountName) {
+function showAuthModal(authUrl, interval, taskId, accountName) {
     const modal = document.getElementById('authModal');
     const authLink = document.getElementById('authLink');
     
@@ -123,7 +123,7 @@ function showAuthModal(authUrl, interval, deviceCode, accountName) {
     startAuthTimer(60);
     
     // Начинаем проверку статуса
-    startAuthCheck(deviceCode, interval, accountName);
+    startAuthCheck(taskId, interval, accountName);
 }
 
 function startAuthTimer(totalSeconds) {
@@ -153,7 +153,7 @@ function startAuthTimer(totalSeconds) {
     }, 1000);
 }
 
-async function startAuthCheck(deviceCode, interval, accountName) {
+async function startAuthCheck(taskId, interval, accountName) {
     // Очищаем предыдущий интервал, если есть
     if (authCheckInterval) {
         clearInterval(authCheckInterval);
@@ -170,21 +170,21 @@ async function startAuthCheck(deviceCode, interval, accountName) {
         }
         
         try {
-            const response = await fetch(`/api/allegro_tokens/check/${deviceCode}?account_name=${encodeURIComponent(accountName)}`);
+            const response = await fetch(`/api/allegro_tokens/check/${taskId}?account_name=${encodeURIComponent(accountName)}`);
             const data = await response.json();
             
             if (!response.ok) {
                 throw new Error(data.detail || 'Ошибка при проверке статуса');
             }
             
-            if (data.status === 'completed') {
+            if (data.status === 'SUCCESS') {
                 clearInterval(authCheckInterval);
                 hideAuthModal();
                 showNotification('Аккаунт успешно подключен', 'success');
                 setTimeout(() => {
                     window.location.href = '/synchronization';
                 }, 1000);
-            } else if (data.status === 'failed') {
+            } else if (data.status === 'FAILURE') {
                 clearInterval(authCheckInterval);
                 hideAuthModal();
                 showNotification('Ошибка при подключении аккаунта', 'error');
