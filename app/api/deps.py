@@ -89,7 +89,7 @@ async def get_current_user_optional(
         )
         logging.info(f"Токен успешно декодирован, payload: {payload}")
         
-        user_id: int = int(payload.get("sub"))
+        user_id: int = int(payload.get("user_id"))
         logging.info(f"Извлечен user_id: {user_id}")
 
     except (jwt.exceptions.PyJWTError, ValidationError) as e:
@@ -123,7 +123,7 @@ async def get_current_user_from_cookie(
             settings.SECRET_KEY,
             algorithms=[security.ALGORITHM]
         )
-        user_id: int = int(payload.get("sub"))
+        user_id: int = int(payload.get("user_id"))
     except (jwt.exceptions.PyJWTError, ValidationError) as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
