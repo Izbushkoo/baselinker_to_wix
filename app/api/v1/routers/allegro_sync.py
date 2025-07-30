@@ -408,7 +408,8 @@ async def search_orders(
                 "payment": order.get("payment", {}),
                 "fulfillment": order.get("fulfillment", {}),
                 "delivery": order.get("delivery", {}),
-                "line_items": line_items
+                "line_items": line_items,
+                "summary": order.get("summary", {})
             }
             
             orders_data.append(order_dict)
