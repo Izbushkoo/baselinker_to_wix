@@ -24,6 +24,7 @@ from app.tg_app import router as tg_router
 
 
 # Настраиваем логирование при запуске приложения
+from app.utils.logging_config import setup_project_logging, get_logger
 setup_project_logging()
 
 app = FastAPI(title=settings.PROJECT_NAME,
@@ -45,7 +46,7 @@ templates.env.filters["operation_type_label"] = operation_type_label
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Настройка логирования
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # Маршруты для веб-интерфейса

@@ -28,7 +28,7 @@ from app.services import baselinker as BL
 from app.services.process_funcs import transform_product_for_shoper, transform_product
 from app.schemas.wix_models import WixImportFileModel
 from app.schemas.wix_models import generate_handle_id
-from app.utils.logging_config import logger
+from app.utils.logging_config import logger, get_logger, log_business_event, log_error_with_context
 from app.services.tg_client import TelegramManager
 
 from app.services.allegro.order_service import SyncAllegroOrderService

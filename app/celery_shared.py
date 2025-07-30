@@ -3,6 +3,7 @@
  * @description: Общие объекты Celery для использования в других модулях
  * @dependencies: core.config, database, models.allegro_token, services.allegro.tokens, services.allegro.data_access
  * @created: 2024-12-20
+ * @updated: 2025-07-30
 """
 
 import os
@@ -41,7 +42,7 @@ celery = Celery(
 
 celery.conf.result_backend = "redis://redis:6379/1"
 
-# Настройка Celery
+# Настройка Celery с улучшенным логированием
 celery.conf.update(
     task_serializer="json",
     result_serializer="json",
@@ -51,7 +52,15 @@ celery.conf.update(
     worker_hijack_root_logger=False,  # Отключаем перехват root логгера
     worker_log_format='[%(asctime)s: %(levelname)s/%(processName)s] %(message)s',
     worker_task_log_format='[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s',
-    broker_connection_retry_on_startup=True  # Добавляем эту настройку для устранения предупреждения
+    broker_connection_retry_on_startup=True,  # Добавляем эту настройку для устранения предупреждения
+    # Отключаем логи Celery по умолчанию
+    worker_log_level="WARNING",
+    worker_log_color=True,
+    # Настройки для уменьшения шума в логах
+    worker_disable_rate_limits=False,
+    worker_prefetch_multiplier=1,
+    task_acks_late=True,
+    task_reject_on_worker_lost=True
 )
 
 # Создаем фабрику сессий
