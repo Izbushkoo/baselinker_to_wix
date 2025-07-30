@@ -24,6 +24,9 @@ import logging
 from datetime import datetime
 from app.services.allegro.allegro_api_service import SyncAllegroApiService
 from app.services.allegro.tokens import get_token
+from app.services.Allegro_Microservice.tokens_endpoint import AllegroTokenMicroserviceClient
+from app.core.security import create_access_token
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -1120,9 +1123,17 @@ async def manage_product(
     total_stock = sum(stock_by_warehouse.values())
     
     # Получаем все токены Allegro
-    tokens_query = select(AllegroToken)
-    tokens_result = await db.exec(tokens_query)
-    allegro_tokens = tokens_result.all()
+    # tokens_query = select(AllegroToken)
+    # tokens_result = await db.exec(tokens_query)
+    # allegro_tokens = tokens_result.all()
+
+    token = get_token(account_name)
+    token_client = AllegroTokenMicroserviceClient(
+        jwt_token=create_access_token(user_id=settings.PROJECT_NAME),
+        
+    )
+    tokens = token_client.get_tokens(per_page=50)
+
     
     # Получаем настройки синхронизации для товара
     sync_settings_query = select(ProductAllegroSyncSettings).where(
@@ -1167,16 +1178,15 @@ async def manage_product(
     
     # Подготавливаем данные о токенах с настройками
     token_settings = []
-    for token in allegro_tokens:
-        account_name = token.account_name or f"Account {token.id_[:8]}"
+    for token in tokens:
+        account_name = token.account_name or f"Account {token.id[:8]}"
         
         # Получаем существующие настройки или создаем дефолтные
         settings = settings_by_account.get(account_name)
         if settings:
             token_data = {
-                'token_id': token.id_,
+                'token_id': token.id,
                 'account_name': account_name,
-                'description': token.description,
                 'stock_sync_enabled': settings.stock_sync_enabled,
                 'price_sync_enabled': settings.price_sync_enabled,
                 'price_multiplier': float(settings.price_multiplier),
@@ -1189,8 +1199,7 @@ async def manage_product(
             token_data = {
                 'token_id': token.id_,
                 'account_name': account_name,
-                'description': token.description,
-                'stock_sync_enabled': True,  # По умолчанию включено
+                'stock_sync_enabled': False,  # По умолчанию включено
                 'price_sync_enabled': False,  # По умолчанию выключено
                 'price_multiplier': 1.0,
                 'last_stock_sync_at': None,
@@ -1231,7 +1240,12 @@ async def get_product_offers(
         
         # Получаем токен аккаунта
         token = get_token(account_name)
-        
+        token_client = AllegroTokenMicroserviceClient(
+            jwt_token=create_access_token(user_id=settings.PROJECT_NAME),
+            
+        )
+        token = token_client.get_tokens(per_page=50)
+
         if not token:
             logger.error(f"[OFFERS] Токен для аккаунта {account_name} не найден")
             raise HTTPException(status_code=404, detail="Аккаунт Allegro не найден")
