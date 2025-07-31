@@ -49,12 +49,12 @@ class AllegroStockService:
                 sku = line_item.external_id
                 stocks = self.manager.get_stock_by_sku(sku)
                 if not stocks:
-                    message = f"Аккаунт: {token.account_name if token else "Не указан"}\n❌ Товар с SKU '<code>{sku}</code>' не найден в базе (заказ <code>{order.id}</code>)"
+                    message = f"Аккаунт: {token.account_name if token else 'Не указан'}\n❌ Товар с SKU '<code>{sku}</code>' не найден в базе (заказ <code>{order.id}</code>)"
                     logger.warning(message)
                     self.tg_manager.send_message(message)
                     return False
                 elif stocks.get(Warehouses.A.value, 0) == 0:
-                    message = f"Аккаунт: {token.account_name if token else "Не указан"}\n⚠️ Товар с SKU '<code>{sku}</code>' есть в базе, но остатки нулевые на складе {Warehouses.A.value} (заказ <code>{order.id}</code>)\nСписания не произошло"
+                    message = f"Аккаунт: {token.account_name if token else 'Не указан'}\n⚠️ Товар с SKU '<code>{sku}</code>' есть в базе, но остатки нулевые на складе {Warehouses.A.value} (заказ <code>{order.id}</code>)\nСписания не произошло"
                     logger.warning(message)
                     self.tg_manager.send_message(message)
                     return False
