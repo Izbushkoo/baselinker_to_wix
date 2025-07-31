@@ -17,7 +17,7 @@ class AllegroStockService:
         self.manager = manager
         self.tg_manager = TelegramManager(chat_id=os.getenv("NOTIFY_GROUP_ID"))
 
-    def process_order_stock_update(self, order: AllegroOrder, warehouse: str) -> bool:
+    def process_order_stock_update(self, order: AllegroOrder, warehouse: str, **kwargs) -> bool:
         """
         Обрабатывает списание товара для заказа Allegro.
         Возвращает True если списание выполнено успешно.
@@ -42,17 +42,19 @@ class AllegroStockService:
             )
             order_items = self.db.exec(order_items_query).all()
             # Проверяем наличие всех товаров перед списанием
+
+            token = kwargs.get("token", None)
             for order_item in order_items:
                 line_item = order_item.line_item
                 sku = line_item.external_id
                 stocks = self.manager.get_stock_by_sku(sku)
                 if not stocks:
-                    message = f"❌ Товар с SKU '<code>{sku}</code>' не найден в базе (заказ <code>{order.id}</code>)"
+                    message = f"Аккаунт: {token.account_name if token else "Не указан"}\n❌ Товар с SKU '<code>{sku}</code>' не найден в базе (заказ <code>{order.id}</code>)"
                     logger.warning(message)
                     self.tg_manager.send_message(message)
                     return False
                 elif stocks.get(Warehouses.A.value, 0) == 0:
-                    message = f"⚠️ Товар с SKU '<code>{sku}</code>' есть в базе, но остатки нулевые на складе {Warehouses.A.value} (заказ <code>{order.id}</code>)\nСписания не произошло"
+                    message = f"Аккаунт: {token.account_name if token else "Не указан"}\n⚠️ Товар с SKU '<code>{sku}</code>' есть в базе, но остатки нулевые на складе {Warehouses.A.value} (заказ <code>{order.id}</code>)\nСписания не произошло"
                     logger.warning(message)
                     self.tg_manager.send_message(message)
                     return False
