@@ -571,7 +571,7 @@ def start_events_task(token_id: str, db: Session = Depends(get_db)) -> Dict[str,
             )
         )
 
-        task = sync_client.activate_sync(token_id=token_id, interval_minutes=15)
+        task = sync_client.activate_sync(token_id=token_id, interval_minutes=2)
         logger.info(f"Запущена задача обработки событий для токена {token_id}")
         
         return {
