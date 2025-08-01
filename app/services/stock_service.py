@@ -92,7 +92,7 @@ class AllegroStockService:
                     })
                     
                 except ValueError as e:
-                    message = f"❌ Товар с SKU '<code>{sku}</code>' не найден в базе (заказ <code>{order_id}</code>)"
+                    message = f"Аккаунт: {token.account_name if token else 'Не указан'}\n❌ Товар с SKU '<code>{sku}</code>' не найден в базе (заказ <code>{order.id}</code>)"
                     logger.warning(message)
                     self.tg_manager.send_message(message)
                     return False
