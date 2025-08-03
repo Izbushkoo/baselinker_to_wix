@@ -396,7 +396,10 @@ async def export_stock_with_sales(
     df['Продажи за 60 дней'] = df['sku'].map(lambda x: sales_stats.get(x, {}).get('60d', 0))
 
     # добавляем колонку с абсолютным URL изображения
-    base_url = str(request.base_url).rstrip('/')
+    # Проверяем заголовки прокси для определения правильной схемы
+    scheme = request.headers.get('x-forwarded-proto', 'https' if request.url.scheme == 'https' else 'http')
+    host = request.headers.get('host', str(request.base_url.hostname))
+    base_url = f"{scheme}://{host}"
     df['URL изображения'] = df['sku'].map(lambda x: f"{base_url}/api/products/{x}/image/original")
 
     # переименования для читабельности
@@ -415,8 +418,8 @@ async def export_stock_with_sales(
     # вставляем пустую колонку-«держатель» под изображения
     df.insert(1, "Изображение", "")
 
-    # порядок колонок - сначала склад B, потом остальные
-    cols = ["SKU", "Изображение", "URL изображения", "Наименование", "EAN коды"]
+    # порядок колонок - сначала общий остаток, потом по складам
+    cols = ["SKU", "Изображение", "URL изображения", "Наименование", "EAN коды", "Общий остаток"]
     
     # Сначала добавляем склад B
     cols.append(f"Склад {Warehouses.B.value}")
@@ -425,7 +428,7 @@ async def export_stock_with_sales(
         if wh != Warehouses.B:
             cols.append(f"Склад {wh.value}")
             
-    cols.extend(["Общий остаток", "Продажи за 15 дней", "Продажи за 30 дней", "Продажи за 60 дней"])
+    cols.extend(["Продажи за 15 дней", "Продажи за 30 дней", "Продажи за 60 дней"])
     df = df[cols]
 
     buf = BytesIO()
@@ -504,7 +507,10 @@ async def export_stock_with_sales_no_images(
     df['Продажи за 60 дней'] = df['sku'].map(lambda x: sales_stats.get(x, {}).get('60d', 0))
 
     # добавляем колонку с абсолютным URL изображения
-    base_url = str(request.base_url).rstrip('/')
+    # Проверяем заголовки прокси для определения правильной схемы
+    scheme = request.headers.get('x-forwarded-proto', 'https' if request.url.scheme == 'https' else 'http')
+    host = request.headers.get('host', str(request.base_url.hostname))
+    base_url = f"{scheme}://{host}"
     df['URL изображения'] = df['sku'].map(lambda x: f"{base_url}/api/products/{x}/image/original")
     
     # Русские названия столбцов
@@ -520,8 +526,8 @@ async def export_stock_with_sales_no_images(
     
     df = df.rename(columns=column_renames)
     
-    # порядок колонок - сначала склад B, потом остальные
-    cols = ["SKU", "URL изображения", "Наименование", "EAN коды"]
+    # порядок колонок - сначала общий остаток, потом по складам
+    cols = ["SKU", "URL изображения", "Наименование", "EAN коды", "Общий остаток"]
     
     # Сначала добавляем склад B
     cols.append(f"Склад {Warehouses.B.value}")
@@ -530,7 +536,7 @@ async def export_stock_with_sales_no_images(
         if wh != Warehouses.B:
             cols.append(f"Склад {wh.value}")
             
-    cols.extend(["Общий остаток", "Продажи за 15 дней", "Продажи за 30 дней", "Продажи за 60 дней"])
+    cols.extend(["Продажи за 15 дней", "Продажи за 30 дней", "Продажи за 60 дней"])
     df = df[cols]
     
     # Создаем Excel-файл
