@@ -45,7 +45,7 @@ target_metadata = SQLModel.metadata
 
 def get_url():
     # Для миграций используем локальные настройки из .env
-    user = os.getenv("POSTGRES_USER", "izbushko")
+    user = os.getenv("POSTGRES_USER", "postgres")
     password = os.getenv("POSTGRES_PASSWORD", "postgres")
     server = os.getenv("POSTGRES_SERVER", "localhost")
     port = os.getenv("POSTGRES_PORT_TO_LOCAL_HOST", "5432")

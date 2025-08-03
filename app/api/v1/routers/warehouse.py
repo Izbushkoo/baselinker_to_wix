@@ -364,6 +364,7 @@ async def add_to_stock(
     response_class=StreamingResponse,
 )
 async def export_stock_with_sales(
+    request: Request,
     skus: Optional[List[str]] = Query(None, description="Список SKU для экспорта"),
     manager: manager.InventoryManager = Depends(manager.get_manager),
 ):
@@ -376,7 +377,7 @@ async def export_stock_with_sales(
     }
     mimetypes.types_map[True][".webp"] = "image/webp"
 
-    """Возвращает XLSX-файл с остатками, картинками 100×100px и статистикой продаж за 15/30/60 дней."""
+    """Возвращает XLSX-файл с остатками, картинками 150×150px и статистикой продаж за 15/30/60 дней."""
     # получаем DF без image и параллельный список bytes
     df, images = manager.get_stock_report()
     
@@ -393,6 +394,10 @@ async def export_stock_with_sales(
     df['Продажи за 15 дней'] = df['sku'].map(lambda x: sales_stats.get(x, {}).get('15d', 0))
     df['Продажи за 30 дней'] = df['sku'].map(lambda x: sales_stats.get(x, {}).get('30d', 0))
     df['Продажи за 60 дней'] = df['sku'].map(lambda x: sales_stats.get(x, {}).get('60d', 0))
+
+    # добавляем колонку с абсолютным URL изображения
+    base_url = str(request.base_url).rstrip('/')
+    df['URL изображения'] = df['sku'].map(lambda x: f"{base_url}/api/products/{x}/image/original")
 
     # переименования для читабельности
     column_renames = {
@@ -411,7 +416,7 @@ async def export_stock_with_sales(
     df.insert(1, "Изображение", "")
 
     # порядок колонок - сначала склад B, потом остальные
-    cols = ["SKU", "Изображение", "Наименование", "EAN коды"]
+    cols = ["SKU", "Изображение", "URL изображения", "Наименование", "EAN коды"]
     
     # Сначала добавляем склад B
     cols.append(f"Склад {Warehouses.B.value}")
@@ -438,20 +443,22 @@ async def export_stock_with_sales(
             cell = ws.cell(row=1, column=idx)
             cell.font = cell.font.copy(bold=True)
             if col == "Изображение":
-                ws.column_dimensions[img_col_letter].width = 18  # ~100px
+                ws.column_dimensions[img_col_letter].width = 22  # ~150px
+            elif col == "URL изображения":
+                ws.column_dimensions[get_column_letter(idx)].width = 60  # для длинных URL
             else:
                 max_len = max(df[col].astype(str).map(len).max(), len(col))
                 ws.column_dimensions[get_column_letter(idx)].width = min(max_len + 2, 50)
 
-        # 2) вставка картинок 100×100 и высота строк
+        # 2) вставка картинок 150×150 и высота строк
         for row_idx, img_bytes in enumerate(images, start=2):
             if not img_bytes:
                 continue
             try:
                 img = XLImage(BytesIO(img_bytes))
-                img.width  = 100
-                img.height = 100
-                ws.row_dimensions[row_idx].height = 75  # под ~100px
+                img.width  = 150
+                img.height = 150
+                ws.row_dimensions[row_idx].height = 115  # под ~150px
 
                 ws.add_image(img, f"{img_col_letter}{row_idx}")
             except Exception as e:
@@ -474,8 +481,9 @@ async def export_stock_with_sales(
         headers=headers
     )
 
-@router.get('/export/stock-with-sales/no-images/', summary='Экспорт остатков со статистикой продаж без изображений') 
+@router.get('/export/stock-with-sales/no-images/', summary='Экспорт остатков со статистикой продаж без изображений')
 async def export_stock_with_sales_no_images(
+    request: Request,
     skus: Optional[List[str]] = Query(None, description="Список SKU для экспорта"),
     manager: manager.InventoryManager = Depends(manager.get_manager)
 ):
@@ -494,6 +502,10 @@ async def export_stock_with_sales_no_images(
     df['Продажи за 15 дней'] = df['sku'].map(lambda x: sales_stats.get(x, {}).get('15d', 0))
     df['Продажи за 30 дней'] = df['sku'].map(lambda x: sales_stats.get(x, {}).get('30d', 0))
     df['Продажи за 60 дней'] = df['sku'].map(lambda x: sales_stats.get(x, {}).get('60d', 0))
+
+    # добавляем колонку с абсолютным URL изображения
+    base_url = str(request.base_url).rstrip('/')
+    df['URL изображения'] = df['sku'].map(lambda x: f"{base_url}/api/products/{x}/image/original")
     
     # Русские названия столбцов
     column_renames = {
@@ -509,7 +521,7 @@ async def export_stock_with_sales_no_images(
     df = df.rename(columns=column_renames)
     
     # порядок колонок - сначала склад B, потом остальные
-    cols = ["SKU", "Наименование", "EAN коды"]
+    cols = ["SKU", "URL изображения", "Наименование", "EAN коды"]
     
     # Сначала добавляем склад B
     cols.append(f"Склад {Warehouses.B.value}")
@@ -533,11 +545,14 @@ async def export_stock_with_sales_no_images(
             cell.font = cell.font.copy(bold=True)
             
             # Устанавливаем ширину колонок
-            max_len = max(
-                df[col].astype(str).map(len).max(),
-                len(col)
-            )
-            worksheet.column_dimensions[get_column_letter(idx)].width = min(max_len + 2, 50)
+            if col == "URL изображения":
+                worksheet.column_dimensions[get_column_letter(idx)].width = 60  # для длинных URL
+            else:
+                max_len = max(
+                    df[col].astype(str).map(len).max(),
+                    len(col)
+                )
+                worksheet.column_dimensions[get_column_letter(idx)].width = min(max_len + 2, 50)
     
     buffer.seek(0)
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -633,6 +648,17 @@ async def compress_images(
     manager: manager.InventoryManager = Depends(manager.get_manager)
 ):
     result = manager.compress_all_product_images()
+    return JSONResponse({'status': 'success', 'result': result})
+
+@router.get('/decompress-images/', summary='Декомпрессия изображений')
+async def decompress_images(
+    manager: manager.InventoryManager = Depends(manager.get_manager)
+):
+    """
+    Декомпрессирует все изображения продуктов до размера 600x600 в формат JPEG.
+    Записывает декомпрессированные изображения в поле original_image и создает URL.
+    """
+    result = manager.decompress_all_product_images()
     return JSONResponse({'status': 'success', 'result': result})
 
 @router.post('/sync-wix/', summary='Синхронизация количества товаров с Wix')

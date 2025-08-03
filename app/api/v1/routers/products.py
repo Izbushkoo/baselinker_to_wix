@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException, Request, File, UploadFile, Form
 from sqlmodel import select, func
 from sqlmodel.ext.asyncio.session import AsyncSession
-from fastapi.responses import StreamingResponse, HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import StreamingResponse, HTMLResponse, RedirectResponse, JSONResponse, Response
 import io
 import pandas as pd
 import base64
@@ -14,7 +14,7 @@ from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.models.user import User
 from app.models.allegro_token import AllegroToken
 from app.models.product_allegro_sync_settings import ProductAllegroSyncSettings
-from app.services.warehouse.manager import Warehouses
+from app.services.warehouse.manager import Warehouses, InventoryManager, get_manager
 from app.services.operations_service import OperationsService, OperationType, get_operations_service
 from app.services.prices_service import prices_service
 from app.schemas.product import ProductUpdate, ProductEditForm, ProductResponse
@@ -367,7 +367,8 @@ async def create_product(
     image: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(deps.get_async_session),
     current_user: User = Depends(deps.get_current_user_optional),
-    operations_service: OperationsService = Depends(get_operations_service)
+    operations_service: OperationsService = Depends(get_operations_service),
+    manager: InventoryManager = Depends(get_manager)
 ):
     """Создает новый товар в базе данных."""
     try:
@@ -378,13 +379,16 @@ async def create_product(
                 detail="Выбран недопустимый склад"
             )
 
-        # Читаем изображение, если оно было загружено
-        image_data = None
+        # Обработка изображения
+        compressed_image = None
+        original_image = None
+        image_url = None
+        
         if image:
             # Проверяем размер файла (5MB максимум)
             MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB в байтах
             file_size = 0
-            image_data = bytearray()
+            raw_image_data = bytearray()
             
             while chunk := await image.read(8192):
                 file_size += len(chunk)
@@ -393,34 +397,33 @@ async def create_product(
                         status_code=400,
                         detail="Размер файла превышает 5MB"
                     )
-                image_data.extend(chunk)
+                raw_image_data.extend(chunk)
             
             if file_size:
-                # Открываем изображение с помощью PIL
-                img = Image.open(io.BytesIO(image_data))
+                # Получаем base_url из запроса для формирования полных ссылок
+                base_url = str(request.base_url)
+                # Используем метод compress_image из InventoryManager для правильной обработки
+                compressed_image, original_image, image_url = manager.compress_image(
+                    bytes(raw_image_data), sku, base_url
+                )
                 
-                # Изменяем размер изображения до 100x100 с сохранением пропорций
-                img.thumbnail((100, 100), Image.Resampling.LANCZOS)
-                
-                # Конвертируем в RGB если изображение в режиме RGBA
-                if img.mode in ('RGBA', 'P'):
-                    img = img.convert('RGB')
-                
-                # Сохраняем изображение в буфер в формате WebP с максимальным сжатием
-                output_buffer = io.BytesIO()
-                img.save(output_buffer, format='WEBP', quality=30, method=6)
-                image_data = output_buffer.getvalue()
-                logger.info(f"Размер обработанного изображения: {len(image_data) / 1024:.2f} КБ")
+                if compressed_image:
+                    logger.info(f"Размер сжатого изображения: {len(compressed_image) / 1024:.2f} КБ")
+                    logger.info(f"Размер оригинального изображения: {len(original_image) / 1024:.2f} КБ")
+                else:
+                    logger.warning("Не удалось обработать изображение")
 
         # Разбиваем строку EAN по запятой и очищаем от пробелов
         eans = [e.strip() for e in ean.split(',')] if ean else []
 
-        # Создаем новый товар
+        # Создаем новый товар с сохранением как сжатого, так и оригинального изображения
         new_product = Product(
             sku=sku,
             name=name,
             eans=eans,
-            image=bytes(image_data) if image_data else None
+            image=compressed_image,
+            original_image=original_image,
+            image_url=image_url
         )
         
         # Добавляем начальные остатки
@@ -546,7 +549,8 @@ async def update_product(
     image: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(deps.get_async_session),
     current_user: User = Depends(deps.get_current_user_optional),
-    operations_service: OperationsService = Depends(get_operations_service)
+    operations_service: OperationsService = Depends(get_operations_service),
+    manager: InventoryManager = Depends(get_manager)
 ):
     """Обновляет товар по его SKU"""
     # Проверяем права доступа
@@ -606,7 +610,7 @@ async def update_product(
             # Проверяем размер файла (5MB максимум)
             MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB в байтах
             file_size = 0
-            image_data = bytearray()
+            raw_image_data = bytearray()
             
             while chunk := await image.read(8192):
                 file_size += len(chunk)
@@ -615,26 +619,29 @@ async def update_product(
                         status_code=400,
                         detail="Размер файла превышает 5MB"
                     )
-                image_data.extend(chunk)
+                raw_image_data.extend(chunk)
             
             if file_size:
-                # Открываем изображение с помощью PIL
-                img = Image.open(io.BytesIO(image_data))
+                # Используем актуальный SKU для генерации URL
+                current_sku = new_sku if new_sku else sku
+                # Получаем base_url из запроса для формирования полных ссылок
+                base_url = str(request.base_url)
                 
-                # Изменяем размер изображения до 100x100 с сохранением пропорций
-                img.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                # Используем метод compress_image из InventoryManager для правильной обработки
+                compressed_image, original_image, image_url = manager.compress_image(
+                    bytes(raw_image_data), current_sku, base_url
+                )
                 
-                # Конвертируем в RGB если изображение в режиме RGBA
-                if img.mode in ('RGBA', 'P'):
-                    img = img.convert('RGB')
-                
-                # Сохраняем изображение в буфер в формате WebP с максимальным сжатием
-                output_buffer = io.BytesIO()
-                img.save(output_buffer, format='WEBP', quality=30, method=6)
-                image_data = output_buffer.getvalue()
-                logger.info(f"Размер обработанного изображения: {len(image_data) / 1024:.2f} КБ")
-                
-                product.image = bytes(image_data)
+                if compressed_image:
+                    # Обновляем все поля изображения
+                    product.image = compressed_image
+                    product.original_image = original_image
+                    product.image_url = image_url
+                    
+                    logger.info(f"Размер сжатого изображения: {len(compressed_image) / 1024:.2f} КБ")
+                    logger.info(f"Размер оригинального изображения: {len(original_image) / 1024:.2f} КБ")
+                else:
+                    logger.warning("Не удалось обработать изображение")
         
         # Сохраняем изменения
         await db.commit()
@@ -1342,3 +1349,52 @@ async def get_product_offers(
             status_code=500,
             detail=f"Ошибка при получении оферт: {str(e)}"
         )
+
+
+@router.get("/{sku}/image/original")
+async def get_original_image(
+    sku: str,
+    db: AsyncSession = Depends(deps.get_async_session),
+):
+    """
+    Возвращает оригинальное изображение товара по SKU.
+    """
+    # Получаем товар из базы данных
+    product_query = select(Product).where(Product.sku == sku)
+    result = await db.exec(product_query)
+    product = result.first()
+    
+    if not product:
+        raise HTTPException(
+            status_code=404,
+            detail="Товар не найден"
+        )
+    
+    if not product.original_image:
+        raise HTTPException(
+            status_code=404,
+            detail="Оригинальное изображение отсутствует"
+        )
+    
+    # Определяем MIME тип по первым байтам изображения
+    image_data = product.original_image
+    if image_data.startswith(b'\xff\xd8\xff'):
+        media_type = "image/jpeg"
+    elif image_data.startswith(b'\x89PNG\r\n\x1a\n'):
+        media_type = "image/png"
+    elif image_data.startswith(b'RIFF') and b'WEBP' in image_data[:12]:
+        media_type = "image/webp"
+    elif image_data.startswith(b'GIF87a') or image_data.startswith(b'GIF89a'):
+        media_type = "image/gif"
+    else:
+        # По умолчанию считаем JPEG
+        media_type = "image/jpeg"
+    
+    return Response(
+        content=image_data,
+        media_type=media_type,
+        headers={
+            "Cache-Control": "public, max-age=86400",  # Кэшируем на сутки
+            "Content-Disposition": f"inline; filename={sku}_original.jpg"
+        }
+    )

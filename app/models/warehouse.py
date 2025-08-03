@@ -11,7 +11,9 @@ class Product(SQLModel, table=True):
     sku: str = Field(primary_key=True)
     eans: List[str] = Field(sa_column=Column(JSONB), default_factory=list)
     name: str
-    image: Optional[bytes] = Field(sa_column=Column(LargeBinary), default=None)
+    image: Optional[bytes] = Field(sa_column=Column(LargeBinary), default=None, description="Сжатое изображение 100x100 WebP")
+    original_image: Optional[bytes] = Field(sa_column=Column(LargeBinary), default=None, description="Оригинальное изображение")
+    image_url: Optional[str] = Field(default=None, description="URL для доступа к оригинальному изображению")
     brand: Optional[str] = Field(default=None, description="Бренд товара")
     
     # Связи с другими таблицами

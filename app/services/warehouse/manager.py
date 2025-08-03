@@ -213,19 +213,22 @@ class InventoryManager:
         '''Списание одной единицы с указанного склада.'''
         self.remove_from_warehouse(sku, warehouse, 1)
 
-    def compress_image(self, image_data: bytes) -> Optional[bytes]:
+    def compress_image(self, image_data: bytes, sku: str = None, base_url: str = None) -> tuple[Optional[bytes], Optional[bytes], Optional[str]]:
         """
-        Сжимает изображение до размера 100x100 пикселей в формат WebP.
+        Сжимает изображение до размера 100x100 пикселей в формат WebP и сохраняет оригинал.
         Поддерживает все форматы, которые поддерживает Pillow.
         
         Args:
             image_data: Байты исходного изображения
+            sku: SKU товара для генерации URL (опционально)
+            base_url: Базовый URL для формирования полной ссылки (опционально)
             
         Returns:
-            bytes: Сжатые байты изображения в формате WebP или None в случае ошибки
+            tuple: (сжатые_байты_webp, оригинальные_байты, url_оригинала)
+                   или (None, None, None) в случае ошибки
         """
         if not image_data:
-            return None
+            return None, None, None
             
         try:
             # Открываем изображение из байтов
@@ -245,11 +248,115 @@ class InventoryManager:
             output = io.BytesIO()
             img.save(output, format='WEBP', quality=30, method=6)
             
-            return output.getvalue()
+            compressed_data = output.getvalue()
+            
+            # Генерируем URL для оригинального изображения, если передан SKU
+            image_url = None
+            if sku:
+                if base_url:
+                    # Формируем полный URL с доменом
+                    image_url = f"{base_url.rstrip('/')}/api/products/{sku}/image/original"
+                else:
+                    # Формируем относительный URL (для обратной совместимости)
+                    image_url = f"/api/products/{sku}/image/original"
+            
+            return compressed_data, image_data, image_url
             
         except Exception as e:
             logging.error(f"Ошибка при сжатии изображения: {str(e)}")
-            return None
+            return None, None, None
+
+    def decompress_image(
+        self,
+        image_data: bytes,
+        sku: str = None,
+        target_size: int = 600,
+        target_format: str = 'JPEG',        # 'JPEG' | 'PNG' | 'WEBP'
+        quality: int = 100,                 # для JPEG/WebP lossy: 0–100
+        lossless_webp: bool = False         # только если target_format == 'WEBP'
+    ) -> Tuple[Optional[bytes], Optional[str]]:
+        """
+        Растягивает изображение на квадрат target_size×target_size
+        и сохраняет в нужном формате с настраиваемым качеством.
+
+        Args:
+            image_data: байты исходного изображения
+            sku: SKU товара для URL (опционально)
+            target_size: размер выходного квадрата
+            target_format: 'JPEG', 'PNG' или 'WEBP'
+            quality: для JPEG/WebP lossy (0–100)
+            lossless_webp: если True и format=='WEBP' — сохраняем без потерь
+
+        Returns:
+            (bytes, url) или (None, None)
+        """
+        if not image_data:
+            return None, None
+
+        try:
+            # 1) Заливаем прозрачность белым
+            img = Image.open(io.BytesIO(image_data))
+            if img.mode in ('RGBA','LA','P'):
+                img = img.convert('RGBA')
+                bg = Image.new('RGB', img.size, (255,255,255))
+                bg.paste(img, mask=img.split()[-1])
+                img = bg
+            else:
+                img = img.convert('RGB')
+
+            # 2) Жёстко растягиваем
+            img = img.resize((target_size, target_size), Image.Resampling.LANCZOS)
+
+            # 3) Готовим параметры сохранения
+            fmt = target_format.upper()
+            save_kwargs = {}
+            if fmt in ('JPEG','JPG'):
+                save_kwargs = {
+                    'format':'JPEG',
+                    'quality': quality,      # 100 ⇒ почти без потерь
+                    'optimize': True,
+                    'progressive': True,
+                    'subsampling': 0         # 4:4:4, никакой диких цветовых сокращений
+                }
+            elif fmt == 'PNG':
+                save_kwargs = {
+                    'format':'PNG',
+                    'optimize': True
+                }
+            elif fmt == 'WEBP':
+                if lossless_webp:
+                    save_kwargs = {
+                        'format':'WEBP',
+                        'lossless': True
+                    }
+                else:
+                    save_kwargs = {
+                        'format':'WEBP',
+                        'quality': quality,
+                        'method': 6
+                    }
+            else:
+                # fallback — JPEG
+                save_kwargs = {
+                    'format':'JPEG',
+                    'quality': quality,
+                    'optimize': True,
+                    'progressive': True,
+                    'subsampling': 0
+                }
+
+            # 4) Сохраняем в буфер
+            out = io.BytesIO()
+            img.save(out, **save_kwargs)
+            data = out.getvalue()
+
+            # 5) URL оригинала по SKU
+            url = f"/api/products/{sku}/image/original" if sku else None
+            return data, url
+
+        except Exception as e:
+            logging.error(f"Ошибка при масштабировании и сохранении: {e}")
+            return None, None
 
     def find_header_row(self, file_bytes: bytes, required_cols: list, max_rows: int = 10) -> int:
         """Автоматически определяет строку с заголовками по наличию нужных колонок."""
@@ -327,10 +434,14 @@ class InventoryManager:
                             else:
                                 continue
                                 
-                            # Сжимаем изображение перед сохранением
-                            compressed_image = self.compress_image(image_data)
-                            if compressed_image:
-                                images_by_row[row] = compressed_image
+                            # Обрабатываем изображение - получаем сжатое, оригинальное и URL
+                            # Пока не знаем SKU, поэтому передаем None для SKU и base_url
+                            compressed_image, original_image, _ = self.compress_image(image_data, None, None)
+                            if compressed_image and original_image:
+                                images_by_row[row] = {
+                                    'compressed': compressed_image,
+                                    'original': original_image
+                                }
                         except Exception:
                             continue
             except ValueError:
@@ -355,19 +466,41 @@ class InventoryManager:
                     # Полный режим - создаем/обновляем продукт
                     ean = str(row[col_indices['ean']].value)
                     name = str(row[col_indices['name']].value)
-                    image_data = images_by_row.get(row_idx)
+                    image_info = images_by_row.get(row_idx)
+                    
+                    # Извлекаем данные изображений
+                    compressed_image = None
+                    original_image = None
+                    image_url = None
+                    
+                    if image_info:
+                        compressed_image = image_info.get('compressed')
+                        original_image = image_info.get('original')
+                        # Генерируем относительный URL для оригинального изображения
+                        # (в методе импорта нет доступа к Request, поэтому используем относительный)
+                        image_url = f"/api/products/{sku}/image/original"
                     
                     with Session(self.engine) as session:
                         product = session.get(Product, sku)
                         if not product:
-                            product = Product(sku=sku, eans=[ean], name=name, image=image_data)
+                            product = Product(
+                                sku=sku,
+                                eans=[ean],
+                                name=name,
+                                image=compressed_image,
+                                original_image=original_image,
+                                image_url=image_url
+                            )
                             session.add(product)
                         else:
                             if ean not in product.eans:
                                 product.eans.append(ean)
                             product.name = name
-                            if image_data:
-                                product.image = image_data
+                            if compressed_image:
+                                product.image = compressed_image
+                            if original_image:
+                                product.original_image = original_image
+                                product.image_url = image_url
                             session.add(product)
                         session.commit()
                     
@@ -476,23 +609,88 @@ class InventoryManager:
             
             for product in products:
                 try:
-                    if not product.image:
-                        results[product.sku] = False
-                        continue
+                    # Если есть оригинальное изображение, используем его для создания сжатого
+                    if product.original_image:
+                        compressed_image, _, image_url = self.compress_image(product.original_image, product.sku, None)
                         
-                    # Сжимаем изображение
-                    compressed_image = self.compress_image(product.image)
-                    
-                    if compressed_image:
-                        # Обновляем изображение в базе
-                        product.image = compressed_image
-                        session.add(product)
-                        results[product.sku] = True
+                        if compressed_image:
+                            # Обновляем только сжатое изображение и URL, оригинал остается как есть
+                            product.image = compressed_image
+                            product.image_url = image_url
+                            session.add(product)
+                            results[product.sku] = True
+                        else:
+                            results[product.sku] = False
+                    elif product.image:
+                        # Если есть только сжатое изображение, пересжимаем его
+                        compressed_image, _, _ = self.compress_image(product.image, None, None)
+                        
+                        if compressed_image:
+                            product.image = compressed_image
+                            session.add(product)
+                            results[product.sku] = True
+                        else:
+                            results[product.sku] = False
                     else:
                         results[product.sku] = False
                         
                 except Exception as e:
                     logging.error(f"Ошибка при сжатии изображения для SKU {product.sku}: {str(e)}")
+                    results[product.sku] = False
+            
+            # Сохраняем все изменения
+            session.commit()
+            
+        return results
+
+    def decompress_all_product_images(self) -> Dict[str, bool]:
+        """
+        Декомпрессирует все изображения продуктов в базе данных.
+        Записывает декомпрессированные изображения в поле original_image и создает URL.
+        
+        Returns:
+            Dict[str, bool]: Словарь с результатами декомпрессии для каждого SKU
+                           {sku: True/False}, где True означает успешную декомпрессию
+        """
+        results = {}
+        
+        with Session(self.engine) as session:
+            # Получаем все продукты с изображениями (либо сжатыми, либо оригинальными)
+            products = session.exec(
+                select(Product).where(
+                    (Product.image != None) | (Product.original_image != None)
+                )
+            ).all()
+            
+            for product in products:
+                try:
+                    source_image = None
+                    
+                    # Определяем какое изображение использовать для декомпрессии
+                    if product.original_image:
+                        # Если есть оригинальное изображение, используем его
+                        source_image = product.original_image
+                    elif product.image:
+                        # Если есть только сжатое изображение, используем его
+                        source_image = product.image
+                    
+                    if source_image:
+                        # Декомпрессируем изображение
+                        decompressed_image, image_url = self.decompress_image(source_image, product.sku)
+                        
+                        if decompressed_image:
+                            # Записываем декомпрессированное изображение как оригинальное
+                            product.original_image = decompressed_image
+                            product.image_url = image_url
+                            session.add(product)
+                            results[product.sku] = True
+                        else:
+                            results[product.sku] = False
+                    else:
+                        results[product.sku] = False
+                        
+                except Exception as e:
+                    logging.error(f"Ошибка при декомпрессии изображения для SKU {product.sku}: {str(e)}")
                     results[product.sku] = False
             
             # Сохраняем все изменения
@@ -540,8 +738,8 @@ class InventoryManager:
             row['total'] = total
 
             rows.append(row)
-            # А картинку — собираем параллельно в отдельный список
-            images.append(prod.image or b'')
+            # А картинку — собираем параллельно в отдельный список (используем оригинальные изображения)
+            images.append(prod.original_image or b'')
 
         # Теперь df без колонки image
         df = pd.DataFrame(rows)
