@@ -401,7 +401,10 @@ async def create_product(
             
             if file_size:
                 # Получаем base_url из запроса для формирования полных ссылок
-                base_url = str(request.base_url)
+                # Проверяем заголовки прокси для определения правильной схемы
+                scheme = request.headers.get('x-forwarded-proto', 'https' if request.url.scheme == 'https' else 'http')
+                host = request.headers.get('host', str(request.base_url.hostname))
+                base_url = f"{scheme}://{host}"
                 # Используем метод compress_image из InventoryManager для правильной обработки
                 compressed_image, original_image, image_url = manager.compress_image(
                     bytes(raw_image_data), sku, base_url
@@ -625,7 +628,10 @@ async def update_product(
                 # Используем актуальный SKU для генерации URL
                 current_sku = new_sku if new_sku else sku
                 # Получаем base_url из запроса для формирования полных ссылок
-                base_url = str(request.base_url)
+                # Проверяем заголовки прокси для определения правильной схемы
+                scheme = request.headers.get('x-forwarded-proto', 'https' if request.url.scheme == 'https' else 'http')
+                host = request.headers.get('host', str(request.base_url.hostname))
+                base_url = f"{scheme}://{host}"
                 
                 # Используем метод compress_image из InventoryManager для правильной обработки
                 compressed_image, original_image, image_url = manager.compress_image(
@@ -670,6 +676,124 @@ async def update_product(
         raise HTTPException(
             status_code=400,
             detail=f"Не удалось обновить товар: {str(e)}"
+        )
+
+
+@router.post("/sync-settings/{account_name}/sync-all")
+async def sync_all_offers_for_account(
+    account_name: str,
+    request: Request,
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Запустить синхронизацию цен для всех товаров конкретного аккаунта Allegro.
+    Игнорирует флаг price_sync_enabled и синхронизирует все товары с настройками для данного аккаунта.
+    Если передан custom_multiplier, то обновляет мультипликатор для всех товаров аккаунта.
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется аутентификация")
+    
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Доступ запрещен. Требуются права администратора")
+    
+    # Проверяем существование аккаунта Allegro
+    token_query = select(AllegroToken).where(AllegroToken.account_name == account_name)
+    token_result = await db.exec(token_query)
+    token = token_result.first()
+    
+    if not token:
+        raise HTTPException(status_code=404, detail="Аккаунт Allegro не найден")
+    
+    # Получаем данные из запроса
+    try:
+        body = await request.json()
+        custom_multiplier = body.get("custom_multiplier")
+    except:
+        custom_multiplier = None
+    
+    # Если передан кастомный мультипликатор, обновляем настройки всех товаров для этого аккаунта
+    if custom_multiplier is not None:
+        if custom_multiplier <= 0 or custom_multiplier > 10:
+            raise HTTPException(
+                status_code=400,
+                detail="Мультипликатор должен быть положительным числом от 0.1 до 10"
+            )
+        
+        try:
+            # Получаем все настройки синхронизации для данного аккаунта
+            settings_query = select(ProductAllegroSyncSettings).where(
+                ProductAllegroSyncSettings.allegro_account_name == account_name
+            )
+            settings_result = await db.exec(settings_query)
+            all_settings = settings_result.all()
+            
+            # Обновляем мультипликатор для всех найденных настроек
+            updated_count = 0
+            for settings in all_settings:
+                settings.price_multiplier = custom_multiplier
+                settings.updated_at = datetime.utcnow()
+                updated_count += 1
+            
+            # Если есть товары без настроек синхронизации, создаём для них новые с кастомным мультипликатором
+            # Получаем все товары
+            products_query = select(Product)
+            products_result = await db.exec(products_query)
+            all_products = products_result.all()
+            
+            # Получаем SKU товаров, которые уже имеют настройки для данного аккаунта
+            existing_skus = {settings.product_sku for settings in all_settings}
+            
+            # Создаём настройки для товаров без настроек
+            created_count = 0
+            for product in all_products:
+                if product.sku not in existing_skus:
+                    new_settings = ProductAllegroSyncSettings(
+                        product_sku=product.sku,
+                        allegro_account_name=account_name,
+                        stock_sync_enabled=False,
+                        price_sync_enabled=False,
+                        price_multiplier=custom_multiplier
+                    )
+                    db.add(new_settings)
+                    created_count += 1
+            
+            await db.commit()
+            
+            logger.info(f"Обновлен мультипликатор {custom_multiplier} для {updated_count} товаров и создано {created_count} новых настроек для аккаунта {account_name}")
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Ошибка при обновлении мультипликатора для аккаунта {account_name}: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Ошибка при обновлении мультипликатора: {str(e)}"
+            )
+    
+    # Запускаем задачу синхронизации для всех товаров аккаунта
+    try:
+        task = celery.send_task(
+            'app.services.allegro.sync_tasks.sync_all_offers_for_account',
+            args=[account_name]
+        )
+        
+        message = f"Синхронизация всех товаров для аккаунта {account_name} запущена"
+        if custom_multiplier is not None:
+            message += f" с установкой мультипликатора {custom_multiplier} для всех товаров"
+        
+        return {
+            "success": True,
+            "message": message,
+            "task_id": task.id,
+            "account_name": account_name,
+            "custom_multiplier_applied": custom_multiplier is not None,
+            "custom_multiplier": custom_multiplier
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при запуске массовой синхронизации для аккаунта {account_name}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при запуске синхронизации: {str(e)}"
         )
 
 
@@ -1025,7 +1149,7 @@ async def sync_price_single_product_account(
     if not token:
         raise HTTPException(status_code=404, detail="Аккаунт Allegro не найден")
     
-    # Проверяем настройки синхронизации
+    # Получаем настройки синхронизации (создаем если нет)
     settings_query = select(ProductAllegroSyncSettings).where(
         ProductAllegroSyncSettings.product_sku == sku,
         ProductAllegroSyncSettings.allegro_account_name == account_name
@@ -1033,33 +1157,54 @@ async def sync_price_single_product_account(
     settings_result = await db.exec(settings_query)
     settings = settings_result.first()
     
-    if not settings or not settings.price_sync_enabled:
-        raise HTTPException(
-            status_code=400, 
-            detail="Синхронизация цен для этого товара и аккаунта не включена"
+    sync_was_disabled = False
+    if not settings:
+        # Создаем новые настройки с включенной синхронизацией цены
+        settings = ProductAllegroSyncSettings(
+            product_sku=sku,
+            allegro_account_name=account_name,
+            stock_sync_enabled=False,
+            price_sync_enabled=True,
+            price_multiplier=1.0
         )
+        db.add(settings)
+        sync_was_disabled = True
+    elif not settings.price_sync_enabled:
+        # Автоматически включаем синхронизацию цены
+        settings.price_sync_enabled = True
+        settings.updated_at = datetime.utcnow()
+        sync_was_disabled = True
+    
+    await db.commit()
+    await db.refresh(settings)
     
     # Получаем цену товара из сервиса цен
     price_data = prices_service.get_price_by_sku(sku)
-    if not price_data or price_data.min_price <= 0:
+    if not price_data or price_data.min_price is None or price_data.min_price <= 0:
         raise HTTPException(
             status_code=400,
-            detail="У товара не указана минимальная цена"
+            detail="У товара не указана корректная минимальная цена. Установите цену больше 0."
         )
     
-    # Запускаем задачу синхронизации цены
+    # Запускаем задачу синхронизации цены принудительно (независимо от настроек)
     try:
         task = celery.send_task(
             'app.services.allegro.sync_tasks.sync_allegro_price_single_product_account',
             args=[sku, account_name]
         )
         
+        message = f"Синхронизация цены для товара {sku} и аккаунта {account_name} запущена"
+        if sync_was_disabled:
+            message += " (автоматическая синхронизация включена)"
+        
         return {
             "success": True,
-            "message": f"Синхронизация цены для товара {sku} и аккаунта {account_name} запущена",
+            "message": message,
             "task_id": task.id,
             "sku": sku,
-            "account_name": account_name
+            "account_name": account_name,
+            "price_sync_enabled": True,
+            "sync_was_auto_enabled": sync_was_disabled
         }
     except Exception as e:
         import logging
@@ -1069,6 +1214,7 @@ async def sync_price_single_product_account(
             status_code=500,
             detail=f"Ошибка при запуске синхронизации цены: {str(e)}"
         )
+
 
 @router.get("/brands")
 async def get_brands(
