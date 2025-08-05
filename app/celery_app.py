@@ -522,7 +522,7 @@ def check_and_update_stock():
 
                 for order in orders:
                     try:
-                        if stock_service.process_order_stock_update(order, warehouse=manager.Warehouses.A.value):
+                        if stock_service.process_order_stock_update(order, warehouse=manager.Warehouses.A.value, token=token):
                             total_updated += 1
                         total_processed += 1
                     except Exception as e:
@@ -628,7 +628,7 @@ def process_allegro_order_events(token_id: str):
             for event in events_list:
                 try:
                     # Обрабатываем событие
-                    order = order_service.repository.process_order_event(token_id, token.access_token, event, api_service)
+                    order = order_service.repository.process_order_event(token_id, token.access_token, event, api_service, token=token)
                     if order:
                         processed_count += 1
                         last_processed_id = event.get("id")
