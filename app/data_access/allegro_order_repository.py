@@ -411,7 +411,7 @@ class AllegroOrderRepository:
             self.session.rollback()
             raise ValueError(f"Ошибка при создании заказа: {str(e)}")
 
-    def process_order_event(self, token_id: str, access_token: str, event_data: Dict[str, Any], api_service: SyncAllegroApiService) -> Optional[AllegroOrder]:
+    def process_order_event(self, token_id: str, access_token: str, event_data: Dict[str, Any], api_service: SyncAllegroApiService, **kwargs) -> Optional[AllegroOrder]:
         """
         Обрабатывает событие заказа и обновляет данные в базе.
         
@@ -458,7 +458,7 @@ class AllegroOrderRepository:
 
                     if event_type == "READY_FOR_PROCESSING":
                         stock_service = AllegroStockService(self.session, get_manager())
-                        stock_service.process_order_stock_update(allegro_order, Warehouses.A.value)
+                        stock_service.process_order_stock_update(allegro_order, Warehouses.A.value, **kwargs)
                     return allegro_order
                 except Exception as e:
                     error_traceback = traceback.format_exc()
