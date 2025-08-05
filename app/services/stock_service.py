@@ -20,7 +20,7 @@ class AllegroStockService:
         self.tg_manager = TelegramManager(chat_id=os.getenv("NOTIFY_GROUP_ID"))
         self.orders_client = OrdersClient(jwt_token=create_access_token(user_id=settings.PROJECT_NAME))
 
-    def process_order_stock_update(self, order_data: Dict[str, Any], warehouse: str, token_id: UUID) -> bool:
+    def process_order_stock_update(self, order_data: Dict[str, Any], warehouse: str, token_id: UUID, **kwargs) -> bool:
         """
         Обрабатывает списание товара для заказа Allegro.
         Возвращает True если списание выполнено успешно.
@@ -32,6 +32,7 @@ class AllegroStockService:
         """
         try:
             # Получаем данные из словаря заказа
+            token = kwargs.get("token", None)
             order_id = order_data.get("allegro_order_id", None) 
             status = order_data.get("status")
             technical_flags = order_data.get("technical_flags", {})
@@ -61,12 +62,12 @@ class AllegroStockService:
                     
                 stocks = self.manager.get_stock_by_sku(sku)
                 if not stocks:
-                    message = f"❌ Товар с SKU '<code>{sku}</code>' не найден в базе (заказ <code>{order_id}</code>)"
+                    message = f"Аккаунт: '{token.get('account_name') if token else 'Не указан'}'\n❌ Товар с SKU '<code>{sku}</code>' не найден в базе (заказ <code>{order_id}</code>)"
                     logger.warning(message)
                     self.tg_manager.send_message(message)
                     return False
                 elif stocks.get(warehouse, 0) == 0:
-                    message = f"⚠️ Товар с SKU '<code>{sku}</code>' есть в базе, но остатки нулевые на складе {warehouse} (заказ <code>{order_id}</code>)\nСписания не произошло"
+                    message = f"Аккаунт: '{token.get('account_name') if token else 'Не указан'}'\n⚠️ Товар с SKU '<code>{sku}</code>' есть в базе, но остатки нулевые на складе {warehouse} (заказ <code>{order_id}</code>)\nСписания не произошло"
                     logger.warning(message)
                     self.tg_manager.send_message(message)
                     return False
@@ -92,7 +93,7 @@ class AllegroStockService:
                     })
                     
                 except ValueError as e:
-                    message = f"Аккаунт: {token.account_name if token else 'Не указан'}\n❌ Товар с SKU '<code>{sku}</code>' не найден в базе (заказ <code>{order.id}</code>)"
+                    message = f"Аккаунт: '{token.get('account_name') if token else 'Не указан'}'\n❌ Товар с SKU '<code>{sku}</code>' не найден в базе (заказ <code>{order.id}</code>)"
                     logger.warning(message)
                     self.tg_manager.send_message(message)
                     return False
