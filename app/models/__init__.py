@@ -9,7 +9,6 @@ from os.path import basename, dirname, isfile, join
 from .warehouse import Product, Stock, Sale, Transfer
 from .user import User
 from .allegro_token import AllegroToken
-from .allegro_order import AllegroOrder, AllegroBuyer, AllegroLineItem, OrderLineItem
 from .allegro_event_tracker import AllegroEventTracker
 from .operations import Operation
 from .product_sync_lock import ProductSyncLock
@@ -26,10 +25,6 @@ __all__ = [
     "Transfer",
     "User",
     "AllegroToken",
-    "AllegroOrder",
-    "AllegroBuyer",
-    "AllegroLineItem",
-    "OrderLineItem",
     "AllegroEventTracker",
     "Operation",
     "ProductSyncLock",

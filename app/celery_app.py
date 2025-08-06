@@ -31,7 +31,6 @@ from app.schemas.wix_models import generate_handle_id
 from app.utils.logging_config import logger, get_logger, log_business_event, log_error_with_context
 from app.services.tg_client import TelegramManager
 
-from app.services.allegro.order_service import SyncAllegroOrderService
 from app.services.allegro.allegro_api_service import SyncAllegroApiService, NotFoundDetails
 
 import time
@@ -47,7 +46,6 @@ from app.services.stock_service import AllegroStockService
 from app.services.warehouse import manager
 from app.services.warehouse.manager import InventoryManager
 from app.services.tg_client import TelegramManager
-from app.models.allegro_order import AllegroOrder
 import csv
 import requests
 from app.repositories.allegro_event_tracker_repository import AllegroEventTrackerRepository
@@ -387,138 +385,6 @@ def _parse_date_val(val: Optional[Any]) -> Optional[datetime]:
     except Exception:
         raise ValueError(f"Неверный формат даты: {val}")
 
-def _sync_orders_core(
-    token_id: str,
-    from_date: Optional[Any],
-    stock_update_method: str
-) -> Dict[str, Any]:
-    """
-    Универсальная синхронизация заказов.
-    
-    stock_update_method: имя метода AllegroStockService,
-        либо 'process_order_stock_update', либо 'mark_order_stock_updated'
-    """
-    try:
-        redis_client = get_redis_client()
-
-        # 1) Определяем время с которого синхроним
-        raw = redis_client.get(f"last_sync_time_{token_id}")
-        if raw:
-            try:
-                # Если есть время последней синхронизации, берем его минус 10 дней
-                last_sync_time = datetime.fromisoformat(raw.decode()) - timedelta(days=10)
-                logging.info(f"Начинаем с последней точки минус 10 дней: {last_sync_time}")
-            except ValueError:
-                # При ошибке парсинга - 30 дней
-                last_sync_time = datetime.utcnow() - timedelta(days=30)
-                logging.warning(f"Не смогли парсить Redis, берём 30 дней назад: {last_sync_time}")
-        else:
-            # Если нет записи - 30 дней
-            last_sync_time = datetime.utcnow() - timedelta(days=30)
-            logging.info(f"Нет записи в Redis, берём 30 дней назад: {last_sync_time}")
-
-        session: Session = SessionLocal()
-        try:
-            order_service = SyncAllegroOrderService(session)
-            token = get_allegro_token(session, token_id)
-
-            stock_service = AllegroStockService(session, manager.get_manager())
-            updater = getattr(stock_service, stock_update_method)
-
-            offset = 0
-            limit = 100
-            synced = 0
-            stock_updates = 0
-
-            # Загружаем все существующие заказы
-            existing = {
-                o["id"]: o["updateTime"]
-                for o in order_service.repository.get_all_orders_basic_info(token_id) or []
-            }
-
-            while True:
-                allegro_rate_limiter.wait_if_needed()
-                page = order_service.api_service.get_orders(
-                    token.access_token,
-                    offset=offset,
-                    limit=limit,
-                    updated_at_gte=last_sync_time,
-                    sort="-lineItems.boughtAt"
-                )
-                forms = page.get("checkoutForms", [])
-                if not forms:
-                    break
-
-                # Обрабатываем все заказы на странице
-                for form in forms:
-                    order_id = form["id"]
-                    allegro_rate_limiter.wait_if_needed()
-                    
-                    # Получаем детали заказа
-                    details = order_service.api_service.get_order_details(
-                        token.access_token, order_id
-                    )
-                    
-                    try:
-                        # Обновляем существующий или создаем новый заказ
-                        if order_id in existing:
-                            order = order_service.repository.update_order(token_id, order_id, details)
-                        else:
-                            order = order_service.repository.add_order(token_id, details)
-                        synced += 1
-
-                        # Обновляем статус склада
-                        if updater(order, warehouse=Warehouses.A):
-                            stock_updates += 1
-                            
-                    except Exception as e:
-                        if "duplicate key value violates unique constraint" in str(e):
-                            # Если это дублирование покупателя, получаем существующего и пробуем снова
-                            logger.info(f"Найден существующий покупатель для заказа {order_id}, используем его")
-                            order = order_service.repository.add_order_with_existing_buyer(token_id, details)
-                            if updater(order, warehouse=Warehouses.A):
-                                stock_updates += 1
-                            synced += 1
-                        else:
-                            logger.error(f"Ошибка при обработке заказа {order_id}: {str(e)}")
-                            continue
-
-                # Если получили меньше заказов чем limit, значит это последняя страница
-                if len(forms) < limit:
-                    break
-                    
-                offset += limit
-
-            # сохраняем точку
-            redis_client.set(
-                f"last_sync_time_{token_id}",
-                (datetime.utcnow() - timedelta(seconds=5)).isoformat()
-            )
-
-            return {
-                "status": "success",
-                "orders_synced": synced,
-                "stock_updated": stock_updates
-            }
-        finally:
-            session.close()
-
-    except Exception as e:
-        logger.error("Ошибка при синхронизации:", exc_info=True)
-        return {"status": "error", "message": str(e)}
-
-
-@celery.task(name="app.celery_app.sync_allegro_orders")
-def sync_allegro_orders(token_id: str, from_date: Optional[str] = None):
-    # здесь вызываем общий код с process_order_stock_update
-    return _sync_orders_core(token_id, from_date, "process_order_stock_update")
-
-
-@celery.task(name="app.celery_app.sync_allegro_orders_immediate")
-def sync_allegro_orders_immediate(token_id: str, from_date: Optional[str] = None):
-    # здесь — с mark_order_stock_updated
-    return _sync_orders_core(token_id, from_date, "mark_order_stock_updated")
-
 
 @celery.task(name="app.celery_app.check_and_update_stock")
 def check_and_update_stock():
@@ -622,118 +488,6 @@ def check_and_update_stock():
             "status": "error",
             "message": str(e)
         }
-
-
-@celery.task(name="app.celery_app.process_allegro_order_events")
-def process_allegro_order_events(token_id: str):
-    """
-    Обрабатывает события заказов Allegro.
-    
-    Args:
-        token_id: ID токена Allegro
-    """
-    try:
-        session = SessionLocal()
-        
-        try:
-            # Получаем и проверяем токен
-            token = get_allegro_token(session, token_id)
-            
-            # Создаем необходимые сервисы
-            api_service = SyncAllegroApiService()
-            order_service = SyncAllegroOrderService(session)
-            event_tracker_repo = AllegroEventTrackerRepository(session)
-            
-            # Получаем ID последнего обработанного события из БД
-            last_event_id = event_tracker_repo.get_last_event_id(token_id)
-            
-            if not last_event_id:
-                # Если нет сохраненного события, получаем статистику
-                logger.info(f"Нет сохраненного события для токена {token_id}, получаем статистику")
-                stats = api_service.get_order_events_statistics(token.access_token)
-                logger.info(f"Получена статистика: {stats}")
-                
-                # Проверяем структуру ответа
-                if not stats:
-                    logger.error(f"Получена пустая статистика для токена {token_id}")
-                    return {"status": "error", "message": "Получена пустая статистика"}
-                
-                latest_event = stats.get("latestEvent")
-                logger.info(f"latestEvent из статистики: {latest_event}")
-                
-                if not latest_event:
-                    logger.error(f"Поле latestEvent отсутствует в статистике для токена {token_id}")
-                    return {"status": "error", "message": "Поле latestEvent отсутствует в статистике"}
-                
-                last_event_id = latest_event.get("id")
-                logger.info(f"Извлеченный last_event_id: {last_event_id}")
-                
-                if not last_event_id:
-                    logger.warning(f"Не удалось получить ID последнего события для токена {token_id}")
-                    return {"status": "error", "message": "Не удалось получить ID последнего события"}
-
-                event_tracker_repo.update_last_event_id(token_id, last_event_id)
-                logger.info(f"Сохранен ID последнего события: {last_event_id}")
-            
-            # Получаем новые события
-            allegro_rate_limiter.wait_if_needed()
-            events = api_service.get_order_events_v2(
-                token=token.access_token,
-                from_event_id=last_event_id,
-                limit=100
-            )
-            
-            logger.info(f"Получены события: {events}")
-            
-            # Проверяем структуру ответа
-            if not events:
-                logger.error(f"Получен пустой ответ событий для токена {token_id}")
-                return {"status": "error", "message": "Получен пустой ответ событий"}
-            
-            events_list = events.get("events", [])
-            logger.info(f"Список событий: {events_list}")
-            
-            if not events_list:
-                logger.info(f"Нет новых событий для токена {token_id}")
-                return {"status": "success", "message": "Нет новых событий"}
-            
-            # Обрабатываем каждое событие
-            processed_count = 0
-            last_processed_id = None
-            tg_client = TelegramManager(chat_id=os.getenv("NOTIFY_GROUP_ID"))
-
-            for event in events_list:
-                try:
-                    # Обрабатываем событие
-                    order = order_service.repository.process_order_event(token_id, token.access_token, event, api_service, token=token)
-                    order = order_service.repository.process_order_event(token_id, token.access_token, event, api_service, token=token)
-                    if order:
-                        processed_count += 1
-                        last_processed_id = event.get("id")
-                        event_tracker_repo.update_last_event_id(token_id, last_processed_id)
-                        logger.info(f"Сохранен ID последнего обработанного события: {last_processed_id}")
-                except NotFoundDetails as e:
-                    logger.error(f"Заказ {event.get('id')} не найден, пропускаем")
-                    send_message_to_tg.delay(f"Задача по обработке ивента упала с ошибкой {str(e)}\n Заказ пропущен и синхронизирован не будет, если он существует необходимо вручную списать позиции такого заказа из каталога.")
-                    continue
-                except Exception as e:
-                    logger.error(f"Ошибка при обработке события {event.get('id')}: {str(e)}")
-                    send_message_to_tg.delay(f"Задача по обработке ивента упала с ошибкой {str(e)}\n Требуется вмешательство")
-                    raise
-                
-            return {
-                "status": "success",
-                "processed_events": processed_count,
-                "last_event_id": last_processed_id if last_processed_id else last_event_id
-            }
-            
-        finally:
-            session.close()
-            
-    except Exception as e:
-        logger.error(f"Ошибка при обработке событий заказов: {str(e)}")
-        return {"status": "error", "message": str(e)}
-
 
 @celery.task(name="app.celery_app.send_message_to_tg")
 def send_message_to_tg(message: str):

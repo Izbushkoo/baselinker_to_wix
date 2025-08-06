@@ -1,8 +1,6 @@
 import logging
 import mimetypes
 from typing import List, Optional
-from sqlmodel import select, update
-from app.models.allegro_order import AllegroOrder
 import pandas as pd
 from io import BytesIO
 from datetime import date, datetime
@@ -15,17 +13,11 @@ from openpyxl.utils import get_column_letter
 from app.models.user import User
 from openpyxl.drawing.image import Image as XLImage
 from app.api import deps
-from app.services.allegro import tokens as allegro_tokens
-from app.services.allegro.data_access import get_tokens_list, insert_token, delete_token, get_token_by_id
-from app.services.allegro.pydantic_models import TokenOfAllegro
-from app.services.allegro.pydantic_models import InitializeAuth
-from app.models.user import User as UserModel
 from app.services.warehouse import manager
 from app.services.warehouse.manager import Warehouses
 from pydantic import BaseModel, Field
-from openpyxl.styles import Font, Alignment
 from urllib.parse import quote
-from app.services.operations_service import OperationsService, get_operations_service
+from app.services.operations_service import get_operations_service
 from app.services.Allegro_Microservice.orders_endpoint import OrdersClient
 from app.models.operations import OperationType
 from app.core.security import create_access_token

@@ -4,15 +4,11 @@ import logging
 import json
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Cookie
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api import deps
-from app.services.allegro import tokens as allegro_tokens
-from app.services.allegro.data_access import get_tokens_list, insert_token, delete_token, get_token_by_id
 from app.services.allegro.pydantic_models import TokenOfAllegro
-from app.services.allegro.pydantic_models import InitializeAuth
 from app.models.user import User as UserModel
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
@@ -31,7 +27,6 @@ class InitializeRequest(BaseModel):
 @web_router.get("/connect_allegro")
 async def get_allegro_connect(
     request: Request,
-    database: AsyncSession = Depends(deps.get_async_session),
     current_user: UserModel = Depends(deps.get_current_user_optional)
 ):
     if not current_user:

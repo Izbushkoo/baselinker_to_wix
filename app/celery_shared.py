@@ -26,8 +26,6 @@ if is_docker:
 from app.core.config import settings
 from app.database import engine
 from app.models.allegro_token import AllegroToken
-from app.services.allegro.tokens import check_token_sync
-from app.services.allegro.data_access import get_token_by_id_sync
 
 # Настройки брокера (Redis)
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")

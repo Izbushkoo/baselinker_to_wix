@@ -9,7 +9,6 @@ import base64
 from sqlalchemy import or_, text, bindparam
 from fastapi.templating import Jinja2Templates
 from app.api import deps
-from app.api.v1.routers.allegro_sync import get_sync_status
 from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.models.user import User
 from app.models.allegro_token import AllegroToken
@@ -17,13 +16,10 @@ from app.models.product_allegro_sync_settings import ProductAllegroSyncSettings
 from app.services.warehouse.manager import Warehouses, InventoryManager, get_manager
 from app.services.operations_service import OperationsService, OperationType, get_operations_service
 from app.services.prices_service import prices_service
-from app.schemas.product import ProductUpdate, ProductEditForm, ProductResponse
 from app.celery_app import celery
 from PIL import Image
 import logging
 from datetime import datetime
-from app.services.allegro.allegro_api_service import SyncAllegroApiService
-from app.services.allegro.tokens import get_token
 from app.services.Allegro_Microservice.tokens_endpoint import AllegroTokenMicroserviceClient
 from app.services.Allegro_Microservice.offers_endpoint import AllegroOffersMicroserviceClient
 from app.core.security import create_access_token

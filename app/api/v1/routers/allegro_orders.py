@@ -9,7 +9,6 @@ from fastapi.templating import Jinja2Templates
 import logging
 
 from app.api import deps
-from app.models.allegro_order import AllegroOrder, AllegroBuyer, AllegroLineItem, OrderLineItem
 from app.models.allegro_token import AllegroToken
 from app.utils.date_utils import parse_date
 from app.utils.logging_config import logger
@@ -29,16 +28,6 @@ async def get_orders_page(
     """Страница с заказами для конкретного аккаунта Allegro."""
     if not current_user:
         return RedirectResponse(url=f"/login?next=/allegro/orders/{token_id}", status_code=302)
-
-    # # Получаем информацию о токене
-    # result = await database.exec(
-    #     select(AllegroToken).where(AllegroToken.id_ == token_id)
-    # )
-    # token = result.first()
-    
-    # if not token:
-    #     raise HTTPException(status_code=404, detail="Аккаунт не найден")
-
 
     return templates.TemplateResponse(
         "allegro_orders.html",
