@@ -43,7 +43,7 @@ class ProductAllegroSyncSettings(SQLModel, table=True):
     
     # Настройки синхронизации остатков
     stock_sync_enabled: bool = Field(
-        default=True,
+        default=False,
         description="Включена ли синхронизация остатков для этого аккаунта"
     )
     

@@ -33,7 +33,7 @@ class AllegroStockService:
         try:
             # Получаем данные из словаря заказа
             token = kwargs.get("token", None)
-            order_id = order_data.get("allegro_order_id", None) 
+            order_id = order_data.get("allegro_order_id", None)
             status = order_data.get("status")
             technical_flags = order_data.get("technical_flags", {})
             is_stock_updated = technical_flags.get("is_stock_updated", False)
@@ -93,7 +93,7 @@ class AllegroStockService:
                     })
                     
                 except ValueError as e:
-                    message = f"Аккаунт: '{token.get('account_name') if token else 'Не указан'}'\n❌ Товар с SKU '<code>{sku}</code>' не найден в базе (заказ <code>{order.id}</code>)"
+                    message = f"Аккаунт: '{token.get('account_name') if token else 'Не указан'}'\n❌ Товар с SKU '<code>{sku}</code>' не найден в базе (заказ <code>{order_id}</code>)"
                     logger.warning(message)
                     self.tg_manager.send_message(message)
                     return False

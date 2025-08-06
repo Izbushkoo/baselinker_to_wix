@@ -533,4 +533,74 @@ def update_single_allegro_offer(self, token_id: int, offer_id: str, target_stock
             except Exception as tg_err:
                 logger.error(f"[AllegroSync] Ошибка отправки уведомления в Telegram: {tg_err}")
         self.retry(exc=e)
-        return {"success": False, "offer_id": offer_id, "sku": sku, "error": str(e)} 
+        return {"success": False, "offer_id": offer_id, "sku": sku, "error": str(e)}
+
+@celery.task
+def sync_all_offers_for_account(account_name: str):
+    """
+    Celery-задача: синхронизация цен для всех товаров конкретного аккаунта Allegro.
+    Игнорирует флаг price_sync_enabled и запускает синхронизацию цен для всех товаров,
+    у которых есть настройки синхронизации для данного аккаунта.
+    """
+    logger = logging.getLogger("allegro.sync")
+    start = time.time()
+    logger.info(f"[AllegroSync] Старт массовой синхронизации цен для аккаунта {account_name}")
+    
+    from app.models.allegro_token import AllegroToken
+    from sqlmodel import select
+    
+    with SessionLocal() as session:
+        # Проверяем существование аккаунта
+        token = session.exec(select(AllegroToken).where(AllegroToken.account_name == account_name)).first()
+        if not token:
+            logger.error(f"[AllegroSync] Токен для аккаунта {account_name} не найден")
+            return {"success": False, "error": "Токен не найден", "account_name": account_name}
+        
+        # Получаем сервис синхронизации
+        sync_service = get_sync_service(session)
+        
+        # Получаем все настройки синхронизации для данного аккаунта
+        # Независимо от флага price_sync_enabled
+        from app.models.product_allegro_sync_settings import ProductAllegroSyncSettings
+        settings_query = select(ProductAllegroSyncSettings).where(
+            ProductAllegroSyncSettings.allegro_account_name == account_name
+        )
+        settings_result = session.exec(settings_query)
+        all_settings = settings_result.all()
+        
+        if not all_settings:
+            logger.warning(f"[AllegroSync] Нет настроек синхронизации для аккаунта {account_name}")
+            return {
+                "success": True,
+                "account_name": account_name,
+                "products_queued": 0,
+                "message": "Нет товаров с настройками синхронизации"
+            }
+        
+        logger.info(f"[AllegroSync] Найдено {len(all_settings)} товаров с настройками для аккаунта {account_name}")
+        
+        # Запускаем задачи синхронизации цен для каждого товара
+        queued_tasks = []
+        for settings in all_settings:
+            try:
+                task = sync_allegro_price_single_product_account.apply_async(
+                    args=[settings.product_sku, account_name]
+                )
+                queued_tasks.append({
+                    "sku": settings.product_sku,
+                    "task_id": task.id
+                })
+                logger.debug(f"[AllegroSync] Запущена синхронизация цены для SKU {settings.product_sku}, task_id: {task.id}")
+            except Exception as e:
+                logger.error(f"[AllegroSync] Ошибка запуска задачи для SKU {settings.product_sku}: {e}")
+        
+        logger.info(f"[AllegroSync] Массовая синхронизация аккаунта {account_name} завершена. "
+                   f"Запущено задач: {len(queued_tasks)}. Время: {time.time() - start:.2f} сек")
+        
+        return {
+            "success": True,
+            "account_name": account_name,
+            "products_queued": len(queued_tasks),
+            "total_products": len(all_settings),
+            "queued_tasks": queued_tasks
+        }

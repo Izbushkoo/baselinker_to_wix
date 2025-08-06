@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException, Request, File, UploadFile, Form
 from sqlmodel import select, func
 from sqlmodel.ext.asyncio.session import AsyncSession
-from fastapi.responses import StreamingResponse, HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import StreamingResponse, HTMLResponse, RedirectResponse, JSONResponse, Response
 import io
 import pandas as pd
 import base64
@@ -14,7 +14,7 @@ from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.models.user import User
 from app.models.allegro_token import AllegroToken
 from app.models.product_allegro_sync_settings import ProductAllegroSyncSettings
-from app.services.warehouse.manager import Warehouses
+from app.services.warehouse.manager import Warehouses, InventoryManager, get_manager
 from app.services.operations_service import OperationsService, OperationType, get_operations_service
 from app.services.prices_service import prices_service
 from app.schemas.product import ProductUpdate, ProductEditForm, ProductResponse
@@ -370,7 +370,8 @@ async def create_product(
     image: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(deps.get_async_session),
     current_user: User = Depends(deps.get_current_user_optional),
-    operations_service: OperationsService = Depends(get_operations_service)
+    operations_service: OperationsService = Depends(get_operations_service),
+    manager: InventoryManager = Depends(get_manager)
 ):
     """Создает новый товар в базе данных."""
     try:
@@ -381,13 +382,16 @@ async def create_product(
                 detail="Выбран недопустимый склад"
             )
 
-        # Читаем изображение, если оно было загружено
-        image_data = None
+        # Обработка изображения
+        compressed_image = None
+        original_image = None
+        image_url = None
+        
         if image:
             # Проверяем размер файла (5MB максимум)
             MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB в байтах
             file_size = 0
-            image_data = bytearray()
+            raw_image_data = bytearray()
             
             while chunk := await image.read(8192):
                 file_size += len(chunk)
@@ -396,34 +400,36 @@ async def create_product(
                         status_code=400,
                         detail="Размер файла превышает 5MB"
                     )
-                image_data.extend(chunk)
+                raw_image_data.extend(chunk)
             
             if file_size:
-                # Открываем изображение с помощью PIL
-                img = Image.open(io.BytesIO(image_data))
+                # Получаем base_url из запроса для формирования полных ссылок
+                # Проверяем заголовки прокси для определения правильной схемы
+                scheme = request.headers.get('x-forwarded-proto', 'https' if request.url.scheme == 'https' else 'http')
+                host = request.headers.get('host', str(request.base_url.hostname))
+                base_url = f"{scheme}://{host}"
+                # Используем метод compress_image из InventoryManager для правильной обработки
+                compressed_image, original_image, image_url = manager.compress_image(
+                    bytes(raw_image_data), sku, base_url
+                )
                 
-                # Изменяем размер изображения до 100x100 с сохранением пропорций
-                img.thumbnail((100, 100), Image.Resampling.LANCZOS)
-                
-                # Конвертируем в RGB если изображение в режиме RGBA
-                if img.mode in ('RGBA', 'P'):
-                    img = img.convert('RGB')
-                
-                # Сохраняем изображение в буфер в формате WebP с максимальным сжатием
-                output_buffer = io.BytesIO()
-                img.save(output_buffer, format='WEBP', quality=30, method=6)
-                image_data = output_buffer.getvalue()
-                logger.info(f"Размер обработанного изображения: {len(image_data) / 1024:.2f} КБ")
+                if compressed_image:
+                    logger.info(f"Размер сжатого изображения: {len(compressed_image) / 1024:.2f} КБ")
+                    logger.info(f"Размер оригинального изображения: {len(original_image) / 1024:.2f} КБ")
+                else:
+                    logger.warning("Не удалось обработать изображение")
 
         # Разбиваем строку EAN по запятой и очищаем от пробелов
         eans = [e.strip() for e in ean.split(',')] if ean else []
 
-        # Создаем новый товар
+        # Создаем новый товар с сохранением как сжатого, так и оригинального изображения
         new_product = Product(
             sku=sku,
             name=name,
             eans=eans,
-            image=bytes(image_data) if image_data else None
+            image=compressed_image,
+            original_image=original_image,
+            image_url=image_url
         )
         
         # Добавляем начальные остатки
@@ -549,7 +555,8 @@ async def update_product(
     image: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(deps.get_async_session),
     current_user: User = Depends(deps.get_current_user_optional),
-    operations_service: OperationsService = Depends(get_operations_service)
+    operations_service: OperationsService = Depends(get_operations_service),
+    manager: InventoryManager = Depends(get_manager)
 ):
     """Обновляет товар по его SKU"""
     # Проверяем права доступа
@@ -609,7 +616,7 @@ async def update_product(
             # Проверяем размер файла (5MB максимум)
             MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB в байтах
             file_size = 0
-            image_data = bytearray()
+            raw_image_data = bytearray()
             
             while chunk := await image.read(8192):
                 file_size += len(chunk)
@@ -618,26 +625,32 @@ async def update_product(
                         status_code=400,
                         detail="Размер файла превышает 5MB"
                     )
-                image_data.extend(chunk)
+                raw_image_data.extend(chunk)
             
             if file_size:
-                # Открываем изображение с помощью PIL
-                img = Image.open(io.BytesIO(image_data))
+                # Используем актуальный SKU для генерации URL
+                current_sku = new_sku if new_sku else sku
+                # Получаем base_url из запроса для формирования полных ссылок
+                # Проверяем заголовки прокси для определения правильной схемы
+                scheme = request.headers.get('x-forwarded-proto', 'https' if request.url.scheme == 'https' else 'http')
+                host = request.headers.get('host', str(request.base_url.hostname))
+                base_url = f"{scheme}://{host}"
                 
-                # Изменяем размер изображения до 100x100 с сохранением пропорций
-                img.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                # Используем метод compress_image из InventoryManager для правильной обработки
+                compressed_image, original_image, image_url = manager.compress_image(
+                    bytes(raw_image_data), current_sku, base_url
+                )
                 
-                # Конвертируем в RGB если изображение в режиме RGBA
-                if img.mode in ('RGBA', 'P'):
-                    img = img.convert('RGB')
-                
-                # Сохраняем изображение в буфер в формате WebP с максимальным сжатием
-                output_buffer = io.BytesIO()
-                img.save(output_buffer, format='WEBP', quality=30, method=6)
-                image_data = output_buffer.getvalue()
-                logger.info(f"Размер обработанного изображения: {len(image_data) / 1024:.2f} КБ")
-                
-                product.image = bytes(image_data)
+                if compressed_image:
+                    # Обновляем все поля изображения
+                    product.image = compressed_image
+                    product.original_image = original_image
+                    product.image_url = image_url
+                    
+                    logger.info(f"Размер сжатого изображения: {len(compressed_image) / 1024:.2f} КБ")
+                    logger.info(f"Размер оригинального изображения: {len(original_image) / 1024:.2f} КБ")
+                else:
+                    logger.warning("Не удалось обработать изображение")
         
         # Сохраняем изменения
         await db.commit()
@@ -666,6 +679,124 @@ async def update_product(
         raise HTTPException(
             status_code=400,
             detail=f"Не удалось обновить товар: {str(e)}"
+        )
+
+
+@router.post("/sync-settings/{account_name}/sync-all")
+async def sync_all_offers_for_account(
+    account_name: str,
+    request: Request,
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Запустить синхронизацию цен для всех товаров конкретного аккаунта Allegro.
+    Игнорирует флаг price_sync_enabled и синхронизирует все товары с настройками для данного аккаунта.
+    Если передан custom_multiplier, то обновляет мультипликатор для всех товаров аккаунта.
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется аутентификация")
+    
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Доступ запрещен. Требуются права администратора")
+    
+    # Проверяем существование аккаунта Allegro
+    token_query = select(AllegroToken).where(AllegroToken.account_name == account_name)
+    token_result = await db.exec(token_query)
+    token = token_result.first()
+    
+    if not token:
+        raise HTTPException(status_code=404, detail="Аккаунт Allegro не найден")
+    
+    # Получаем данные из запроса
+    try:
+        body = await request.json()
+        custom_multiplier = body.get("custom_multiplier")
+    except:
+        custom_multiplier = None
+    
+    # Если передан кастомный мультипликатор, обновляем настройки всех товаров для этого аккаунта
+    if custom_multiplier is not None:
+        if custom_multiplier <= 0 or custom_multiplier > 10:
+            raise HTTPException(
+                status_code=400,
+                detail="Мультипликатор должен быть положительным числом от 0.1 до 10"
+            )
+        
+        try:
+            # Получаем все настройки синхронизации для данного аккаунта
+            settings_query = select(ProductAllegroSyncSettings).where(
+                ProductAllegroSyncSettings.allegro_account_name == account_name
+            )
+            settings_result = await db.exec(settings_query)
+            all_settings = settings_result.all()
+            
+            # Обновляем мультипликатор для всех найденных настроек
+            updated_count = 0
+            for settings in all_settings:
+                settings.price_multiplier = custom_multiplier
+                settings.updated_at = datetime.utcnow()
+                updated_count += 1
+            
+            # Если есть товары без настроек синхронизации, создаём для них новые с кастомным мультипликатором
+            # Получаем все товары
+            products_query = select(Product)
+            products_result = await db.exec(products_query)
+            all_products = products_result.all()
+            
+            # Получаем SKU товаров, которые уже имеют настройки для данного аккаунта
+            existing_skus = {settings.product_sku for settings in all_settings}
+            
+            # Создаём настройки для товаров без настроек
+            created_count = 0
+            for product in all_products:
+                if product.sku not in existing_skus:
+                    new_settings = ProductAllegroSyncSettings(
+                        product_sku=product.sku,
+                        allegro_account_name=account_name,
+                        stock_sync_enabled=False,
+                        price_sync_enabled=False,
+                        price_multiplier=custom_multiplier
+                    )
+                    db.add(new_settings)
+                    created_count += 1
+            
+            await db.commit()
+            
+            logger.info(f"Обновлен мультипликатор {custom_multiplier} для {updated_count} товаров и создано {created_count} новых настроек для аккаунта {account_name}")
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Ошибка при обновлении мультипликатора для аккаунта {account_name}: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Ошибка при обновлении мультипликатора: {str(e)}"
+            )
+    
+    # Запускаем задачу синхронизации для всех товаров аккаунта
+    try:
+        task = celery.send_task(
+            'app.services.allegro.sync_tasks.sync_all_offers_for_account',
+            args=[account_name]
+        )
+        
+        message = f"Синхронизация всех товаров для аккаунта {account_name} запущена"
+        if custom_multiplier is not None:
+            message += f" с установкой мультипликатора {custom_multiplier} для всех товаров"
+        
+        return {
+            "success": True,
+            "message": message,
+            "task_id": task.id,
+            "account_name": account_name,
+            "custom_multiplier_applied": custom_multiplier is not None,
+            "custom_multiplier": custom_multiplier
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при запуске массовой синхронизации для аккаунта {account_name}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при запуске синхронизации: {str(e)}"
         )
 
 
@@ -1021,7 +1152,7 @@ async def sync_price_single_product_account(
     if not token:
         raise HTTPException(status_code=404, detail="Аккаунт Allegro не найден")
     
-    # Проверяем настройки синхронизации
+    # Получаем настройки синхронизации (создаем если нет)
     settings_query = select(ProductAllegroSyncSettings).where(
         ProductAllegroSyncSettings.product_sku == sku,
         ProductAllegroSyncSettings.allegro_account_name == account_name
@@ -1029,33 +1160,54 @@ async def sync_price_single_product_account(
     settings_result = await db.exec(settings_query)
     settings = settings_result.first()
     
-    if not settings or not settings.price_sync_enabled:
-        raise HTTPException(
-            status_code=400, 
-            detail="Синхронизация цен для этого товара и аккаунта не включена"
+    sync_was_disabled = False
+    if not settings:
+        # Создаем новые настройки с включенной синхронизацией цены
+        settings = ProductAllegroSyncSettings(
+            product_sku=sku,
+            allegro_account_name=account_name,
+            stock_sync_enabled=False,
+            price_sync_enabled=True,
+            price_multiplier=1.0
         )
+        db.add(settings)
+        sync_was_disabled = True
+    elif not settings.price_sync_enabled:
+        # Автоматически включаем синхронизацию цены
+        settings.price_sync_enabled = True
+        settings.updated_at = datetime.utcnow()
+        sync_was_disabled = True
+    
+    await db.commit()
+    await db.refresh(settings)
     
     # Получаем цену товара из сервиса цен
     price_data = prices_service.get_price_by_sku(sku)
-    if not price_data or price_data.min_price <= 0:
+    if not price_data or price_data.min_price is None or price_data.min_price <= 0:
         raise HTTPException(
             status_code=400,
-            detail="У товара не указана минимальная цена"
+            detail="У товара не указана корректная минимальная цена. Установите цену больше 0."
         )
     
-    # Запускаем задачу синхронизации цены
+    # Запускаем задачу синхронизации цены принудительно (независимо от настроек)
     try:
         task = celery.send_task(
             'app.services.allegro.sync_tasks.sync_allegro_price_single_product_account',
             args=[sku, account_name]
         )
         
+        message = f"Синхронизация цены для товара {sku} и аккаунта {account_name} запущена"
+        if sync_was_disabled:
+            message += " (автоматическая синхронизация включена)"
+        
         return {
             "success": True,
-            "message": f"Синхронизация цены для товара {sku} и аккаунта {account_name} запущена",
+            "message": message,
             "task_id": task.id,
             "sku": sku,
-            "account_name": account_name
+            "account_name": account_name,
+            "price_sync_enabled": True,
+            "sync_was_auto_enabled": sync_was_disabled
         }
     except Exception as e:
         import logging
@@ -1065,6 +1217,7 @@ async def sync_price_single_product_account(
             status_code=500,
             detail=f"Ошибка при запуске синхронизации цены: {str(e)}"
         )
+
 
 @router.get("/brands")
 async def get_brands(
@@ -1356,3 +1509,52 @@ async def get_product_offers(
             status_code=500,
             detail=f"Ошибка при получении оферт: {str(e)}"
         )
+
+
+@router.get("/{sku}/image/original")
+async def get_original_image(
+    sku: str,
+    db: AsyncSession = Depends(deps.get_async_session),
+):
+    """
+    Возвращает оригинальное изображение товара по SKU.
+    """
+    # Получаем товар из базы данных
+    product_query = select(Product).where(Product.sku == sku)
+    result = await db.exec(product_query)
+    product = result.first()
+    
+    if not product:
+        raise HTTPException(
+            status_code=404,
+            detail="Товар не найден"
+        )
+    
+    if not product.original_image:
+        raise HTTPException(
+            status_code=404,
+            detail="Оригинальное изображение отсутствует"
+        )
+    
+    # Определяем MIME тип по первым байтам изображения
+    image_data = product.original_image
+    if image_data.startswith(b'\xff\xd8\xff'):
+        media_type = "image/jpeg"
+    elif image_data.startswith(b'\x89PNG\r\n\x1a\n'):
+        media_type = "image/png"
+    elif image_data.startswith(b'RIFF') and b'WEBP' in image_data[:12]:
+        media_type = "image/webp"
+    elif image_data.startswith(b'GIF87a') or image_data.startswith(b'GIF89a'):
+        media_type = "image/gif"
+    else:
+        # По умолчанию считаем JPEG
+        media_type = "image/jpeg"
+    
+    return Response(
+        content=image_data,
+        media_type=media_type,
+        headers={
+            "Cache-Control": "public, max-age=86400",  # Кэшируем на сутки
+            "Content-Disposition": f"inline; filename={sku}_original.jpg"
+        }
+    )
