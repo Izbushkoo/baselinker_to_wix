@@ -14,13 +14,14 @@ from .allegro_event_tracker import AllegroEventTracker
 from .operations import Operation
 from .product_sync_lock import ProductSyncLock
 from .product_allegro_sync_settings import ProductAllegroSyncSettings
+from .stock_synchronization import PendingStockOperation, StockSynchronizationLog
 
 modules = glob.glob(join(dirname(__file__), "*.py"))
 __all__ = [basename(f)[:-3] for f in modules if isfile(f) and not f.endswith("__init__.py")]
 
 __all__ = [
     "Product",
-    "Stock", 
+    "Stock",
     "Sale",
     "Transfer",
     "User",
@@ -33,4 +34,6 @@ __all__ = [
     "Operation",
     "ProductSyncLock",
     "ProductAllegroSyncSettings",
+    "PendingStockOperation",
+    "StockSynchronizationLog",
 ]

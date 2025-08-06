@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.routers import auth, users, baselinker_info, allegro_tokens, allegro_sync, warehouse, products, operations, allegro_orders, prices
+from app.api.v1.routers import auth, users, baselinker_info, allegro_tokens, allegro_sync, warehouse, products, operations, allegro_orders, prices, stock_sync
 
 # API маршруты
 api_router = APIRouter()
@@ -12,6 +12,7 @@ api_router.include_router(allegro_sync.router, prefix="/allegro_sync", tags=["Al
 api_router.include_router(warehouse.router, prefix="/warehouse", tags=["Warehouse"])
 api_router.include_router(products.router, prefix="/products", tags=["Products"])
 api_router.include_router(prices.router, prefix="/prices", tags=["Prices"])
+api_router.include_router(stock_sync.router, prefix="/stock_sync", tags=["Stock Sync"])
 # Веб-маршруты (без API префикса)
 web_router = APIRouter()
 web_router.include_router(auth.web_router, tags=["Auth Pages"])

@@ -178,6 +178,35 @@ DEFAULT_BEAT_SCHEDULE = {
     'sync-wix-inventory': {
         'task': 'app.celery_app.sync_wix_inventory',
         'schedule': 3600,  # 1 час
+    },
+    # Задачи новой системы синхронизации складских остатков
+    'process-pending-stock-operations': {
+        'task': 'app.services.stock_sync_tasks.process_pending_stock_operations',
+        'schedule': 300,  # 5 минут
+        'kwargs': {'limit': 50}
+    },
+    'validate-pending-operations': {
+        'task': 'app.services.stock_sync_tasks.validate_pending_operations',
+        'schedule': 900,  # 15 минут
+        'kwargs': {'limit': 100}
+    },
+    'reconcile-stock-states': {
+        'task': 'app.services.stock_sync_tasks.reconcile_stock_states',
+        'schedule': 3600,  # 1 час
+        'kwargs': {'limit': 200}
+    },
+    'monitor-sync-system-health': {
+        'task': 'app.services.stock_sync_tasks.monitor_sync_system_health',
+        'schedule': 600  # 10 минут
+    },
+    'send-daily-sync-summary': {
+        'task': 'app.services.stock_sync_tasks.send_daily_sync_summary',
+        'schedule': crontab(hour=8, minute=0).__repr__()  # 8:00 UTC ежедневно
+    },
+    'cleanup-old-sync-logs': {
+        'task': 'app.services.stock_sync_tasks.cleanup_old_sync_logs',
+        'schedule': crontab(hour=2, minute=0).__repr__(),  # 02:00 UTC ежедневно
+        'kwargs': {'days_to_keep': 30}
     }
 }
 
