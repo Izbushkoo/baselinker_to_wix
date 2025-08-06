@@ -213,7 +213,7 @@ class InventoryManager:
         '''Списание одной единицы с указанного склада.'''
         self.remove_from_warehouse(sku, warehouse, 1)
 
-    def compress_image(self, image_data: bytes, sku: str = None, base_url: str = None) -> tuple[Optional[bytes], Optional[bytes], Optional[str]]:
+    def compress_image(self, image_data: bytes, sku: str = None, base_url: str = None) -> Tuple[Optional[bytes], Optional[bytes], Optional[str]]:
         """
         Сжимает изображение до размера 100x100 пикселей в формат WebP и сохраняет оригинал.
         Поддерживает все форматы, которые поддерживает Pillow.

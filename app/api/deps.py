@@ -6,7 +6,6 @@ import jwt
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import Session
-from typing import AsyncGenerator
 from app.core import security
 from app.core.config import settings
 from app.database import get_db, get_async_db

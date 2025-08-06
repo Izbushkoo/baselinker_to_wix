@@ -4,7 +4,21 @@ from uuid import UUID
 from datetime import datetime
 
 from app.core.config import settings
-from app.services.Allegro_Microservice.base import BaseClient 
+from app.services.Allegro_Microservice.base import BaseClient
+from app.services.Allegro_Microservice.models import (
+    OrdersListResponse,
+    OrderStatistics,
+    OrderEventsResponse,
+    SyncHistory,
+    SyncResult,
+    DataQualityReport,
+    OrderDetailResponse,
+    OrderTechnicalFlags,
+    TechnicalFlagsSummary,
+    OrderStatusUpdate,
+    InvoiceStatusUpdate,
+    GenericResponse
+)
 
 class OrdersClient(BaseClient):
     """
@@ -30,7 +44,7 @@ class OrdersClient(BaseClient):
         stock_updated: Optional[bool] = None,
         invoice_created: Optional[bool] = None,
         invoice_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+    ) -> OrdersListResponse:
         params: Dict[str, Any] = {"token_id": str(token_id), "limit": limit, "offset": offset}
         if status:
             params["status"] = status
@@ -51,7 +65,8 @@ class OrdersClient(BaseClient):
             timeout=self.timeout
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return OrdersListResponse(**data)
 
     def search_orders(
         self,
@@ -61,7 +76,7 @@ class OrdersClient(BaseClient):
         stock_updated: Optional[bool] = None,
         invoice_created: Optional[bool] = None,
         invoice_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+    ) -> OrdersListResponse:
         params = {"token_id": str(token_id), "query": query, "limit": limit}
         if stock_updated is not None:
             params["stock_updated"] = stock_updated
@@ -76,13 +91,14 @@ class OrdersClient(BaseClient):
             timeout=self.timeout
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return OrdersListResponse(**data)
 
     def get_orders_statistics(
         self,
         token_id: UUID,
         days: int = 30
-    ) -> Dict[str, Any]:
+    ) -> OrderStatistics:
         params = {"token_id": str(token_id), "days": days}
         resp = requests.get(
             f"{self.orders_url}/statistics",
@@ -91,14 +107,15 @@ class OrdersClient(BaseClient):
             timeout=self.timeout
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return OrderStatistics(**data)
 
     def get_order_events(
         self,
         token_id: UUID,
         limit: int = 100,
         from_timestamp: Optional[datetime] = None
-    ) -> Dict[str, Any]:
+    ) -> OrderEventsResponse:
         params: Dict[str, Any] = {"token_id": str(token_id), "limit": limit}
         if from_timestamp:
             params["from_timestamp"] = from_timestamp.isoformat()
@@ -109,13 +126,14 @@ class OrdersClient(BaseClient):
             timeout=self.timeout
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return OrderEventsResponse(**data)
 
     def get_sync_history(
         self,
         token_id: UUID,
         limit: int = 50
-    ) -> Dict[str, Any]:
+    ) -> SyncHistory:
         params = {"token_id": str(token_id), "limit": limit}
         resp = requests.get(
             f"{self.orders_url}/sync/history",
@@ -124,12 +142,13 @@ class OrdersClient(BaseClient):
             timeout=self.timeout
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return SyncHistory(**data)
 
     def get_data_quality_report(
         self,
         token_id: UUID
-    ) -> Dict[str, Any]:
+    ) -> DataQualityReport:
         params = {"token_id": str(token_id)}
         resp = requests.get(
             f"{self.orders_url}/data-quality",
@@ -138,13 +157,14 @@ class OrdersClient(BaseClient):
             timeout=self.timeout
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return DataQualityReport(**data)
 
     def get_order_by_id(
         self,
         token_id: UUID,
         order_id: str
-    ) -> Dict[str, Any]:
+    ) -> OrderDetailResponse:
         params = {"token_id": str(token_id)}
         resp = requests.get(
             f"{self.orders_url}/{order_id}",
@@ -153,13 +173,14 @@ class OrdersClient(BaseClient):
             timeout=self.timeout
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return OrderDetailResponse(order=data)
 
     def sync_single_order(
         self,
         token_id: UUID,
         order_id: str
-    ) -> Dict[str, Any]:
+    ) -> SyncResult:
         params = {"token_id": str(token_id)}
         resp = requests.post(
             f"{self.orders_url}/{order_id}/sync",
@@ -168,12 +189,13 @@ class OrdersClient(BaseClient):
             timeout=self.timeout
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return SyncResult(**data)
 
     def get_available_statuses(
         self,
         token_id: UUID
-    ) -> Dict[str, Any]:
+    ) -> GenericResponse:
         params = {"token_id": str(token_id)}
         resp = requests.get(
             f"{self.orders_url}/debug/statuses",
@@ -182,12 +204,13 @@ class OrdersClient(BaseClient):
             timeout=self.timeout
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return GenericResponse(data=data)
 
     def get_orders_health(
         self,
         token_id: UUID
-    ) -> Dict[str, Any]:
+    ) -> GenericResponse:
         params = {"token_id": str(token_id)}
         resp = requests.get(
             f"{self.orders_url}/debug/health",
@@ -196,14 +219,15 @@ class OrdersClient(BaseClient):
             timeout=self.timeout
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return GenericResponse(data=data)
 
     def update_stock_status(
         self,
         token_id: UUID,
         order_id: str,
         is_stock_updated: bool
-    ) -> Dict[str, Any]:
+    ) -> OrderStatusUpdate:
         params = {"token_id": str(token_id)}
         payload = {"is_stock_updated": is_stock_updated}
         resp = requests.patch(
@@ -214,7 +238,8 @@ class OrdersClient(BaseClient):
             timeout=self.timeout
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return OrderStatusUpdate(**data)
 
     def update_invoice_status(
         self,
@@ -222,7 +247,7 @@ class OrdersClient(BaseClient):
         order_id: str,
         has_invoice_created: bool,
         invoice_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+    ) -> InvoiceStatusUpdate:
         params = {"token_id": str(token_id)}
         payload: Dict[str, Any] = {"has_invoice_created": has_invoice_created}
         if invoice_id is not None:
@@ -235,13 +260,14 @@ class OrdersClient(BaseClient):
             timeout=self.timeout
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return InvoiceStatusUpdate(**data)
 
     def get_order_technical_flags(
         self,
         token_id: UUID,
         order_id: str
-    ) -> Dict[str, Any]:
+    ) -> OrderTechnicalFlags:
         params = {"token_id": str(token_id)}
         resp = requests.get(
             f"{self.orders_url}/{order_id}/technical-flags",
@@ -250,12 +276,13 @@ class OrdersClient(BaseClient):
             timeout=self.timeout
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return OrderTechnicalFlags(**data)
 
     def get_technical_flags_summary(
         self,
         token_id: UUID
-    ) -> Dict[str, Any]:
+    ) -> TechnicalFlagsSummary:
         params = {"token_id": str(token_id)}
         resp = requests.get(
             f"{self.orders_url}/technical-flags/summary",
@@ -264,4 +291,5 @@ class OrdersClient(BaseClient):
             timeout=self.timeout
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return TechnicalFlagsSummary(**data)

@@ -87,7 +87,7 @@ class WixProductAPI(SQLModel):
     brand: Optional[str] = None
     media: WixMedia = Field(default_factory=WixMedia)
     product_options: List[WixProductOption] = Field(default_factory=list)
-    variants: List[Dict] = Field(default_factory=list)
+    variants: List[Dict[str, Any]] = Field(default_factory=list)
     last_updated: datetime = Field(default_factory=datetime.utcnow)
     discount: Dict[str, Union[DiscountType, float]] = Field(
         default_factory=lambda: {"type": DiscountType.NONE, "value": 0}
@@ -162,7 +162,7 @@ class WixPreorderInfo(SQLModel):
     enabled: bool = Field(default=False)
     message: Optional[str] = None
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> Dict[str, Any]:
         """Преобразование объекта в словарь"""
         return self.model_dump(exclude_none=True)
 
@@ -193,7 +193,7 @@ class WixInventoryResponse(SQLModel):
     """Модель ответа API инвентаря"""
     model_config = ConfigDict(from_attributes=True, extra="allow")
     
-    inventory_items: List[Dict] = Field(alias="inventoryItems")  # Изменено на Dict для прямой валидации
+    inventory_items: List[Dict[str, Any]] = Field(alias="inventoryItems")  # Изменено на Dict для прямой валидации
     metadata: WixInventoryMetadata
     total_results: int = Field(alias="totalResults")
 
@@ -221,7 +221,7 @@ class WixProductFilter(SQLModel):
     visible: Optional[bool] = None
     product_type: Optional[ProductType] = None
     brand: Optional[str] = None
-    custom_filter: Optional[Dict] = None  # Для дополнительных фильтров в формате API
+    custom_filter: Optional[Dict[str, Any]] = None  # Для дополнительных фильтров в формате API
 
 
 class WixInventoryFilter(SQLModel):
@@ -230,7 +230,7 @@ class WixInventoryFilter(SQLModel):
     
     product_ids: Optional[List[str]] = None
     sort: Optional[str] = None
-    custom_filter: Optional[Dict] = None  # Для дополнительных фильтров в формате API
+    custom_filter: Optional[Dict[str, Any]] = None  # Для дополнительных фильтров в формате API
 
 
 class WixApiService:
@@ -258,7 +258,7 @@ class WixApiService:
         if not self.site_id:
             raise ValueError("WIX_SITE_ID не установлен")
 
-    def _make_request(self, method: str, endpoint: str, payload: Optional[Dict] = None) -> Dict:
+    def _make_request(self, method: str, endpoint: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Базовый метод для выполнения запросов к API"""
         url = f"{self.base_url}/{endpoint}"
         
@@ -509,7 +509,7 @@ class WixApiService:
         sort_str: Optional[str] = None,
         limit: int = 100,
         offset: int = 0
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         """
         Получение информации об инвентаре товаров
         
@@ -545,7 +545,7 @@ class WixApiService:
         except WixApiError as e:
             raise WixApiError(f"Ошибка при запросе инвентаря: {str(e)}")
 
-    def _build_product_filter(self, filter_data: WixProductFilter) -> Dict:
+    def _build_product_filter(self, filter_data: WixProductFilter) -> Dict[str, Any]:
         """
         Построение фильтра для запроса товаров
         
@@ -577,7 +577,7 @@ class WixApiService:
             
         return filter_dict
 
-    def _build_inventory_filter(self, filter_data: WixInventoryFilter) -> Dict:
+    def _build_inventory_filter(self, filter_data: WixInventoryFilter) -> Dict[str, Any]:
         """
         Построение фильтра для запроса инвентаря
         

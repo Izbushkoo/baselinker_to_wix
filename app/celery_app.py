@@ -514,9 +514,9 @@ def check_and_update_stock():
         )
 
         # Получаем все токены через микросервис
-        tokens = token_client.get_tokens(per_page=100)
-        logging.info(f"tokens response {tokens}")
-
+        tokens_response = token_client.get_tokens(per_page=100)
+        logging.info(f"tokens response {tokens_response}")
+        tokens = tokens_response.items
         
         if not tokens:
             logger.info("Нет токенов Allegro в базе данных")
@@ -548,7 +548,7 @@ def check_and_update_stock():
                             limit=limit,
                             offset=offset
                         )
-                        orders = orders_response.get("orders", [])
+                        orders = orders_response.orders
                         
                         if not orders:
                             break

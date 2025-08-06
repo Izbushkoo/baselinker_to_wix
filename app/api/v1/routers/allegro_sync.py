@@ -262,15 +262,18 @@ def sync_immediate(
             ),
             base_url=settings.MICRO_SERVICE_URL
         )
-        task = sync_client.start_sync(
+        sync_response = sync_client.start_sync(
             token_id=token_id,
             sync_from_date=parsed_date
         )
         
+        # Получаем данные из GenericResponse.data
+        task_data = sync_response.data
+        
         return {
             "status": "success",
             "message": "Задача немедленной синхронизации запущена",
-            "task_id": task.get("task_id"),
+            "task_id": task_data.get("task_id"),
             "from_date": from_date
         }
     except ValueError as e:
@@ -309,7 +312,7 @@ async def get_all_orders(
             ),
             base_url=settings.MICRO_SERVICE_URL
         )
-        result = orders_client.get_orders(
+        orders_response = orders_client.get_orders(
             token_id=UUID(token_id),
             limit=limit,
             offset=offset,
@@ -318,8 +321,9 @@ async def get_all_orders(
             to_date=to_date
         )
 
-        orders = result.get("orders", [])
-        pagination = result.get("pagination", {})
+        # Получаем данные из OrdersListResponse
+        orders = orders_response.orders
+        pagination = orders_response.pagination
 
         orders_data = []
         for order in orders:
@@ -347,9 +351,9 @@ async def get_all_orders(
             orders_data.append(order_dict)
         
         return {
-            "total": pagination.get("total"),
-            "offset": pagination.get("offset"),
-            "limit": pagination.get("limit"),
+            "total": pagination.total,
+            "offset": pagination.offset,
+            "limit": pagination.limit,
             "orders": orders_data
         }
         
@@ -379,15 +383,16 @@ async def search_orders(
             ),
             base_url=settings.MICRO_SERVICE_URL
         )
-        result = orders_client.search_orders(
+        search_response = orders_client.search_orders(
             token_id=UUID(token_id),
             query=query,
             limit=limit,
         )
 
-        orders = result.get("orders", [])
+        # Получаем данные из OrdersListResponse
+        orders = search_response.orders
         logging.info(f"orders result {orders}")
-        pagination = result.get("pagination", {})
+        pagination = search_response.pagination
 
         orders_data = []
         for order in orders:
@@ -415,9 +420,9 @@ async def search_orders(
             orders_data.append(order_dict)
         
         return {
-            "total": pagination.get("total"),
-            "offset": pagination.get("offset"),
-            "limit": pagination.get("limit"),
+            "total": pagination.total,
+            "offset": pagination.offset,
+            "limit": pagination.limit,
             "orders": orders_data
         }
         
@@ -550,7 +555,9 @@ async def get_synchronization_page(
         )
     )
 
-    tokens = micro_service_client.get_tokens(per_page=20)
+    tokens_response = micro_service_client.get_tokens(per_page=20)
+    # Получаем данные из GenericListResponse.items
+    tokens = tokens_response.items
     logging.info(f"{tokens}")
 
     return templates.TemplateResponse(
@@ -571,7 +578,7 @@ def start_events_task(token_id: str, db: Session = Depends(get_db)) -> Dict[str,
             )
         )
 
-        task = sync_client.activate_sync(token_id=token_id, interval_minutes=2)
+        activation_response = sync_client.activate_sync(token_id=token_id, interval_minutes=2)
         logger.info(f"Запущена задача обработки событий для токена {token_id}")
         
         return {
@@ -597,7 +604,7 @@ def stop_events_task(token_id: str, db: Session = Depends(get_db)) -> Dict[str, 
             )
         )
 
-        task = sync_client.deactivate_sync(token_id=token_id)
+        deactivation_response = sync_client.deactivate_sync(token_id=token_id)
 
         return {
             "status": "success",
@@ -623,11 +630,21 @@ def get_events_status(token_id: str, db: Session = Depends(get_db)) -> Dict[str,
             )
         )
 
-        task = sync_client.get_token_sync_status(token_id=UUID(token_id))
-        logging.info(f"task response {task}")
+        status_response = sync_client.get_token_sync_status(token_id=UUID(token_id))
+        logging.info(f"task response {status_response}")
         return {
-            "status": "active" if task.get("is_active", False) else "inactive",
-            "task": task
+            "status": "active" if status_response.is_active else "inactive",
+            "task": {
+                "token_id": status_response.token_id,
+                "is_active": status_response.is_active,
+                "interval_minutes": status_response.interval_minutes,
+                "status": status_response.status,
+                "task_name": status_response.task_name,
+                "last_run_at": status_response.last_run_at,
+                "last_success_at": status_response.last_success_at,
+                "created_at": status_response.created_at,
+                "updated_at": status_response.updated_at
+            }
         }
     except Exception as e:
         raise HTTPException(
@@ -722,22 +739,20 @@ async def mark_order_stock_updated(
             base_url=settings.MICRO_SERVICE_URL
         )
 
-        marked = orders_client.update_stock_status(
+        update_response = orders_client.update_stock_status(
             token_id=token_id,
             order_id=order_id,
             is_stock_updated=True
-        )   
-        # query = select(AllegroOrder).where(AllegroOrder.token_id == token_id, AllegroOrder.id == order_id)
-        # result = await database.exec(query)
-        # order = result.first()
-        # if not order:
-        #     raise HTTPException(status_code=404, detail="Order not found")
-        # if order.is_stock_updated:
-        #     return {"status": "already_marked"}
-        # order.is_stock_updated = True
-        # database.add(order)
-        # await database.commit()
-        return marked 
+        )
+        
+        # Возвращаем данные из OrderStatusUpdate
+        return {
+            "success": update_response.success,
+            "order_id": update_response.order_id,
+            "is_stock_updated": update_response.is_stock_updated,
+            "updated_at": update_response.updated_at,
+            "message": update_response.message
+        }
     except Exception as e:
         logger.error(f"Ошибка при пометке заказа как списанного: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

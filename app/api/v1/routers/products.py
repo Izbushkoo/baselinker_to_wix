@@ -25,6 +25,7 @@ from datetime import datetime
 from app.services.allegro.allegro_api_service import SyncAllegroApiService
 from app.services.allegro.tokens import get_token
 from app.services.Allegro_Microservice.tokens_endpoint import AllegroTokenMicroserviceClient
+from app.services.Allegro_Microservice.offers_endpoint import AllegroOffersMicroserviceClient
 from app.core.security import create_access_token
 from app.core.config import settings
 
@@ -1274,17 +1275,14 @@ async def manage_product(
     for stock in stocks:
         stock_by_warehouse[stock.warehouse] = stock.quantity
     total_stock = sum(stock_by_warehouse.values())
-    
-    # Получаем все токены Allegro
-    # tokens_query = select(AllegroToken)
-    # tokens_result = await db.exec(tokens_query)
-    # allegro_tokens = tokens_result.all()
 
     # Получаем все токены Allegro через микросервис
     token_client = AllegroTokenMicroserviceClient(
         jwt_token=create_access_token(user_id=settings.PROJECT_NAME),
     )
-    tokens = token_client.get_tokens(per_page=50)
+    tokens_response = token_client.get_tokens(per_page=50)
+    # Получаем данные из GenericListResponse.items
+    tokens = tokens_response.items
 
     
     # Получаем настройки синхронизации для товара
@@ -1331,13 +1329,13 @@ async def manage_product(
     # Подготавливаем данные о токенах с настройками
     token_settings = []
     for token in tokens:
-        account_name = token.get("account_name") or f"Account {token.id[:8]}"
+        account_name = token.get("account_name") or f"Account {token.get('id', 'unknown')[:8]}"
         
         # Получаем существующие настройки или создаем дефолтные
         sync_settings = settings_by_account.get(account_name)
         if sync_settings:
             token_data = {
-                'token_id': token.id,
+                'token_id': token.get("id"),
                 'account_name': account_name,
                 'stock_sync_enabled': sync_settings.stock_sync_enabled,
                 'price_sync_enabled': sync_settings.price_sync_enabled,
@@ -1382,7 +1380,7 @@ async def get_product_offers(
     current_user: User = Depends(deps.get_current_user_optional)
 ):
     """
-    Получает список оферт для товара в конкретном аккаунте Allegro.
+    Получает список оферт для товара в конкретном аккаунте Allegro через микросервис.
     """
     if not current_user:
         raise HTTPException(status_code=401, detail="Требуется авторизация")
@@ -1390,12 +1388,13 @@ async def get_product_offers(
     try:
         logger.info(f"[OFFERS] Запрос оферт для SKU {sku} в аккаунте {account_name}")
         
-        # Получаем токен аккаунта
-        # Получаем токены через микросервис
+        # Получаем токен аккаунта через микросервис
         token_client = AllegroTokenMicroserviceClient(
             jwt_token=create_access_token(user_id=settings.PROJECT_NAME),
         )
-        all_tokens = token_client.get_tokens(per_page=50)
+        tokens_response = token_client.get_tokens(per_page=50)
+        # Получаем данные из GenericListResponse.items
+        all_tokens = tokens_response.items
         
         # Ищем нужный токен по account_name
         token = None
@@ -1408,12 +1407,12 @@ async def get_product_offers(
             logger.error(f"[OFFERS] Токен для аккаунта {account_name} не найден")
             raise HTTPException(status_code=404, detail="Аккаунт Allegro не найден")
         
-        # Проверяем валидность токена
-        if not token.get("access_token"):
-            logger.error(f"[OFFERS] Access token отсутствует для аккаунта {account_name}")
-            raise HTTPException(status_code=500, detail="Токен доступа недействителен")
+        token_id = token.get("id")
+        if not token_id:
+            logger.error(f"[OFFERS] ID токена отсутствует для аккаунта {account_name}")
+            raise HTTPException(status_code=500, detail="Некорректные данные токена")
         
-        logger.info(f"[OFFERS] Токен найден для аккаунта {account_name}")
+        logger.info(f"[OFFERS] Токен найден для аккаунта {account_name}, ID: {token_id}")
         
         # Проверяем существование товара
         product_query = select(Product).where(Product.sku == sku)
@@ -1426,74 +1425,97 @@ async def get_product_offers(
         
         logger.info(f"[OFFERS] Товар найден: {product.name}")
         
-        # Создаем API сервис для работы с Allegro
-        api_service = SyncAllegroApiService()
-        logger.info(f"[OFFERS] Сервис API создан")
-        
-        # Получаем оферты, используя SKU как external_id
-        logger.info(f"[OFFERS] Запрос к API Allegro для external_id={sku}")
-        offers_data = api_service.get_offers(
-            token=token.access_token,
-            external_ids=[sku],
-            limit=50
+        # Создаем клиент микросервиса для работы с офферами
+        offers_client = AllegroOffersMicroserviceClient(
+            jwt_token=create_access_token(user_id=settings.PROJECT_NAME),
         )
         
-        logger.info(f"[OFFERS] Получен ответ от API: {offers_data.keys() if offers_data else 'None'}")
+        # Получаем оферты через микросервис, используя SKU как external_id
+        logger.info(f"[OFFERS] Запрос к микросервису офферов для external_id={sku}")
+        offers_response = offers_client.get_offers_by_external_id(
+            token_ids=[token_id],
+            external_id=sku
+        )
         
-        # Обрабатываем данные оферт для фронтенда
+        # Получаем данные из OfferListResponse.offers
+        offers_data = offers_response.offers
+        
+        logger.info(f"[OFFERS] Получен ответ от микросервиса: {len(offers_data) if offers_data else 0} результатов")
+        
+        # Обрабатываем ответ микросервиса
         processed_offers = []
-        offers_list = offers_data.get("offers", [])
-        logger.info(f"[OFFERS] Количество оферт в ответе: {len(offers_list)}")
+        total_count = 0
         
-        for offer in offers_list:
-            logger.debug(f"[OFFERS] Обработка оферты: {offer.get('id')}")
+        # Ищем результат для нашего токена
+        token_result = None
+        for result in offers_data:
+            if result.get("token_id") == str(token_id):
+                token_result = result
+                break
+        
+        if token_result and not token_result.get("error"):
+            offers_list = token_result.get("offers", [])
+            total_count = token_result.get("offers_count", 0)
+            logger.info(f"[OFFERS] Количество оферт в ответе: {len(offers_list)}")
             
-            # Получаем цену из saleInfo.currentPrice, если доступно, иначе из sellingMode.price
-            sale_info = offer.get("saleInfo", {})
-            selling_mode = offer.get("sellingMode", {})
-            current_price = sale_info.get("currentPrice") or {}
-            selling_price = selling_mode.get("price") or {}
-            
-            # Приоритет: saleInfo.currentPrice > sellingMode.price
-            price_amount = current_price.get("amount") or selling_price.get("amount")
-            price_currency = current_price.get("currency") or selling_price.get("currency")
-            
-            # Извлекаем основные данные оферты
-            offer_info = {
-                "id": offer.get("id"),
-                "name": offer.get("name"),
-                "status": offer.get("publication", {}).get("status"),
+            # Обрабатываем каждую оферту для совместимости с фронтендом
+            for offer in offers_list:
+                logger.debug(f"[OFFERS] Обработка оферты: {offer.get('id')}")
                 
-                # Текущая цена (приоритет saleInfo.currentPrice)
-                "price": {
-                    "amount": price_amount,
-                    "currency": price_currency
-                },
+                # Получаем цену из saleInfo.currentPrice, если доступно, иначе из sellingMode.price
+                sale_info = offer.get("saleInfo", {})
+                selling_mode = offer.get("sellingMode", {})
+                current_price = sale_info.get("currentPrice") or {}
+                selling_price = selling_mode.get("price") or {}
                 
-                # Остатки
-                "stock": offer.get("stock", {}),
+                # Приоритет: saleInfo.currentPrice > sellingMode.price
+                price_amount = current_price.get("amount") or selling_price.get("amount")
+                price_currency = current_price.get("currency") or selling_price.get("currency")
                 
-                # Статус публикации
-                "publication": offer.get("publication", {}),
-                
-                # Детальная информация (для развернутого блока)
-                "details": {
-                    "category": offer.get("category", {}),
-                    "primaryImage": offer.get("primaryImage", {}),
-                    "sellingMode": selling_mode,
-                    "saleInfo": sale_info,
+                # Извлекаем основные данные оферты
+                offer_info = {
+                    "id": offer.get("id"),
+                    "name": offer.get("name"),
+                    "status": offer.get("publication", {}).get("status"),
+                    
+                    # Текущая цена (приоритет saleInfo.currentPrice)
+                    "price": {
+                        "amount": price_amount,
+                        "currency": price_currency
+                    },
+                    
+                    # Остатки
                     "stock": offer.get("stock", {}),
-                    "stats": offer.get("stats", {}),
+                    
+                    # Статус публикации
                     "publication": offer.get("publication", {}),
-                    "delivery": offer.get("delivery", {}),
-                    "external": offer.get("external", {}),
-                    "afterSalesServices": offer.get("afterSalesServices", {}),
-                    "additionalServices": offer.get("additionalServices", {}),
-                    "b2b": offer.get("b2b", {}),
-                    "fundraisingCampaign": offer.get("fundraisingCampaign", {})
+                    
+                    # Детальная информация (для развернутого блока)
+                    "details": {
+                        "category": offer.get("category", {}),
+                        "primaryImage": offer.get("primaryImage", {}),
+                        "sellingMode": selling_mode,
+                        "saleInfo": sale_info,
+                        "stock": offer.get("stock", {}),
+                        "stats": offer.get("stats", {}),
+                        "publication": offer.get("publication", {}),
+                        "delivery": offer.get("delivery", {}),
+                        "external": offer.get("external", {}),
+                        "afterSalesServices": offer.get("afterSalesServices", {}),
+                        "additionalServices": offer.get("additionalServices", {}),
+                        "b2b": offer.get("b2b", {}),
+                        "fundraisingCampaign": offer.get("fundraisingCampaign", {})
+                    }
                 }
-            }
-            processed_offers.append(offer_info)
+                processed_offers.append(offer_info)
+        elif token_result and token_result.get("error"):
+            logger.error(f"[OFFERS] Ошибка от микросервиса: {token_result.get('error')}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Ошибка получения оферт: {token_result.get('error')}"
+            )
+        else:
+            logger.warning(f"[OFFERS] Результат для токена {token_id} не найден")
         
         logger.info(f"[OFFERS] Обработано оферт: {len(processed_offers)}")
         
@@ -1501,7 +1523,7 @@ async def get_product_offers(
             "success": True,
             "offers": processed_offers,
             "count": len(processed_offers),
-            "total_count": offers_data.get("totalCount", 0),
+            "total_count": total_count,
             "sku": sku,
             "account_name": account_name
         }

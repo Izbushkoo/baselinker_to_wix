@@ -11,8 +11,6 @@ import time
 import os
 
 from sqlmodel import Session, select
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 
 from app.database import SessionLocal
@@ -292,7 +290,7 @@ def initialize_auth(init_auth: InitializeAuth) -> Dict[str, Any]:
         database.close()
 
 
-def initialize_device_flow(account_name: str) -> Dict:
+def initialize_device_flow(account_name: str) -> Dict[str, Any]:
     """
     Инициализирует процесс Device Flow авторизации для Allegro.
     

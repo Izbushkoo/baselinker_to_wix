@@ -3,6 +3,14 @@ from typing import Optional, List, Dict
 from uuid import UUID
 from datetime import datetime
 from app.services.Allegro_Microservice.base import BaseClient
+from app.services.Allegro_Microservice.models import (
+    TokenResponse,
+    AuthInitializeResponse,
+    AuthStatusResponse,
+    TaskStatusResponse,
+    GenericResponse,
+    GenericListResponse
+)
 
 
 class AllegroTokenMicroserviceClient(BaseClient):
@@ -20,7 +28,7 @@ class AllegroTokenMicroserviceClient(BaseClient):
         allegro_token: str,
         refresh_token: str,
         expires_at: datetime
-    ) -> Dict:
+    ) -> TokenResponse:
         """
         Создать новый токен Allegro для указанного аккаунта.
         """
@@ -33,14 +41,15 @@ class AllegroTokenMicroserviceClient(BaseClient):
         }
         resp = requests.post(url, json=payload, headers=self.headers, timeout=self.timeout)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return TokenResponse(**data)
 
     def get_tokens(
         self,
         page: int = 1,
         per_page: int = 10,
         active_only: bool = True
-    ) -> Dict:
+    ) -> GenericListResponse:
         """
         Получить список токенов текущего пользователя с пагинацией.
         """
@@ -48,18 +57,20 @@ class AllegroTokenMicroserviceClient(BaseClient):
         url = f"{self.base_url}/"
         resp = requests.get(url, params=params, headers=self.headers, timeout=self.timeout)
         resp.raise_for_status()
-        result = resp.json()
-        return result.get("tokens", [])
+        data = resp.json()
+        tokens = data.get("tokens", [])
+        return GenericListResponse(items=tokens, total=data.get("total"), page=data.get("page"), per_page=data.get("per_page"))
      
 
-    def get_token(self, token_id: UUID) -> Dict:
+    def get_token(self, token_id: UUID) -> TokenResponse:
         """
         Получить конкретный токен по ID.
         """
         url = f"{self.base_url}/{token_id}"
         resp = requests.get(url, headers=self.headers, timeout=self.timeout)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return TokenResponse(**data)
 
     def update_token(
         self,
@@ -69,7 +80,7 @@ class AllegroTokenMicroserviceClient(BaseClient):
         refresh_token: Optional[str] = None,
         expires_at: Optional[datetime] = None,
         is_active: Optional[bool] = None
-    ) -> Dict:
+    ) -> TokenResponse:
         """
         Обновить существующий токен.
         """
@@ -87,34 +98,37 @@ class AllegroTokenMicroserviceClient(BaseClient):
             payload['is_active'] = is_active
         resp = requests.put(url, json=payload, headers=self.headers, timeout=self.timeout)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return TokenResponse(**data)
 
-    def delete_token(self, token_id: UUID) -> Dict:
+    def delete_token(self, token_id: UUID) -> GenericResponse:
         """
         Удалить (деактивировать) токен.
         """
         url = f"{self.base_url}/{token_id}"
         resp = requests.delete(url, headers=self.headers, timeout=self.timeout)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return GenericResponse(data=data)
 
     def refresh_token(
         self,
         token_id: UUID
-    ) -> Dict:
+    ) -> TokenResponse:
         """
         Обновить access token используя refresh token.
         """
         url = f"{self.base_url}/{token_id}/refresh"
         resp = requests.post(url, headers=self.headers, timeout=self.timeout)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return TokenResponse(**data)
 
     def get_user_tokens(
         self,
         user_id: str,
         active_only: bool = True
-    ) -> List[Dict]:
+    ) -> GenericListResponse:
         """
         Получить все токены пользователя (только для администраторов).
         """
@@ -122,13 +136,14 @@ class AllegroTokenMicroserviceClient(BaseClient):
         url = f"{self.base_url}/user/{user_id}"
         resp = requests.get(url, params=params, headers=self.headers, timeout=self.timeout)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return GenericListResponse(items=data if isinstance(data, list) else [data])
 
     # Device Code Flow
     def initialize_auth(
         self,
         account_name: str
-    ) -> Dict:
+    ) -> AuthInitializeResponse:
         """
         Инициализировать процесс авторизации Device Code Flow для указанного аккаунта.
         """
@@ -136,13 +151,14 @@ class AllegroTokenMicroserviceClient(BaseClient):
         payload = {"account_name": account_name}
         resp = requests.post(url, json=payload, headers=self.headers, timeout=self.timeout)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return AuthInitializeResponse(**data)
 
     def check_auth_status(
         self,
         device_code: str,
         account_name: str
-    ) -> Dict:
+    ) -> AuthStatusResponse:
         """
         Проверить статус авторизации Device Code Flow.
         """
@@ -150,28 +166,31 @@ class AllegroTokenMicroserviceClient(BaseClient):
         payload = {"device_code": device_code, "account_name": account_name}
         resp = requests.post(url, json=payload, headers=self.headers, timeout=self.timeout)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return AuthStatusResponse(**data)
 
     def validate_and_refresh_token(
         self,
         token_id: UUID
-    ) -> Dict:
+    ) -> TokenResponse:
         """
         Проверить и при необходимости обновить токен.
         """
         url = f"{self.base_url}/{token_id}/validate"
         resp = requests.post(url, headers=self.headers, timeout=self.timeout)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return TokenResponse(**data)
 
     def get_auth_task_status(
         self,
         task_id: str
-    ) -> Dict:
+    ) -> TaskStatusResponse:
         """
         Получить статус задачи Celery по ID.
         """
         url = f"{self.base_url}/auth/task/{task_id}"
         resp = requests.get(url, headers=self.headers, timeout=self.timeout)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return TaskStatusResponse(**data)
