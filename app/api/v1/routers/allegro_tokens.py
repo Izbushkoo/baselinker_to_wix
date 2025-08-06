@@ -59,15 +59,6 @@ async def get_tokens(
     return [TokenOfAllegro(**token) for token in tokens_response.items]
 
 
-@router.post("/add")
-async def add_account(account_data: TokenOfAllegro, database: AsyncSession = Depends(deps.get_async_session)):
-
-    logging.info(f"Access to allegro tokens add")
-    written_token = await insert_token(database, account_data)
-
-    return TokenOfAllegro(**written_token.model_dump(exclude_none=True))
-
-
 @router.post("/initialize")
 async def initialize_token(request: InitializeRequest):
 
@@ -104,25 +95,6 @@ async def initialize_token(request: InitializeRequest):
     except Exception as e:
         logging.error(f"Error initializing auth: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-    # try:
-    #     auth_data = allegro_tokens.initialize_device_flow(request.account_name)
-    #     return auth_data
-    # except Exception as e:
-    #     logging.error(f"Error initializing auth: {str(e)}")
-    #     raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/{token_id}")
-async def get_token(
-    token_id: str,
-    database: AsyncSession = Depends(deps.get_async_session)
-):
-    """Получает токен по ID."""
-    logging.info(f"Access to allegro token get by ID")
-    token = await get_token_by_id(database, token_id)
-    if not token:
-        raise HTTPException(status_code=404, detail="Токен не найден")
-    return token
 
 
 @router.delete("/{token_id}")
