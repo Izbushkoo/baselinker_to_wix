@@ -1331,7 +1331,7 @@ async def manage_product(
     # Подготавливаем данные о токенах с настройками
     token_settings = []
     for token in tokens:
-        account_name = token.account_name or f"Account {token.id[:8]}"
+        account_name = token.get("account_name") or f"Account {token.id[:8]}"
         
         # Получаем существующие настройки или создаем дефолтные
         sync_settings = settings_by_account.get(account_name)
@@ -1349,7 +1349,7 @@ async def manage_product(
         else:
             # Дефолтные настройки для токена без настроек
             token_data = {
-                'token_id': token.id_,
+                'token_id': token.get("id"),
                 'account_name': account_name,
                 'stock_sync_enabled': False,  # По умолчанию включено
                 'price_sync_enabled': False,  # По умолчанию выключено
@@ -1400,7 +1400,7 @@ async def get_product_offers(
         # Ищем нужный токен по account_name
         token = None
         for t in all_tokens:
-            if t.account_name == account_name:
+            if t.get("account_name") == account_name:
                 token = t
                 break
 
@@ -1409,7 +1409,7 @@ async def get_product_offers(
             raise HTTPException(status_code=404, detail="Аккаунт Allegro не найден")
         
         # Проверяем валидность токена
-        if not token.access_token:
+        if not token.get("access_token"):
             logger.error(f"[OFFERS] Access token отсутствует для аккаунта {account_name}")
             raise HTTPException(status_code=500, detail="Токен доступа недействителен")
         
