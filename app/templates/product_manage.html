@@ -265,8 +265,57 @@
                         </p>
                         {% if token.last_price_sync_at %}
                         <p class="text-xs text-gray-400 mb-3">
+                        <p class="text-xs text-gray-400 mb-3">
                             Последняя синхронизация: {{ token.last_price_sync_at.strftime('%d.%m.%Y %H:%M') }}
                         </p>
+                        {% endif %}
+                        
+                        {% if user.is_admin %}
+                        <!-- Полная синхронизация всех товаров -->
+                        <div class="border-t border-gray-200 pt-3 mt-3">
+                            <h5 class="text-xs font-medium text-gray-900 mb-3">Полная синхронизация цен аккаунта</h5>
+                            
+                            <!-- Чекбокс для использования кастомного мультипликатора -->
+                            <div class="flex items-center mb-2">
+                                <input type="checkbox"
+                                       id="useCustomMultiplier_{{ token.account_name }}"
+                                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                       onchange="toggleCustomMultiplier('{{ token.account_name }}', this)"
+                                       title="Применить единый мультипликатор ко всем товарам этого аккаунта при полной синхронизации">
+                                <label for="useCustomMultiplier_{{ token.account_name }}" class="ml-2 text-xs text-gray-700">
+                                    Использовать единый мультипликатор для всех товаров
+                                </label>
+                            </div>
+                            
+                            <!-- Поле ввода мультипликатора -->
+                            <div class="mb-3">
+                                <div class="flex items-center space-x-2">
+                                    <input type="number"
+                                           step="0.01"
+                                           min="0.1"
+                                           max="10"
+                                           value="1.0"
+                                           class="flex-1 px-2 py-1 border border-gray-300 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                           id="customMultiplier_{{ token.account_name }}"
+                                           disabled
+                                           title="Этот мультипликатор будет применен ко всем товарам аккаунта и сохранен в их настройках. Текущая цена = Минимальная цена × Мультипликатор">
+                                    <span class="text-xs text-gray-500" id="customMultiplierText_{{ token.account_name }}">
+                                        Цена без изменений
+                                    </span>
+                                </div>
+                                <p class="text-xs text-amber-600 mt-1 font-medium">
+                                    ⚠️ Внимание: Этот мультипликатор будет применен и сохранен для всех товаров данного аккаунта. Иначе при обновлении цены будет использован имеющийся установленный мультипликатор для каждого отдельного товара.
+                                </p>
+                            </div>
+                            
+                            <!-- Кнопка полной синхронизации -->
+                            <button type="button"
+                                    class="w-full px-3 py-2 bg-blue-500 text-white text-xs rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    onclick="syncAllAccountProductsWithMultiplier('{{ token.account_name }}')"
+                                    title="Запуск полной синхронизации цен всех товаров для данного аккаунта">
+                                Синхронизировать все товары аккаунта
+                            </button>
+                        </div>
                         {% endif %}
                         
                         {% if user.is_admin %}
@@ -338,7 +387,16 @@
                                 Обновить
                             </button>
                             <button type="button"
+                            <button type="button"
+                                    class="px-3 py-2 bg-gray-600 text-white text-sm rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                                    onclick="updateMultiplier('{{ product.sku }}', '{{ token.account_name }}', document.getElementById('multiplier_{{ token.account_name }}').value)"
+                                    title="Обновляет настройки мультипликатора не применяя их.">
+                                Обновить
+                            </button>
+                            <button type="button"
                                     class="px-3 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    onclick="updateAndSyncMultiplier('{{ product.sku }}', '{{ token.account_name }}', document.getElementById('multiplier_{{ token.account_name }}').value)"
+                                    title="Обновляет и применяет настройки мультипликатора, применяя его к цене на оферте.">
                                     onclick="updateAndSyncMultiplier('{{ product.sku }}', '{{ token.account_name }}', document.getElementById('multiplier_{{ token.account_name }}').value)"
                                     title="Обновляет и применяет настройки мультипликатора, применяя его к цене на оферте.">
                                 Применить
@@ -361,6 +419,8 @@
                         {% if user.is_admin and token.price_sync_enabled %}
                         <button type="button"
                                 class="mt-2 px-2 py-1 bg-green-500 text-white text-xs rounded-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500"
+                                onclick="syncPriceForAccount('{{ product.sku }}', '{{ token.account_name }}')"
+                                title="Синхронизировать цену данного товара на этом аккаунте (минимальная цена * мультипликатор)">
                                 onclick="syncPriceForAccount('{{ product.sku }}', '{{ token.account_name }}')"
                                 title="Синхронизировать цену данного товара на этом аккаунте (минимальная цена * мультипликатор)">
                             Синхронизировать цену
@@ -672,6 +732,50 @@ function updateAndSyncMultiplier(sku, accountName, multiplier) {
     });
 }
 
+// Обновление мультипликатора и синхронизация цены
+function updateAndSyncMultiplier(sku, accountName, multiplier) {
+    const multiplierInput = document.getElementById(`multiplier_${accountName}`);
+    const originalValue = multiplierInput.value;
+    
+    // Сначала обновляем мультипликатор
+    const formData = new FormData();
+    formData.append('multiplier', multiplier);
+    
+    fetch(`/api/products/${sku}/sync-settings/${accountName}/update-multiplier`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('Мультипликатор обновлен', 'success');
+            
+            // Если обновление мультипликатора успешно, синхронизируем цену
+            return fetch(`/api/products/${sku}/sync-settings/${accountName}/sync-price`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+        } else {
+            throw new Error(data.message || 'Ошибка при обновлении мультипликатора');
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('Мультипликатор обновлен и цена синхронизирована', 'success');
+            // Триггерим событие обновления для автообновления оферт
+            document.dispatchEvent(new CustomEvent('priceUpdated'));
+        } else {
+            showNotification('Мультипликатор обновлен, но ошибка при синхронизации цены: ' + (data.message || 'Неизвестная ошибка'), 'error');
+        }
+    })
+    .catch(error => {
+        showNotification('Ошибка: ' + error.message, 'error');
+    });
+}
+
 // Функция для динамического обновления текста мультипликатора
 function updateMultiplierText(accountName, multiplier) {
     const textElement = document.getElementById(`multiplier_text_${accountName}`);
@@ -818,8 +922,137 @@ function syncAllAccountProducts(accountName) {
 }
 
 // Синхронизация всех аккаунтов (старая функция - теперь информирует о новом способе)
+// Переключение поля кастомного мультипликатора
+function toggleCustomMultiplier(accountName, checkbox) {
+    const multiplierInput = document.getElementById(`customMultiplier_${accountName}`);
+    const isEnabled = checkbox.checked;
+    
+    multiplierInput.disabled = !isEnabled;
+    
+    if (isEnabled) {
+        multiplierInput.focus();
+        updateCustomMultiplierText(accountName, multiplierInput.value);
+    } else {
+        updateCustomMultiplierText(accountName, '1.0');
+    }
+}
+
+// Обновление текста для кастомного мультипликатора
+function updateCustomMultiplierText(accountName, multiplier) {
+    const textElement = document.getElementById(`customMultiplierText_${accountName}`);
+    const value = parseFloat(multiplier);
+    
+    if (isNaN(value) || value <= 0) {
+        textElement.textContent = 'Некорректное значение';
+        textElement.className = 'text-xs text-red-500';
+        return;
+    }
+    
+    textElement.className = 'text-xs text-gray-500';
+    
+    if (value === 1.0) {
+        textElement.textContent = 'Цена без изменений';
+    } else if (value > 1.0) {
+        const markup = ((value - 1) * 100).toFixed(1);
+        textElement.textContent = `Наценка ${markup}%`;
+    } else {
+        const discount = ((1 - value) * 100).toFixed(1);
+        textElement.textContent = `Скидка ${discount}%`;
+    }
+}
+
+// Синхронизация всех товаров для конкретного аккаунта с возможностью кастомного мультипликатора
+function syncAllAccountProductsWithMultiplier(accountName) {
+    const button = event.target;
+    const originalText = button.textContent;
+    const useCustomMultiplier = document.getElementById(`useCustomMultiplier_${accountName}`).checked;
+    const customMultiplier = document.getElementById(`customMultiplier_${accountName}`).value;
+    
+    // Валидация кастомного мультипликатора если он используется
+    if (useCustomMultiplier) {
+        const multiplierValue = parseFloat(customMultiplier);
+        if (isNaN(multiplierValue) || multiplierValue <= 0 || multiplierValue > 10) {
+            showNotification('Пожалуйста, введите корректное значение мультипликатора (от 0.1 до 10)', 'error');
+            return;
+        }
+    }
+    
+    button.disabled = true;
+    button.textContent = 'Синхронизируется...';
+    
+    const requestBody = {};
+    if (useCustomMultiplier) {
+        requestBody.custom_multiplier = parseFloat(customMultiplier);
+    }
+    
+    fetch(`/api/products/sync-settings/${accountName}/sync-all`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message, 'success');
+            if (useCustomMultiplier) {
+                // Сбрасываем чекбокс и поле после успешной синхронизации
+                document.getElementById(`useCustomMultiplier_${accountName}`).checked = false;
+                document.getElementById(`customMultiplier_${accountName}`).disabled = true;
+                document.getElementById(`customMultiplier_${accountName}`).value = '1.0';
+                updateCustomMultiplierText(accountName, '1.0');
+            }
+        } else {
+            showNotification(data.message || 'Ошибка при запуске синхронизации', 'error');
+        }
+    })
+    .catch(error => {
+        showNotification('Ошибка при запуске синхронизации: ' + error.message, 'error');
+    })
+    .finally(() => {
+        button.disabled = false;
+        button.textContent = originalText;
+    });
+}
+
+// Синхронизация всех товаров для конкретного аккаунта (старая функция - оставляем для совместимости)
+function syncAllAccountProducts(accountName) {
+    const button = event.target;
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Синхронизируется...';
+    
+    fetch(`/api/products/sync-settings/${accountName}/sync-all`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message, 'success');
+        } else {
+            showNotification(data.message || 'Ошибка при запуске синхронизации', 'error');
+        }
+    })
+    .catch(error => {
+        showNotification('Ошибка при запуске синхронизации: ' + error.message, 'error');
+    })
+    .finally(() => {
+        button.disabled = false;
+        button.textContent = originalText;
+    });
+}
+
+// Синхронизация всех аккаунтов (старая функция - теперь информирует о новом способе)
 function syncAllAccounts() {
+<<<<<<< Updated upstream
     showNotification('Теперь синхронизация работает по аккаунтам. Используйте кнопки "Синхронизировать цену всех товаров" для каждого аккаунта отдельно.', 'info');
+=======
+    showNotification('Теперь синхронизация работает по аккаунтам. Используйте кнопки "Синхронизировать все товары аккаунта" для каждого аккаунта отдельно.', 'info');
+>>>>>>> Stashed changes
 }
 
 // Синхронизация цены для конкретного аккаунта
@@ -833,6 +1066,14 @@ function syncPriceForAccount(sku, accountName) {
         headers: {
             'Content-Type': 'application/json',
         }
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(errorData => {
+                throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}`);
+            });
+        }
+        return response.json();
     })
     .then(response => {
         if (!response.ok) {
@@ -856,6 +1097,17 @@ function syncPriceForAccount(sku, accountName) {
                 }
             }
             
+            
+            // Если синхронизация была автоматически включена, обновляем переключатель
+            if (data.sync_was_auto_enabled && data.price_sync_enabled) {
+                const checkbox = document.querySelector(`input[onchange*="togglePriceSync('${sku}', '${accountName}', this)"]`);
+                if (checkbox) {
+                    checkbox.checked = true;
+                    // Триггерим событие обновления настроек синхронизации
+                    document.dispatchEvent(new CustomEvent('syncSettingsUpdated'));
+                }
+            }
+            
             // Триггерим событие обновления для автообновления оферт
             document.dispatchEvent(new CustomEvent('priceUpdated'));
         } else {
@@ -863,6 +1115,7 @@ function syncPriceForAccount(sku, accountName) {
         }
     })
     .catch(error => {
+        showNotification(error.message || 'Ошибка при синхронизации цены', 'error');
         showNotification(error.message || 'Ошибка при синхронизации цены', 'error');
     })
     .finally(() => {
@@ -1196,12 +1449,22 @@ document.getElementById('transferForm').addEventListener('submit', function(e) {
 document.addEventListener('DOMContentLoaded', function() {
     // Применяем валидацию только к полям количества, исключая мультипликаторы
     const quantityInputs = document.querySelectorAll('input[type="number"]:not([id^="multiplier_"]):not([id="priceEditPrice"]):not([id^="customMultiplier_"])');
+    const quantityInputs = document.querySelectorAll('input[type="number"]:not([id^="multiplier_"]):not([id="priceEditPrice"]):not([id^="customMultiplier_"])');
     quantityInputs.forEach(input => {
         input.addEventListener('input', function() {
             const value = parseInt(this.value);
             if (value < 1) {
                 this.value = 1;
             }
+        });
+    });
+    
+    // Добавляем обработчики для полей кастомного мультипликатора
+    const customMultiplierInputs = document.querySelectorAll('[id^="customMultiplier_"]');
+    customMultiplierInputs.forEach(input => {
+        input.addEventListener('input', function() {
+            const accountName = this.id.replace('customMultiplier_', '');
+            updateCustomMultiplierText(accountName, this.value);
         });
     });
     
