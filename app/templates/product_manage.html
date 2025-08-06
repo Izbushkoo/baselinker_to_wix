@@ -265,7 +265,6 @@
                         </p>
                         {% if token.last_price_sync_at %}
                         <p class="text-xs text-gray-400 mb-3">
-                        <p class="text-xs text-gray-400 mb-3">
                             Последняя синхронизация: {{ token.last_price_sync_at.strftime('%d.%m.%Y %H:%M') }}
                         </p>
                         {% endif %}
@@ -1048,11 +1047,7 @@ function syncAllAccountProducts(accountName) {
 
 // Синхронизация всех аккаунтов (старая функция - теперь информирует о новом способе)
 function syncAllAccounts() {
-<<<<<<< Updated upstream
-    showNotification('Теперь синхронизация работает по аккаунтам. Используйте кнопки "Синхронизировать цену всех товаров" для каждого аккаунта отдельно.', 'info');
-=======
     showNotification('Теперь синхронизация работает по аккаунтам. Используйте кнопки "Синхронизировать все товары аккаунта" для каждого аккаунта отдельно.', 'info');
->>>>>>> Stashed changes
 }
 
 // Синхронизация цены для конкретного аккаунта
@@ -1449,22 +1444,12 @@ document.getElementById('transferForm').addEventListener('submit', function(e) {
 document.addEventListener('DOMContentLoaded', function() {
     // Применяем валидацию только к полям количества, исключая мультипликаторы
     const quantityInputs = document.querySelectorAll('input[type="number"]:not([id^="multiplier_"]):not([id="priceEditPrice"]):not([id^="customMultiplier_"])');
-    const quantityInputs = document.querySelectorAll('input[type="number"]:not([id^="multiplier_"]):not([id="priceEditPrice"]):not([id^="customMultiplier_"])');
     quantityInputs.forEach(input => {
         input.addEventListener('input', function() {
             const value = parseInt(this.value);
             if (value < 1) {
                 this.value = 1;
             }
-        });
-    });
-    
-    // Добавляем обработчики для полей кастомного мультипликатора
-    const customMultiplierInputs = document.querySelectorAll('[id^="customMultiplier_"]');
-    customMultiplierInputs.forEach(input => {
-        input.addEventListener('input', function() {
-            const accountName = this.id.replace('customMultiplier_', '');
-            updateCustomMultiplierText(accountName, this.value);
         });
     });
     

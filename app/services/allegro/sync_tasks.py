@@ -533,7 +533,8 @@ def update_single_allegro_offer(self, token_id: int, offer_id: str, target_stock
             except Exception as tg_err:
                 logger.error(f"[AllegroSync] Ошибка отправки уведомления в Telegram: {tg_err}")
         self.retry(exc=e)
-        return {"success": False, "offer_id": offer_id, "sku": sku, "error": str(e)}
+        return {"success": False, "offer_id": offer_id, "sku": sku, "error": str(e)} 
+    
 
 @celery.task
 def sync_all_offers_for_account(account_name: str):

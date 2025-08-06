@@ -1280,10 +1280,9 @@ async def manage_product(
     # tokens_result = await db.exec(tokens_query)
     # allegro_tokens = tokens_result.all()
 
-    token = get_token(account_name)
+    # Получаем все токены Allegro через микросервис
     token_client = AllegroTokenMicroserviceClient(
         jwt_token=create_access_token(user_id=settings.PROJECT_NAME),
-        
     )
     tokens = token_client.get_tokens(per_page=50)
 
@@ -1335,16 +1334,16 @@ async def manage_product(
         account_name = token.account_name or f"Account {token.id[:8]}"
         
         # Получаем существующие настройки или создаем дефолтные
-        settings = settings_by_account.get(account_name)
-        if settings:
+        sync_settings = settings_by_account.get(account_name)
+        if sync_settings:
             token_data = {
                 'token_id': token.id,
                 'account_name': account_name,
-                'stock_sync_enabled': settings.stock_sync_enabled,
-                'price_sync_enabled': settings.price_sync_enabled,
-                'price_multiplier': float(settings.price_multiplier),
-                'last_stock_sync_at': settings.last_stock_sync_at,
-                'last_price_sync_at': settings.last_price_sync_at,
+                'stock_sync_enabled': sync_settings.stock_sync_enabled,
+                'price_sync_enabled': sync_settings.price_sync_enabled,
+                'price_multiplier': float(sync_settings.price_multiplier),
+                'last_stock_sync_at': sync_settings.last_stock_sync_at,
+                'last_price_sync_at': sync_settings.last_price_sync_at,
                 'has_settings': True
             }
         else:
@@ -1392,12 +1391,18 @@ async def get_product_offers(
         logger.info(f"[OFFERS] Запрос оферт для SKU {sku} в аккаунте {account_name}")
         
         # Получаем токен аккаунта
-        token = get_token(account_name)
+        # Получаем токены через микросервис
         token_client = AllegroTokenMicroserviceClient(
             jwt_token=create_access_token(user_id=settings.PROJECT_NAME),
-            
         )
-        token = token_client.get_tokens(per_page=50)
+        all_tokens = token_client.get_tokens(per_page=50)
+        
+        # Ищем нужный токен по account_name
+        token = None
+        for t in all_tokens:
+            if t.account_name == account_name:
+                token = t
+                break
 
         if not token:
             logger.error(f"[OFFERS] Токен для аккаунта {account_name} не найден")
