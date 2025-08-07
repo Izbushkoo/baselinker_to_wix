@@ -78,3 +78,20 @@ class SyncStatistics(BaseModel):
     health_status: str
     last_updated: str
     error: Optional[str] = None
+
+
+class StockDeductionWebhookRequest(BaseModel):
+    """Запрос вебхука для списания товара от микросервиса."""
+    token_id: str = Field(..., description="ID токена Allegro")
+    order_id: str = Field(..., description="ID заказа")
+    sku: str = Field(..., description="SKU товара")
+    quantity: int = Field(..., gt=0, description="Количество для списания")
+    warehouse: str = Field(default="Ирина", description="Склад для списания")
+
+
+class StockDeductionWebhookResponse(BaseModel):
+    """Ответ на вебхук списания товара."""
+    success: bool
+    operation_id: Optional[UUID] = None
+    message: str
+    details: Optional[Dict[str, Any]] = None
