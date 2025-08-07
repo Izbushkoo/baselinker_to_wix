@@ -29,7 +29,6 @@ sys.path.append(BASE_DIR)
 from sqlmodel import SQLModel
 from app.models.user import User
 from app.models.allegro_token import AllegroToken
-from app.models.allegro_order import AllegroOrder, AllegroLineItem, AllegroBuyer, OrderLineItem
 from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.models.operations import Operation
 from app.models.allegro_event_tracker import AllegroEventTracker

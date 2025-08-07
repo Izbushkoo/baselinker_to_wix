@@ -54,7 +54,7 @@ class PendingStockOperation(SQLModel, table=True):
     
     # Связи с другими таблицами
     token_id: str = Field(index=True, description="ID токена Allegro из микросервиса")
-    allegro_order_id: Optional[str] = Field(foreign_key="allegro_orders.id", default=None, description="ID заказа в системе")
+    allegro_order_id: Optional[str] = Field(default=None, index=True, description="ID заказа Allegro (без связи, таблица в микросервисе)")
 
     def is_ready_for_retry(self) -> bool:
         """Проверяет, готова ли операция для повторной попытки."""

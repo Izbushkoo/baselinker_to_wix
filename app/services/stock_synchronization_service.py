@@ -18,8 +18,13 @@ from app.schemas.stock_synchronization import (
 )
 from app.services.Allegro_Microservice.orders_endpoint import OrdersClient
 from app.services.Allegro_Microservice.tokens_endpoint import AllegroTokenMicroserviceClient
-from app.services.warehouse.manager import InventoryManager
+from app.services.warehouse.manager import InventoryManager, get_manager
 from app.core.stock_sync_config import stock_sync_config
+from app.core.security import create_access_token
+from app.core.config import settings
+
+
+jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
 
 
 class StockSynchronizationService:
@@ -31,9 +36,9 @@ class StockSynchronizationService:
     def __init__(
         self, 
         session: Session, 
-        orders_client: OrdersClient,
-        tokens_client: AllegroTokenMicroserviceClient,
-        inventory_manager: InventoryManager
+        orders_client: OrdersClient = OrdersClient(jwt_token=jwt_token),
+        tokens_client: AllegroTokenMicroserviceClient = AllegroTokenMicroserviceClient(jwt_token=jwt_token),
+        inventory_manager: InventoryManager = get_manager()
     ):
         self.session = session
         self.orders_client = orders_client
