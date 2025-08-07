@@ -12,7 +12,6 @@ from app.services.allegro.rate_limiter import AllegroRateLimiter
 from app.services.product_allegro_sync_service import get_sync_service
 from celery import group
 from sqlmodel import select
-from app.services.allegro.tokens import check_token_sync
 import logging
 import time
 import uuid
