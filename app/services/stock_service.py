@@ -29,11 +29,9 @@ class AllegroStockService:
         try:
             # Проверяем статус и флаг списания
             if order.status != 'READY_FOR_PROCESSING' or order.is_stock_updated:
-                logger.info(f"order.status {order.status} or order.is_stock_updated {order.is_stock_updated}")
                 return False
 
             if order.fulfillment.get("status") == 'CANCELLED':
-                logger.info(f"order.fulfillment.get('status') {order.fulfillment.get('status')}")
                 return False
 
             # Получаем товарные позиции заказа
