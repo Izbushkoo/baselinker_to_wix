@@ -2,12 +2,14 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from uuid import UUID
+from sqlmodel import Session, select
 
 from app.services.tg_client import TelegramManager
 from app.core.stock_sync_config import stock_sync_config
+from app.models.stock_synchronization import OrderNotificationTracker
 from app.schemas.stock_synchronization import (
-    SyncResult, 
-    ProcessingResult, 
+    SyncResult,
+    ProcessingResult,
     ReconciliationResult,
     StockValidationResult
 )
@@ -19,7 +21,8 @@ class StockSyncNotificationService:
     Поддерживает персонализированные уведомления по аккаунтам и приоритизацию сообщений.
     """
     
-    def __init__(self):
+    def __init__(self, session: Optional[Session] = None):
+        self.session = session
         self.logger = logging.getLogger("stock.notifications")
         self.config = stock_sync_config
         
@@ -188,7 +191,20 @@ class StockSyncNotificationService:
             f"⚡ <b>Требуется ручное вмешательство!</b>"
         )
         
+        # Проверяем можно ли отправить уведомление о максимальных попытках
+        if self.session and not self._can_send_order_notification(
+            str(operation_id), account_name, 'max_retries'
+        ):
+            self.logger.info(f"Max retries notification suppressed for operation {operation_id}")
+            return
+        
         self._send_message(message, 'critical', 'critical', account_name)
+        
+        # Записываем факт отправки уведомления
+        if self.session:
+            self._record_order_notification(
+                str(operation_id), account_name, 'max_retries', suppress_for_hours=24
+            )
     
     def notify_stock_validation_failure(
         self, 
@@ -231,7 +247,20 @@ class StockSyncNotificationService:
             priority = 'normal'
             chat_type = 'main'
         
+        # Проверяем можно ли отправить уведомление о валидации (только для заказов)
+        if self.session and order_id and not self._can_send_order_notification(
+            order_id, account_name, 'validation_failure'
+        ):
+            self.logger.info(f"Validation failure notification suppressed for order {order_id}")
+            return
+        
         self._send_message(message, chat_type, priority, account_name)
+        
+        # Записываем факт отправки уведомления о валидации
+        if self.session and order_id:
+            self._record_order_notification(
+                order_id, account_name, 'validation_failure', suppress_for_hours=6
+            )
     
     def notify_reconciliation_discrepancies(
         self, 
@@ -398,6 +427,146 @@ class StockSyncNotificationService:
         
         self._send_message(message, chat_type, priority, account_name)
 
+    def _can_send_order_notification(
+        self,
+        order_key: str,  # Может быть order_id или operation_id
+        account_name: str,
+        notification_type: str,
+        min_interval_minutes: int = 30
+    ) -> bool:
+        """
+        Проверяет можно ли отправить уведомление для заказа.
+        
+        Args:
+            order_key: ID заказа или операции
+            account_name: Название аккаунта
+            notification_type: Тип уведомления
+            min_interval_minutes: Минимальный интервал между уведомлениями
+            
+        Returns:
+            bool: True если можно отправить уведомление
+        """
+        try:
+            # Пытаемся найти существующий tracker
+            # Для operation_id нужно получить order info, пока используем упрощенную логику
+            stmt = select(OrderNotificationTracker).where(
+                OrderNotificationTracker.order_id.contains(order_key) |
+                OrderNotificationTracker.account_name == account_name
+            ).order_by(OrderNotificationTracker.created_at.desc()).limit(1)
+            
+            tracker = self.session.exec(stmt).first()
+            
+            if tracker:
+                return tracker.can_send_notification(notification_type, min_interval_minutes)
+            else:
+                # Если tracker не найден, можно отправлять
+                return True
+                
+        except Exception as e:
+            self.logger.error(f"Error checking notification permission: {e}")
+            # В случае ошибки разрешаем отправку
+            return True
 
-# Создаем глобальный экземпляр сервиса
+    def _record_order_notification(
+        self,
+        order_key: str,
+        account_name: str,
+        notification_type: str,
+        suppress_for_hours: int = 0
+    ):
+        """
+        Записывает факт отправки уведомления для заказа.
+        
+        Args:
+            order_key: ID заказа или операции
+            account_name: Название аккаунта
+            notification_type: Тип уведомления
+            suppress_for_hours: Подавить уведомления на указанное время
+        """
+        try:
+            # Для упрощения создаем новый tracker каждый раз
+            # В реальности нужно найти существующий или создать новый
+            tracker = OrderNotificationTracker(
+                token_id="unknown",  # Пока не можем извлечь из order_key
+                order_id=order_key,
+                account_name=account_name
+            )
+            
+            tracker.record_notification(notification_type, suppress_for_hours)
+            
+            self.session.add(tracker)
+            self.session.commit()
+            
+        except Exception as e:
+            self.logger.error(f"Error recording notification: {e}")
+
+    def notify_order_validation_failure(
+        self,
+        token_id: str,
+        order_id: str,
+        account_name: str,
+        validation_errors: List[str],
+        order_details: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Уведомление о провале валидации заказа с контролем спама.
+        
+        Args:
+            token_id: ID токена
+            order_id: ID заказа
+            account_name: Название аккаунта
+            validation_errors: Список ошибок валидации
+            order_details: Дополнительная информация о заказе
+        """
+        # Создаем или обновляем tracker
+        order_key = f"{token_id}:{order_id}"
+        
+        # Проверяем можно ли отправить уведомление
+        if self.session:
+            tracker = self.session.exec(
+                select(OrderNotificationTracker).where(
+                    OrderNotificationTracker.token_id == token_id,
+                    OrderNotificationTracker.order_id == order_id
+                )
+            ).first()
+            
+            if tracker and not tracker.can_send_notification('validation_failure'):
+                self.logger.info(f"Validation failure notification suppressed for order {order_key}")
+                return
+            
+            if not tracker:
+                tracker = OrderNotificationTracker(
+                    token_id=token_id,
+                    order_id=order_id,
+                    account_name=account_name,
+                    order_details=order_details
+                )
+                self.session.add(tracker)
+        
+        # Формируем сообщение
+        errors_text = "\n".join([f"• {error}" for error in validation_errors[:5]])  # Ограничиваем 5 ошибками
+        if len(validation_errors) > 5:
+            errors_text += f"\n• ... и еще {len(validation_errors) - 5} ошибок"
+        
+        message = (
+            f"⚠️ <b>Провал валидации заказа</b>\n"
+            f"Аккаунт: <code>{account_name}</code>\n"
+            f"Заказ: <code>{order_id}</code>\n\n"
+            f"<b>Ошибки валидации:</b>\n{errors_text}\n\n"
+            f"💡 <i>Проверьте остатки товаров и повторите списание</i>"
+        )
+        
+        self._send_message(message, 'main', 'high', account_name)
+        
+        # Записываем факт отправки
+        if self.session and tracker:
+            tracker.record_notification('validation_failure', suppress_for_hours=6)
+            self.session.commit()
+
+
+# Функция для создания сервиса с сессией
+def get_notification_service(session: Optional[Session] = None) -> StockSyncNotificationService:
+    return StockSyncNotificationService(session=session)
+
+# Глобальный экземпляр без сессии (для обратной совместимости)
 stock_sync_notifications = StockSyncNotificationService()

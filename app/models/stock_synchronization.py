@@ -22,23 +22,34 @@ class OperationStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class NotificationStatus(str, Enum):
+    """Статусы уведомлений."""
+    PENDING = "pending"
+    SENT = "sent"
+    FAILED = "failed"
+    SUPPRESSED = "suppressed"  # Подавлено из-за частых повторов
+
+
 class PendingStockOperation(SQLModel, table=True):
     """
     Модель для отслеживания операций синхронизации складских остатков.
     
-    Хранит информацию о операциях, которые требуют синхронизации 
-    между локальной системой и микросервисом Allegro.
+    Каждая позиция заказа (SKU) создает отдельную операцию.
+    Операции группируются по заказу (token_id + order_id).
     """
     __tablename__ = "pending_stock_operations"
     
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    order_id: str = Field(index=True, description="ID заказа Allegro")
-    operation_type: OperationType = Field(description="Тип операции")
-    status: OperationStatus = Field(default=OperationStatus.PENDING, index=True, description="Статус операции")
+    
+    # Идентификация операции
+    token_id: str = Field(index=True, description="ID токена Allegro из микросервиса")
+    order_id: str = Field(index=True, description="ID заказа Allegro")  
+    sku: str = Field(index=True, description="SKU товара (одна позиция заказа)")
     
     # Детали операции
-    sku: str = Field(index=True, description="SKU товара")
-    quantity: int = Field(description="Количество")
+    operation_type: OperationType = Field(description="Тип операции")
+    status: OperationStatus = Field(default=OperationStatus.PENDING, index=True, description="Статус операции")
+    quantity: int = Field(description="Количество для данного SKU")
     warehouse: str = Field(default="Ирина", description="Название склада")
     
     # Retry механизм
@@ -52,8 +63,7 @@ class PendingStockOperation(SQLModel, table=True):
     completed_at: Optional[datetime] = Field(default=None, description="Время завершения")
     error_message: Optional[str] = Field(default=None, description="Сообщение об ошибке")
     
-    # Связи с другими таблицами
-    token_id: str = Field(index=True, description="ID токена Allegro из микросервиса")
+    # Дополнительные поля
     allegro_order_id: Optional[str] = Field(default=None, index=True, description="ID заказа Allegro (без связи, таблица в микросервисе)")
 
     def is_ready_for_retry(self) -> bool:
@@ -78,6 +88,109 @@ class PendingStockOperation(SQLModel, table=True):
                 max_delay
             )
             self.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
+
+    @property
+    def order_key(self) -> str:
+        """Ключ заказа для группировки операций."""
+        return f"{self.token_id}:{self.order_id}"
+
+    @property
+    def unique_operation_key(self) -> str:
+        """Уникальный ключ операции (заказ + SKU)."""
+        return f"{self.token_id}:{self.order_id}:{self.sku}"
+
+
+class OrderNotificationTracker(SQLModel, table=True):
+    """
+    Отслеживание уведомлений по заказам для предотвращения спама.
+    
+    Группирует уведомления по заказу (token_id + order_id) и контролирует
+    частоту отправки для предотвращения спама.
+    """
+    __tablename__ = "order_notification_tracker"
+    
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    
+    # Идентификация заказа
+    token_id: str = Field(index=True, description="ID токена Allegro")
+    order_id: str = Field(index=True, description="ID заказа")
+    account_name: str = Field(description="Название аккаунта для персонализации")
+    
+    # Статус уведомлений
+    validation_failure_notified: bool = Field(default=False, description="Отправлено уведомление о провале валидации")
+    max_retries_notified: bool = Field(default=False, description="Отправлено уведомление о превышении лимита попыток")
+    
+    # Контроль частоты
+    last_notification_at: Optional[datetime] = Field(default=None, description="Время последнего уведомления")
+    notification_count: int = Field(default=0, description="Количество отправленных уведомлений")
+    suppression_until: Optional[datetime] = Field(default=None, description="Подавление уведомлений до указанного времени")
+    
+    # Метаданные
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True, description="Время создания")
+    updated_at: datetime = Field(default_factory=datetime.utcnow, description="Время обновления")
+    
+    # Дополнительная информация о заказе
+    order_details: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON), description="Детали заказа")
+
+    def can_send_notification(self, notification_type: str, min_interval_minutes: int = 30) -> bool:
+        """
+        Проверяет, можно ли отправить уведомление.
+        
+        Args:
+            notification_type: Тип уведомления ('validation_failure', 'max_retries', 'retry_failure')
+            min_interval_minutes: Минимальный интервал между уведомлениями в минутах
+            
+        Returns:
+            bool: True если можно отправить уведомление
+        """
+        now = datetime.utcnow()
+        
+        # Проверяем подавление уведомлений
+        if self.suppression_until and now < self.suppression_until:
+            return False
+        
+        # Проверяем уже отправленные критические уведомления
+        if notification_type == 'validation_failure' and self.validation_failure_notified:
+            return False
+        if notification_type == 'max_retries' and self.max_retries_notified:
+            return False
+        
+        # Проверяем минимальный интервал
+        if self.last_notification_at:
+            time_since_last = now - self.last_notification_at
+            if time_since_last < timedelta(minutes=min_interval_minutes):
+                return False
+        
+        return True
+
+    def record_notification(self, notification_type: str, suppress_for_hours: int = 0):
+        """
+        Записывает факт отправки уведомления.
+        
+        Args:
+            notification_type: Тип уведомления
+            suppress_for_hours: Подавить уведомления на указанное количество часов
+        """
+        now = datetime.utcnow()
+        
+        self.last_notification_at = now
+        self.notification_count += 1
+        self.updated_at = now
+        
+        # Отмечаем специальные типы уведомлений
+        if notification_type == 'validation_failure':
+            self.validation_failure_notified = True
+        elif notification_type == 'max_retries':
+            self.max_retries_notified = True
+        
+        # Устанавливаем подавление если нужно
+        if suppress_for_hours > 0:
+            self.suppression_until = now + timedelta(hours=suppress_for_hours)
+
+    @property
+    def order_key(self) -> str:
+        """Ключ заказа для идентификации."""
+        return f"{self.token_id}:{self.order_id}"
 
 
 class StockSynchronizationLog(SQLModel, table=True):

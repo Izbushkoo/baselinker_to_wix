@@ -84,14 +84,13 @@ class StockDeductionWebhookRequest(BaseModel):
     """Запрос вебхука для списания товара от микросервиса."""
     token_id: str = Field(..., description="ID токена Allegro")
     order_id: str = Field(..., description="ID заказа")
-    sku: str = Field(..., description="SKU товара")
-    quantity: int = Field(..., gt=0, description="Количество для списания")
-    warehouse: str = Field(default="Ирина", description="Склад для списания")
 
 
 class StockDeductionWebhookResponse(BaseModel):
     """Ответ на вебхук списания товара."""
     success: bool
-    operation_id: Optional[UUID] = None
+    operations_created: int = 0
+    operations_processed: int = 0
     message: str
     details: Optional[Dict[str, Any]] = None
+    order_details: Optional[Dict[str, Any]] = None
