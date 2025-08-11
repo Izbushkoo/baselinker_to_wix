@@ -1,0 +1,128 @@
+services:
+  postgres:
+    image: postgres:15
+    command: postgres -c "max_connections=10000"
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=baselinker_to_wix
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - /home/izbushko/baselinker_to_wix/pgdata_main_branch:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    build: .
+    restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
+    env_file:
+      - .env.docker
+    ports:
+      - "${APP_PORT}:8787"
+    volumes:
+      - ./app:/app/app:delegated
+      - ./app/logs:/app/logs
+      - ./migrations:/app/migrations
+      - ./alembic.ini:/app/alembic.ini
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/baselinker_to_wix
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    # command: poetry run gunicorn -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8787 --workers 4
+    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8787 --reload
+  celery_worker:
+    build: .
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      - ./app:/app/app:delegated
+      - ./app/logs:/app/logs
+      - ./migrations:/app/migrations
+      - ./alembic.ini:/app/alembic.ini
+    env_file:
+      - .env.docker
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/baselinker_to_wix
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    command: poetry run celery -A app.celery_app worker --loglevel=INFO
+
+  celery_beat:
+    build: .
+    restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      - ./app:/app/app:delegated
+      - ./app/logs:/app/logs
+      - ./migrations:/app/migrations
+      - ./alembic.ini:/app/alembic.ini
+      - ./celerybeat-schedule:/app/celerybeat-schedule
+    env_file:
+      - .env.docker
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/baselinker_to_wix
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      celery_worker:
+        condition: service_started
+    command: poetry run celery -A app.celery_app beat --loglevel=INFO
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - /home/izbushko/baselinker_to_wix/redis-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  flower:
+    image: mher/flower
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    command: celery --broker=redis://redis:6379/0 flower --port=5555
+    ports:
+      - "5555:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: bl_wix_network
+    external: false
