@@ -73,7 +73,7 @@ class DummyStore(UserDict):
 
 class RedisScheduler(PersistentScheduler):
     def __init__(self, app, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(app, *args, **kwargs)
         self.app = app
         # Получаем URL Redis из переменной окружения (по умолчанию: redis://redis:6379/0)
         redis_url = os.getenv("CELERY_REDIS_URL", "redis://redis:6379/0")
