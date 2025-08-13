@@ -237,18 +237,21 @@ async def backup():
     celery.send_task("app.backup_base")
 
 @router.post("/check-stock")
-def check_stock() -> Dict[str, Any]:
+def check_stock(
+) -> Dict[str, Any]:
     """
-    Запускает немедленную проверку и обновление стоков для всех заказов.
+    Запускает немедленную проверку и обновление стоков для заказов из микросервиса.
     """
     try:
-        # Запускаем задачу проверки стоков
-        task = celery.send_task('app.celery_app.check_and_update_stock')
+        # Запускаем задачу проверки стоков с параметрами
+        task = celery.send_task(
+            'app.celery_app.check_and_update_stock',
+        )
         
         return {
             "status": "success",
             "message": "Задача проверки стоков запущена",
-            "task_id": task.id
+            "task_id": task.id,
         }
     except Exception as e:
         logger.error(f"Ошибка при запуске проверки стоков: {str(e)}")

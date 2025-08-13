@@ -1,11 +1,17 @@
 import logging
+import json
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 from sqlmodel import Session, select
+from collections import deque
+import threading
+import time
+from pydantic import BaseModel, Field
 
 from app.services.tg_client import TelegramManager
 from app.core.stock_sync_config import stock_sync_config
+from app.core.config import settings
 from app.models.stock_synchronization import OrderNotificationTracker
 from app.schemas.stock_synchronization import (
     SyncResult,
@@ -15,63 +21,187 @@ from app.schemas.stock_synchronization import (
 )
 
 
+class PendingMessage(BaseModel):
+    """Сообщение в очереди отложенной отправки."""
+    message: str
+    chat_type: str
+    priority: str
+    account_name: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    retry_count: int = 0
+    next_retry_at: Optional[datetime] = None
+    max_retries: int = 10
+    
+    def should_retry(self) -> bool:
+        """Проверяет можно ли повторить отправку."""
+        if self.retry_count >= self.max_retries:
+            return False
+        if self.next_retry_at and datetime.utcnow() < self.next_retry_at:
+            return False
+        return True
+    
+    def schedule_retry(self, delay_minutes: Optional[int] = None):
+        """Планирует следующую попытку отправки."""
+        if delay_minutes is None:
+            # Экспоненциальный backoff: 1, 2, 4, 8, 16, ... минут
+            delay_minutes = min(2 ** self.retry_count, 60)  # Максимум 60 минут
+        
+        self.retry_count += 1
+        self.next_retry_at = datetime.utcnow() + timedelta(minutes=delay_minutes)
+
+
+class MessageQueue:
+    """Потокобезопасная очередь для отложенных сообщений."""
+    
+    def __init__(self, max_size: int = 1000):
+        self._queue = deque(maxlen=max_size)
+        self._lock = threading.Lock()
+        self._logger = logging.getLogger("notifications.queue")
+    
+    def add(self, message: PendingMessage):
+        """Добавляет сообщение в очередь."""
+        with self._lock:
+            self._queue.append(message)
+            self._logger.info(f"Message queued: {message.chat_type} priority={message.priority}")
+    
+    def get_ready_messages(self) -> List[PendingMessage]:
+        """Возвращает сообщения готовые к отправке."""
+        ready = []
+        now = datetime.utcnow()
+        
+        with self._lock:
+            # Фильтруем готовые к отправке сообщения
+            remaining = deque()
+            
+            while self._queue:
+                msg = self._queue.popleft()
+                
+                if msg.should_retry() and (msg.next_retry_at is None or msg.next_retry_at <= now):
+                    ready.append(msg)
+                elif msg.retry_count < msg.max_retries:
+                    remaining.append(msg)
+                else:
+                    self._logger.error(f"Message dropped after {msg.max_retries} retries: {msg.message[:100]}...")
+            
+            # Возвращаем неготовые сообщения в очередь
+            self._queue.extend(remaining)
+        
+        return ready
+    
+    def size(self) -> int:
+        """Возвращает размер очереди."""
+        with self._lock:
+            return len(self._queue)
+    
+    def clear_old_messages(self, max_age_hours: int = 24):
+        """Удаляет старые сообщения."""
+        cutoff = datetime.utcnow() - timedelta(hours=max_age_hours)
+        
+        with self._lock:
+            remaining = deque()
+            removed_count = 0
+            
+            while self._queue:
+                msg = self._queue.popleft()
+                if msg.created_at >= cutoff:
+                    remaining.append(msg)
+                else:
+                    removed_count += 1
+            
+            self._queue.extend(remaining)
+            
+            if removed_count > 0:
+                self._logger.info(f"Removed {removed_count} old messages from queue")
+
+
 class StockSyncNotificationService:
     """
     Сервис для отправки Telegram уведомлений о событиях синхронизации складских остатков.
-    Поддерживает персонализированные уведомления по аккаунтам и приоритизацию сообщений.
+    Поддерживает персонализированные уведомления по аккаунтам, приоритизацию сообщений,
+    и автоматическую обработку 429 ошибок с очередью отложенной отправки.
     """
     
     def __init__(self, session: Optional[Session] = None):
         self.session = session
         self.logger = logging.getLogger("stock.notifications")
         self.config = stock_sync_config
+        self.base_url = settings.BASE_URL
         
         # Инициализируем Telegram менеджеры для разных типов уведомлений
         self._managers = {}
         self._init_telegram_managers()
+        
+        # Очередь для отложенных сообщений
+        self._message_queue = MessageQueue(max_size=getattr(self.config, 'MAX_PENDING_MESSAGES', 1000))
+        
+        # Статистика отправки
+        self._stats = {
+            'sent_success': 0,
+            'sent_failed': 0,
+            'queued_messages': 0,
+            'retry_success': 0,
+            'dropped_messages': 0
+        }
+
+    def _get_operation_url(self, operation_id: str) -> Optional[str]:
+        """Генерирует URL для просмотра деталей операции."""
+        if not self.base_url:
+            return None
+        return f"{self.base_url}/stock-sync/monitor/operation/{operation_id}"
+    
+    def _get_monitoring_url(self, params: str = "") -> Optional[str]:
+        """Генерирует URL для страницы мониторинга."""
+        if not self.base_url:
+            return None
+        url = f"{self.base_url}/stock-sync/monitor"
+        if params:
+            url += f"?{params}"
+        return url
     
     def _init_telegram_managers(self):
         """Инициализация Telegram менеджеров для разных групп."""
         try:
             # Главная группа уведомлений
-            if self.config.telegram_main_chat_id:
+            if self.config.TELEGRAM_MAIN_CHAT_ID:
                 self._managers['main'] = TelegramManager(
-                    chat_id=self.config.telegram_main_chat_id
+                    chat_id=self.config.TELEGRAM_MAIN_CHAT_ID
                 )
             
             # Группа критических уведомлений  
-            if self.config.telegram_critical_chat_id:
+            if self.config.TELEGRAM_CRITICAL_CHAT_ID:
                 self._managers['critical'] = TelegramManager(
-                    chat_id=self.config.telegram_critical_chat_id
+                    chat_id=self.config.TELEGRAM_CRITICAL_CHAT_ID
                 )
             
             # Группа технических уведомлений
-            if self.config.telegram_tech_chat_id:
+            if self.config.TELEGRAM_TECHNICAL_CHAT_ID:
                 self._managers['tech'] = TelegramManager(
-                    chat_id=self.config.telegram_tech_chat_id
+                    chat_id=self.config.TELEGRAM_TECHNICAL_CHAT_ID
                 )
                 
         except Exception as e:
             self.logger.error(f"Ошибка инициализации Telegram менеджеров: {e}")
     
     def _send_message(
-        self, 
-        message: str, 
+        self,
+        message: str,
         chat_type: str = 'main',
         priority: str = 'normal',
-        account_name: Optional[str] = None
+        account_name: Optional[str] = None,
+        allow_queue: bool = True
     ) -> bool:
         """
-        Отправка сообщения в указанный чат.
+        Отправка сообщения в указанный чат с поддержкой очереди отложенных сообщений.
         
         Args:
             message: Текст сообщения
             chat_type: Тип чата ('main', 'critical', 'tech')
             priority: Приоритет ('low', 'normal', 'high', 'critical')
             account_name: Название аккаунта для персонализации
+            allow_queue: Разрешить постановку в очередь при провале
             
         Returns:
-            bool: True если сообщение отправлено успешно
+            bool: True если сообщение отправлено успешно или поставлено в очередь
         """
         try:
             # Выбираем менеджер чата
@@ -82,6 +212,9 @@ class StockSyncNotificationService:
                 manager = self._managers.get('main')
                 if not manager:
                     self.logger.error("Ни один Telegram менеджер не доступен")
+                    if allow_queue:
+                        self._queue_message(message, chat_type, priority, account_name)
+                        return True
                     return False
             
             # Форматируем сообщение с приоритетом и аккаунтом
@@ -90,16 +223,117 @@ class StockSyncNotificationService:
             # Отправляем сообщение
             result = manager.send_message(formatted_message)
             
-            if result:
+            if result is not None:
                 self.logger.info(f"Уведомление отправлено в чат '{chat_type}': {account_name or 'общее'}")
+                self._stats['sent_success'] += 1
                 return True
             else:
-                self.logger.error(f"Не удалось отправить уведомление в чат '{chat_type}'")
+                self.logger.warning(f"Не удалось отправить уведомление в чат '{chat_type}', добавляю в очередь")
+                self._stats['sent_failed'] += 1
+                
+                if allow_queue:
+                    self._queue_message(message, chat_type, priority, account_name)
+                    return True
                 return False
                 
         except Exception as e:
             self.logger.error(f"Ошибка отправки уведомления: {e}")
+            self._stats['sent_failed'] += 1
+            
+            if allow_queue:
+                self._queue_message(message, chat_type, priority, account_name)
+                return True
             return False
+    
+    def _queue_message(
+        self,
+        message: str,
+        chat_type: str,
+        priority: str,
+        account_name: Optional[str]
+    ):
+        """Добавляет сообщение в очередь отложенной отправки."""
+        pending_msg = PendingMessage(
+            message=message,
+            chat_type=chat_type,
+            priority=priority,
+            account_name=account_name
+        )
+        
+        self._message_queue.add(pending_msg)
+        self._stats['queued_messages'] += 1
+        self.logger.info(f"Сообщение добавлено в очередь: {chat_type} priority={priority}")
+    
+    def process_message_queue(self, max_messages: int = 50) -> Dict[str, int]:
+        """
+        Обрабатывает очередь отложенных сообщений.
+        
+        Args:
+            max_messages: Максимальное количество сообщений для обработки за раз
+            
+        Returns:
+            Статистика обработки: {'processed': int, 'success': int, 'requeued': int, 'dropped': int}
+        """
+        stats = {'processed': 0, 'success': 0, 'requeued': 0, 'dropped': 0}
+        
+        # Очищаем старые сообщения
+        self._message_queue.clear_old_messages()
+        
+        # Получаем готовые к отправке сообщения
+        ready_messages = self._message_queue.get_ready_messages()
+        
+        if not ready_messages:
+            return stats
+        
+        # Ограничиваем количество обрабатываемых сообщений
+        messages_to_process = ready_messages[:max_messages]
+        
+        self.logger.info(f"Обработка {len(messages_to_process)} сообщений из очереди")
+        
+        for msg in messages_to_process:
+            stats['processed'] += 1
+            
+            # Пытаемся отправить без добавления в очередь
+            success = self._send_message(
+                msg.message,
+                msg.chat_type,
+                msg.priority,
+                msg.account_name,
+                allow_queue=False
+            )
+            
+            if success:
+                stats['success'] += 1
+                self._stats['retry_success'] += 1
+                self.logger.debug(f"Сообщение из очереди отправлено успешно после {msg.retry_count} попыток")
+            else:
+                # Планируем повторную попытку
+                if msg.retry_count < msg.max_retries:
+                    msg.schedule_retry()
+                    self._message_queue.add(msg)
+                    stats['requeued'] += 1
+                    self.logger.debug(f"Сообщение возвращено в очередь, попытка {msg.retry_count}/{msg.max_retries}")
+                else:
+                    stats['dropped'] += 1
+                    self._stats['dropped_messages'] += 1
+                    self.logger.error(f"Сообщение отброшено после {msg.max_retries} попыток: {msg.message[:100]}...")
+        
+        if stats['processed'] > 0:
+            self.logger.info(f"Очередь обработана: {stats}")
+        
+        return stats
+    
+    def get_queue_status(self) -> Dict[str, Any]:
+        """Возвращает статус очереди сообщений и общую статистику."""
+        return {
+            'queue_size': self._message_queue.size(),
+            'stats': self._stats.copy(),
+            'total_attempts': self._stats['sent_success'] + self._stats['sent_failed'],
+            'success_rate': (
+                self._stats['sent_success'] / (self._stats['sent_success'] + self._stats['sent_failed']) * 100
+                if (self._stats['sent_success'] + self._stats['sent_failed']) > 0 else 0
+            )
+        }
     
     def _format_message(
         self, 
@@ -154,6 +388,11 @@ class StockSyncNotificationService:
             f"Попытка: {retry_count + 1}\n"
             f"Ошибка: <i>{result.error}</i>"
         )
+        
+        # Добавляем ссылку на детали операции, если доступен базовый URL
+        operation_url = self._get_operation_url(operation_id)
+        if operation_url:
+            message += f"\n<a href=\"{operation_url}\">📋 Подробности</a>"
         
         # Определяем приоритет по количеству попыток
         if retry_count >= self.config.retry_max_attempts - 1:
@@ -229,8 +468,14 @@ class StockSyncNotificationService:
             f"Склад: <code>{validation_result.warehouse}</code>\n"
             f"Доступно: {validation_result.available_quantity}\n"
             f"Требуется: {validation_result.required_quantity}\n"
-            f"Недостает: <b>{shortage}</b>"
+            f"Недостает: <b>{shortage}</b>\n"
+            + (f"Заказ: <code>{order_id}</code>\n" if order_id else "")
         )
+        
+        # Добавляем ссылку на мониторинг, если доступен базовый URL
+        monitoring_url = self._get_monitoring_url("status=failed&days=7")
+        if monitoring_url:
+            message += f"\n<a href=\"{monitoring_url}\">📋 Мониторинг</a>"
         
         if order_id:
             message += f"\nЗаказ: <code>{order_id}</code>"
@@ -506,7 +751,8 @@ class StockSyncNotificationService:
         order_id: str,
         account_name: str,
         validation_errors: List[str],
-        order_details: Optional[Dict[str, Any]] = None
+        order_details: Optional[Dict[str, Any]] = None,
+        operation_id: Optional[str] = None
     ):
         """
         Уведомление о провале валидации заказа с контролем спама.
@@ -517,6 +763,7 @@ class StockSyncNotificationService:
             account_name: Название аккаунта
             validation_errors: Список ошибок валидации
             order_details: Дополнительная информация о заказе
+            operation_id: ID операции для ссылки на детали (опционально)
         """
         # Создаем или обновляем tracker
         order_key = f"{token_id}:{order_id}"
@@ -543,30 +790,232 @@ class StockSyncNotificationService:
                 )
                 self.session.add(tracker)
         
-        # Формируем сообщение
-        errors_text = "\n".join([f"• {error}" for error in validation_errors[:5]])  # Ограничиваем 5 ошибками
-        if len(validation_errors) > 5:
-            errors_text += f"\n• ... и еще {len(validation_errors) - 5} ошибок"
+        # Формируем красиво отформатированные ошибки
+        formatted_errors = self._format_validation_errors(validation_errors, order_details)
         
         message = (
-            f"⚠️ <b>Провал валидации заказа</b>\n"
+            f"⚠️ <b>Провал валидации складских остатков</b>\n"
             f"Аккаунт: <code>{account_name}</code>\n"
             f"Заказ: <code>{order_id}</code>\n\n"
-            f"<b>Ошибки валидации:</b>\n{errors_text}\n\n"
+            f"{formatted_errors}\n\n"
             f"💡 <i>Проверьте остатки товаров и повторите списание</i>"
         )
+        
+        # Добавляем ссылку на детали операции, если доступен operation_id
+        if operation_id:
+            operation_url = self._get_operation_url(operation_id)
+            if operation_url:
+                message += f"\n📋 Подробности операции: {operation_url}"
+        else:
+            # Fallback на мониторинг, если operation_id не передан
+            monitoring_url = self._get_monitoring_url(f"order_id={order_id}&account={account_name}")
+            if monitoring_url:
+                message += f"\n📋 Подробности: {monitoring_url}"
         
         self._send_message(message, 'main', 'high', account_name)
         
         # Записываем факт отправки
         if self.session and tracker:
-            tracker.record_notification('validation_failure', suppress_for_hours=6)
+            tracker.record_notification('validation_failure', suppress_for_hours=1)
             self.session.commit()
 
+    def _format_validation_errors(self, validation_errors: List[str], order_details: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Форматирует ошибки валидации для красивого отображения в Telegram.
+        
+        Args:
+            validation_errors: Список ошибок валидации
+            order_details: Детали заказа с информацией о товарах
+            
+        Returns:
+            Красиво отформатированная строка с ошибками
+        """
+        if not validation_errors:
+            return "<b>❓ Неизвестные ошибки валидации</b>"
+        
+        # Группируем ошибки по типам
+        sku_errors = {}
+        general_errors = []
+        
+        for error in validation_errors:
+            if "Товар '" in error and "':" in error:
+                # Извлекаем SKU и сообщение об ошибке
+                try:
+                    parts = error.split("':")
+                    sku_part = parts[0].replace("Товар '", "")
+                    error_msg = parts[1].strip() if len(parts) > 1 else "Неизвестная ошибка"
+                    sku_errors[sku_part] = error_msg
+                except Exception:
+                    general_errors.append(error)
+            else:
+                general_errors.append(error)
+        
+        formatted_parts = []
+        
+        # Общие ошибки
+        if general_errors:
+            formatted_parts.append("<b>🚫 Общие ошибки:</b>")
+            for error in general_errors[:3]:  # Ограничиваем 3 общими ошибками
+                formatted_parts.append(f"• {error}")
+            if len(general_errors) > 3:
+                formatted_parts.append(f"• ... и еще {len(general_errors) - 3} ошибок")
+        
+        # Ошибки по товарам
+        if sku_errors:
+            formatted_parts.append("<b>📦 Проблемы с товарами:</b>")
+            
+            # Пытаемся получить дополнительную информацию о товарах из order_details
+            items_info = {}
+            if order_details and "lineItems" in order_details:
+                for item in order_details["lineItems"]:
+                    sku = item.get("offer", {}).get("external", {}).get("id")
+                    if sku:
+                        items_info[sku] = {
+                            "name": item.get("offer", {}).get("name", "Неизвестный товар"),
+                            "quantity": item.get("quantity", 1)
+                        }
+            
+            # Форматируем ошибки по товарам (ограничиваем 5 товарами)
+            count = 0
+            for sku, error_msg in list(sku_errors.items())[:5]:
+                count += 1
+                
+                # Получаем дополнительную информацию о товаре
+                item_info = items_info.get(sku, {})
+                product_name = item_info.get("name", "")
+                quantity = item_info.get("quantity", "")
+                
+                # Форматируем строку товара
+                sku_line = f"<code>{sku}</code>"
+                
+                if product_name:
+                    # Обрезаем длинные названия
+                    if len(product_name) > 30:
+                        product_name = product_name[:27] + "..."
+                    sku_line += f" ({product_name})"
+                
+                if quantity:
+                    sku_line += f" x{quantity}"
+                
+                # Добавляем кнопку копирования SKU
+                
+                formatted_parts.append(f"• {sku_line}")
+                formatted_parts.append(f"  └─ ❌ {error_msg}")
+            
+            if len(sku_errors) > 5:
+                formatted_parts.append(f"• ... и еще {len(sku_errors) - 5} товаров")
+        
+        return "\n".join(formatted_parts)
+
+
+class NotificationServiceManager:
+    """Менеджер для управления фоновой обработкой очереди уведомлений."""
+    
+    def __init__(self):
+        self._services = {}  # session_id -> service instance
+        self._background_thread = None
+        self._stop_event = threading.Event()
+        self._processing_interval = 300  # 5 минут
+        self.logger = logging.getLogger("notifications.manager")
+    
+    def get_service(self, session: Optional[Session] = None) -> StockSyncNotificationService:
+        """Получает экземпляр сервиса для указанной сессии."""
+        session_id = id(session) if session else "global"
+        
+        if session_id not in self._services:
+            self._services[session_id] = StockSyncNotificationService(session=session)
+        
+        return self._services[session_id]
+    
+    def start_background_processing(self, interval_seconds: int = 300):
+        """Запускает фоновую обработку очереди сообщений."""
+        if self._background_thread and self._background_thread.is_alive():
+            self.logger.warning("Background processing already running")
+            return
+        
+        self._processing_interval = interval_seconds
+        self._stop_event.clear()
+        
+        self._background_thread = threading.Thread(
+            target=self._background_worker,
+            name="notifications-queue-processor",
+            daemon=True
+        )
+        self._background_thread.start()
+        self.logger.info(f"Started background queue processing with {interval_seconds}s interval")
+    
+    def stop_background_processing(self):
+        """Останавливает фоновую обработку."""
+        if not self._background_thread or not self._background_thread.is_alive():
+            return
+        
+        self._stop_event.set()
+        self._background_thread.join(timeout=10)
+        
+        if self._background_thread.is_alive():
+            self.logger.warning("Background thread did not stop gracefully")
+        else:
+            self.logger.info("Background processing stopped")
+    
+    def _background_worker(self):
+        """Фоновый обработчик очереди сообщений."""
+        self.logger.info("Background queue processor started")
+        
+        while not self._stop_event.is_set():
+            try:
+                # Обрабатываем очереди всех активных сервисов
+                total_processed = 0
+                
+                for service in self._services.values():
+                    stats = service.process_message_queue(max_messages=20)
+                    total_processed += stats['processed']
+                
+                if total_processed > 0:
+                    self.logger.info(f"Background processing: {total_processed} messages processed")
+                
+            except Exception as e:
+                self.logger.error(f"Error in background queue processing: {e}")
+            
+            # Ждем до следующего цикла
+            self._stop_event.wait(timeout=self._processing_interval)
+        
+        self.logger.info("Background queue processor finished")
+    
+    def get_all_services_status(self) -> Dict[str, Any]:
+        """Возвращает статус всех активных сервисов."""
+        status = {}
+        
+        for session_id, service in self._services.items():
+            status[f"service_{session_id}"] = service.get_queue_status()
+        
+        status['background_processing'] = {
+            'enabled': self._background_thread and self._background_thread.is_alive(),
+            'interval_seconds': self._processing_interval
+        }
+        
+        return status
+
+
+# Глобальный менеджер сервисов
+_notification_manager = NotificationServiceManager()
 
 # Функция для создания сервиса с сессией
 def get_notification_service(session: Optional[Session] = None) -> StockSyncNotificationService:
-    return StockSyncNotificationService(session=session)
+    """Получает экземпляр сервиса уведомлений."""
+    return _notification_manager.get_service(session)
 
 # Глобальный экземпляр без сессии (для обратной совместимости)
-stock_sync_notifications = StockSyncNotificationService()
+stock_sync_notifications = _notification_manager.get_service(None)
+
+# Функции управления фоновой обработкой
+def start_notification_queue_processing(interval_seconds: int = 300):
+    """Запускает фоновую обработку очереди уведомлений."""
+    _notification_manager.start_background_processing(interval_seconds)
+
+def stop_notification_queue_processing():
+    """Останавливает фоновую обработку очереди уведомлений."""
+    _notification_manager.stop_background_processing()
+
+def get_notification_services_status() -> Dict[str, Any]:
+    """Возвращает статус всех сервисов уведомлений."""
+    return _notification_manager.get_all_services_status()

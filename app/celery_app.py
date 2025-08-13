@@ -33,6 +33,10 @@ from app.services.tg_client import TelegramManager
 
 from app.services.allegro.allegro_api_service import SyncAllegroApiService, NotFoundDetails
 
+# Импортируем модуль с задачами синхронизации складских остатков
+# Это необходимо для регистрации задач в Celery
+from app.services import stock_sync_tasks
+
 import time
 from app.models.allegro_token import AllegroToken
 from app.utils.date_utils import parse_date
@@ -124,18 +128,44 @@ class RedisScheduler(PersistentScheduler):
             elif isinstance(raw_sched, str) and "crontab" in raw_sched:
                 # Преобразуем строковое представление crontab обратно в объект
                 try:
-                    # Извлекаем параметры из строки
                     import re
+                    # Парсер для формата "crontab(minute=0, hour=8, ...)"
                     pattern = r"crontab\(([^)]+)\)"
                     match = re.search(pattern, raw_sched)
                     if match:
-                        params = match.group(1)
-                        # Безопасное выполнение crontab с извлеченными параметрами
-                        entry_schedule = eval(f"crontab({params})")
+                        params_str = match.group(1)
+                        # Парсим параметры из строки вида "minute=0, hour=8, ..."
+                        params = {}
+                        param_pattern = r"(\w+)=([^,]+)"
+                        for param_match in re.finditer(param_pattern, params_str):
+                            key = param_match.group(1).strip()
+                            value = param_match.group(2).strip()
+                            
+                            # Преобразуем значения
+                            if value == '*':
+                                params[key] = '*'
+                            elif ',' in value:
+                                # Список значений
+                                params[key] = [int(v.strip()) for v in value.split(',') if v.strip().isdigit()]
+                            elif value.isdigit():
+                                params[key] = int(value)
+                            else:
+                                params[key] = value
+                        
+                        # Создаем crontab с распарсенными параметрами
+                        entry_schedule = crontab(
+                            minute=params.get('minute', '*'),
+                            hour=params.get('hour', '*'),
+                            day_of_week=params.get('day_of_week', '*'),
+                            day_of_month=params.get('day_of_month', '*'),
+                            month_of_year=params.get('month_of_year', '*')
+                        )
+                        logger.info(f"Успешно распарсен crontab: {entry_schedule} из строки: {raw_sched}")
                     else:
+                        logger.warning(f"Не удалось распарсить crontab: {raw_sched}")
                         entry_schedule = crontab()
                 except Exception as e:
-                    logger.error(f"Ошибка при парсинге crontab: {str(e)}")
+                    logger.error(f"Ошибка при парсинге crontab '{raw_sched}': {str(e)}")
                     entry_schedule = crontab()
             else:
                 # Пытаемся привести к числу секунд
@@ -199,14 +229,51 @@ DEFAULT_BEAT_SCHEDULE = {
     },
     'send-daily-sync-summary': {
         'task': 'app.services.stock_sync_tasks.send_daily_sync_summary',
-        'schedule': crontab(hour=8, minute=0).__repr__()  # 8:00 UTC ежедневно
+        'schedule': crontab(hour=8, minute=0)  # 8:00 UTC ежедневно
     },
     'cleanup-old-sync-logs': {
         'task': 'app.services.stock_sync_tasks.cleanup_old_sync_logs',
-        'schedule': crontab(hour=2, minute=0).__repr__(),  # 02:00 UTC ежедневно
+        'schedule': crontab(hour=2, minute=0),  # 02:00 UTC ежедневно
         'kwargs': {'days_to_keep': 30}
     }
 }
+
+def serialize_schedule_for_redis(schedule):
+    """Сериализует расписание для сохранения в Redis, обрабатывая crontab объекты"""
+    serialized = {}
+    for name, config in schedule.items():
+        serialized_config = config.copy() if isinstance(config, dict) else config
+        if isinstance(config, dict) and 'schedule' in config:
+            schedule_obj = config['schedule']
+            if isinstance(schedule_obj, crontab):
+                # Извлекаем простые значения из crontab объекта
+                # Обрабатываем каждый атрибут отдельно, чтобы получить чистые значения
+                minute_val = schedule_obj.minute
+                hour_val = schedule_obj.hour
+                dow_val = schedule_obj.day_of_week
+                dom_val = schedule_obj.day_of_month
+                moy_val = schedule_obj.month_of_year
+                
+                # Преобразуем наборы чисел в простые значения или '*'
+                def format_cron_value(val):
+                    if hasattr(val, '__iter__') and not isinstance(val, str):
+                        # Если это итерируемое значение (набор чисел)
+                        val_list = list(val) if val else []
+                        if len(val_list) == 1:
+                            return str(val_list[0])
+                        elif not val_list:
+                            return '*'
+                        else:
+                            return ','.join(map(str, sorted(val_list)))
+                    return str(val) if val is not None else '*'
+                
+                # Создаем строковое представление с простыми значениями
+                serialized_config['schedule'] = f"crontab(minute={format_cron_value(minute_val)}, hour={format_cron_value(hour_val)}, day_of_week={format_cron_value(dow_val)}, day_of_month={format_cron_value(dom_val)}, month_of_year={format_cron_value(moy_val)})"
+            elif hasattr(schedule_obj, '__dict__'):
+                # Для других объектов расписания используем их строковое представление
+                serialized_config['schedule'] = str(schedule_obj)
+        serialized[name] = serialized_config
+    return serialized
 
 def initialize_beat_schedule():
     """Инициализирует и синхронизирует расписание в Redis с DEFAULT_BEAT_SCHEDULE"""
@@ -214,10 +281,13 @@ def initialize_beat_schedule():
         redis_client = get_redis_client()
         schedule_raw = redis_client.get("celery_beat_schedule")
         
+        # Сериализуем DEFAULT_BEAT_SCHEDULE для сохранения в Redis
+        serialized_default = serialize_schedule_for_redis(DEFAULT_BEAT_SCHEDULE)
+        
         if not schedule_raw:
             # Если расписания нет - создаем новое из дефолтного
             logger.info("Инициализация начального расписания в Redis")
-            redis_client.set("celery_beat_schedule", json.dumps(DEFAULT_BEAT_SCHEDULE))
+            redis_client.set("celery_beat_schedule", json.dumps(serialized_default))
             logger.info("Начальное расписание успешно установлено")
             return
 
@@ -225,7 +295,7 @@ def initialize_beat_schedule():
         current_schedule = json.loads(schedule_raw.decode("utf-8"))
         schedule_updated = False
 
-        for task_name, task_config in DEFAULT_BEAT_SCHEDULE.items():
+        for task_name, task_config in serialized_default.items():
             if task_name not in current_schedule:
                 # Добавляем отсутствующую задачу
                 current_schedule[task_name] = task_config

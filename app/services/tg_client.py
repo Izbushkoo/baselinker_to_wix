@@ -1,7 +1,8 @@
 import os
 import time
+import random
 from typing import Optional, Dict, Any, List
-import logging 
+import logging
 import httpx
 
 
@@ -33,14 +34,16 @@ class TelegramManager:
         disable_web_page_preview: bool = False,
         disable_notification: bool = False,
         max_retries: int = 5,
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """
-        Send a text message to a chat, with handling of 429 errors.
+        Send a text message to a chat, with enhanced handling of 429 errors.
 
         :param text: текст сообщения
         :param chat_id: приоритетный chat_id, иначе используется self.chat_id
         :param max_retries: сколько раз пытаться при 429
+        :return: Dict с данными ответа при успехе, None при полном провале
         """
+        logger = logging.getLogger("telegram.client")
         target = chat_id or self.chat_id
         if target is None:
             raise RuntimeError("chat_id is not specified")
@@ -55,41 +58,97 @@ class TelegramManager:
             payload["parse_mode"] = parse_mode
 
         attempts = 0
-        while True:
+        base_delay = 1  # Базовая задержка для экспоненциального backoff
+        
+        while attempts <= max_retries:
             try:
+                if attempts > 0:
+                    logger.info(f"Telegram send attempt {attempts + 1}/{max_retries + 1} for chat {target}")
+                    
                 r = self._client.post("/sendMessage", json=payload)
                 r.raise_for_status()
                 data = r.json()
+                
                 if not data.get("ok", False):
-                    raise RuntimeError(f"Telegram API error: {data.get('description')}")
+                    error_desc = data.get('description', 'Unknown error')
+                    logger.error(f"Telegram API error: {error_desc}")
+                    raise RuntimeError(f"Telegram API error: {error_desc}")
+                    
+                if attempts > 0:
+                    logger.info(f"Telegram message sent successfully after {attempts} retries to chat {target}")
+                
                 return data
 
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
+                attempts += 1
+                
                 if status == 400:
-                    print('Telegram 400 error:', exc.response.text)
-                if status == 429 and attempts < max_retries:
-                    attempts += 1
-                    # попытаться прочитать retry_after из тела или заголовков
+                    logger.error(f'Telegram 400 error: {exc.response.text}')
+                    # 400 ошибки не retry-able
+                    return None
+                    
+                elif status == 429:
+                    if attempts > max_retries:
+                        logger.error(f"Telegram 429 error: max retries ({max_retries}) exceeded for chat {target}")
+                        return None
+                        
+                    # Получаем retry_after из ответа
                     retry_after = None
                     try:
                         body = exc.response.json()
-                        logging.info(f"Retry after: {body}")
                         retry_after = body.get("parameters", {}).get("retry_after")
-
+                        logger.info(f"Telegram 429 error: retry_after={retry_after}, attempt {attempts}/{max_retries + 1}")
                     except Exception:
                         pass
+                        
                     if retry_after is None:
                         retry_after = exc.response.headers.get("Retry-After")
-                    # приводим к int
-                    try:
-                        wait = int(retry_after)
-                    except Exception:
-                        wait = 1
-                    time.sleep(wait + 1)
+                        
+                    # Определяем время ожидания
+                    if retry_after:
+                        try:
+                            server_wait = int(retry_after)
+                        except Exception:
+                            server_wait = base_delay
+                    else:
+                        # Экспоненциальный backoff если сервер не указал время
+                        server_wait = base_delay * (2 ** (attempts - 1))
+                    
+                    # Добавляем jitter для предотвращения thundering herd
+                    jitter = random.uniform(0.1, 0.5)
+                    total_wait = server_wait + jitter
+                    
+                    logger.info(f"Telegram rate limited, waiting {total_wait:.1f}s before retry {attempts}")
+                    time.sleep(total_wait)
                     continue
-                # иначе пробрасываем ошибку
-                raise
+                else:
+                    logger.error(f"Telegram HTTP error {status}: {exc.response.text}")
+                    if attempts > max_retries:
+                        return None
+                    
+                    # Для других HTTP ошибок делаем экспоненциальный backoff
+                    wait_time = base_delay * (2 ** (attempts - 1)) + random.uniform(0.1, 0.5)
+                    logger.info(f"Waiting {wait_time:.1f}s before retry {attempts} due to HTTP {status}")
+                    time.sleep(wait_time)
+                    continue
+                    
+            except Exception as exc:
+                attempts += 1
+                logger.error(f"Telegram unexpected error: {exc}")
+                
+                if attempts > max_retries:
+                    logger.error(f"Telegram send failed after {max_retries} retries: {exc}")
+                    return None
+                
+                # Экспоненциальный backoff для неожиданных ошибок
+                wait_time = base_delay * (2 ** (attempts - 1)) + random.uniform(0.1, 0.5)
+                logger.info(f"Waiting {wait_time:.1f}s before retry {attempts} due to unexpected error")
+                time.sleep(wait_time)
+                continue
+        
+        logger.error(f"Telegram send failed: maximum attempts exceeded")
+        return None
 
     def get_updates(
         self,
@@ -373,7 +432,7 @@ if __name__ == "__main__":
             print("⚠ Не удалось удалить webhook, продолжаем...")
         
         print("Поиск групп где бот является администратором...")
-        admin_groups = tg_manager.discover_admin_groups_live()
+        admin_groups = tg_manager.discover_admin_groups()
         
         if admin_groups:
             print(f"\nНайдено {len(admin_groups)} групп:")

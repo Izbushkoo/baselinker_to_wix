@@ -19,6 +19,8 @@ from app.schemas.stock_synchronization import (
 from app.services.Allegro_Microservice.orders_endpoint import OrdersClient
 from app.services.Allegro_Microservice.tokens_endpoint import AllegroTokenMicroserviceClient
 from app.services.warehouse.manager import InventoryManager, get_manager
+from app.services.stock_validation_service import StockValidationService
+from app.services.stock_sync_notifications import get_notification_service
 from app.core.stock_sync_config import stock_sync_config
 from app.core.security import create_access_token
 from app.core.config import settings
@@ -34,16 +36,18 @@ class StockSynchronizationService:
     """
     
     def __init__(
-        self, 
-        session: Session, 
-        orders_client: OrdersClient = OrdersClient(jwt_token=jwt_token),
-        tokens_client: AllegroTokenMicroserviceClient = AllegroTokenMicroserviceClient(jwt_token=jwt_token),
-        inventory_manager: InventoryManager = get_manager()
+        self,
+        session: Session,
+        orders_client: Optional[OrdersClient] = None,
+        tokens_client: Optional[AllegroTokenMicroserviceClient] = None,
+        inventory_manager: Optional[InventoryManager] = None
     ):
         self.session = session
-        self.orders_client = orders_client
-        self.tokens_client = tokens_client
-        self.inventory_manager = inventory_manager
+        self.orders_client = orders_client or OrdersClient(jwt_token=jwt_token)
+        self.tokens_client = tokens_client or AllegroTokenMicroserviceClient(jwt_token=jwt_token)
+        self.inventory_manager = inventory_manager or get_manager()
+        self.validation_service = StockValidationService(session, self.inventory_manager)
+        self.notification_service = get_notification_service(session)
         self.logger = logging.getLogger("stock.sync")
         self.config = stock_sync_config
     
@@ -58,6 +62,157 @@ class StockSynchronizationService:
             self.logger.warning(f"Failed to get account name for token {token_id}: {e}")
             return f"Unknown({token_id})"
     
+    def create_order_processing_operation(
+        self,
+        token_id: str,
+        order_id: str,
+        warehouse: str = "Ирина"
+    ) -> SyncResult:
+        """
+        Создание операции обработки заказа для последующей обработки системой синхронизации.
+        Детали заказа будут получены позже при обработке.
+        
+        Args:
+            token_id: ID токена Allegro из микросервиса
+            order_id: ID заказа
+            warehouse: Склад для списания
+            
+        Returns:
+            SyncResult с информацией о созданной операции
+        """
+        operation_id = None
+        account_name = self._get_account_name_by_token_id(token_id)
+        
+        try:
+            # Создаем запись операции без данных заказа (будут загружены при обработке)
+            operation = PendingStockOperation(
+                order_id=order_id,
+                operation_type=OperationType.DEDUCTION,
+                warehouse=warehouse,
+                token_id=token_id,
+                account_name=account_name,
+                next_retry_at=datetime.utcnow() + timedelta(seconds=self.config.retry_initial_delay)
+            )
+            self.session.add(operation)
+            self.session.commit()
+            operation_id = operation.id
+            
+            self._log_operation(
+                operation.id,
+                "created",
+                f"Операция создана для заказа {order_id}, аккаунт {account_name}"
+            )
+            
+            return SyncResult(
+                success=True,
+                operation_id=operation_id,
+                details={"account_name": account_name, "queued_for_processing": True}
+            )
+                
+        except Exception as e:
+            self.logger.error(f"Error creating order processing operation for account {account_name}: {e}")
+            if operation_id:
+                self._log_operation(operation_id, "error", f"Исключение: {str(e)}")
+            return SyncResult(
+                success=False,
+                operation_id=operation_id,
+                error=str(e),
+                details={"account_name": account_name}
+            )
+
+    def update_operation_account_name(self, operation: PendingStockOperation) -> bool:
+        """
+        Обновляет поле account_name для существующей операции.
+        
+        Args:
+            operation: Операция для обновления
+            
+        Returns:
+            bool: True если обновление прошло успешно
+        """
+        try:
+            if not operation.account_name:
+                account_name = self._get_account_name_by_token_id(operation.token_id)
+                operation.account_name = account_name
+                operation.updated_at = datetime.utcnow()
+                self.session.commit()
+                
+                self._log_operation(
+                    operation.id,
+                    "account_name_updated",
+                    f"Имя аккаунта обновлено на: {account_name}"
+                )
+                return True
+            return True
+        except Exception as e:
+            self.logger.error(f"Error updating account name for operation {operation.id}: {e}")
+            return False
+
+    def create_stock_deduction_operation(
+        self,
+        token_id: str,
+        order_id: str,
+        sku: str,
+        quantity: int,
+        warehouse: str = "Ирина"
+    ) -> SyncResult:
+        """
+        Создание операции списания для последующей обработки системой синхронизации.
+        
+        Args:
+            token_id: ID токена Allegro из микросервиса
+            order_id: ID заказа
+            sku: SKU товара
+            quantity: Количество для списания
+            warehouse: Склад для списания
+            
+        Returns:
+            SyncResult с информацией о созданной операции
+        """
+        operation_id = None
+        account_name = self._get_account_name_by_token_id(token_id)
+        
+        try:
+            # Создаем запись операции со старой логикой (для совместимости)
+            operation = PendingStockOperation(
+                order_id=order_id,
+                operation_type=OperationType.DEDUCTION,
+                warehouse=warehouse,
+                token_id=token_id,
+                account_name=account_name,
+                next_retry_at=datetime.utcnow() + timedelta(seconds=self.config.retry_initial_delay),
+                line_items=[{
+                    "offer": {"external": {"id": sku}},
+                    "quantity": quantity
+                }]
+            )
+            self.session.add(operation)
+            self.session.commit()
+            operation_id = operation.id
+            
+            self._log_operation(
+                operation.id,
+                "created",
+                f"Операция создана для заказа {order_id}, аккаунт {account_name}"
+            )
+            
+            return SyncResult(
+                success=True,
+                operation_id=operation_id,
+                details={"account_name": account_name, "queued_for_processing": True}
+            )
+                
+        except Exception as e:
+            self.logger.error(f"Error creating stock deduction operation for account {account_name}: {e}")
+            if operation_id:
+                self._log_operation(operation_id, "error", f"Исключение: {str(e)}")
+            return SyncResult(
+                success=False,
+                operation_id=operation_id,
+                error=str(e),
+                details={"account_name": account_name}
+            )
+
     def sync_stock_deduction(
         self,
         token_id: str,
@@ -83,15 +238,18 @@ class StockSynchronizationService:
         account_name = self._get_account_name_by_token_id(token_id)
         
         try:
-            # Создаем запись операции
+            # Создаем запись операции со старой логикой (для совместимости)
             operation = PendingStockOperation(
                 order_id=order_id,
                 operation_type=OperationType.DEDUCTION,
-                sku=sku,
-                quantity=quantity,
                 warehouse=warehouse,
                 token_id=token_id,
-                next_retry_at=datetime.utcnow() + timedelta(seconds=self.config.retry_initial_delay)
+                account_name=account_name,
+                next_retry_at=datetime.utcnow() + timedelta(seconds=self.config.retry_initial_delay),
+                line_items=[{
+                    "offer": {"external": {"id": sku}},
+                    "quantity": quantity
+                }]
             )
             self.session.add(operation)
             self.session.commit()
@@ -100,48 +258,23 @@ class StockSynchronizationService:
             self._log_operation(
                 operation.id,
                 "created",
-                f"Operation created for order {order_id}, account {account_name}"
+                f"Операция создана для заказа {order_id}, аккаунт {account_name}"
             )
             
-            # Немедленная попытка синхронизации
-            sync_success = self._try_sync_with_microservice(operation)
-            
-            if sync_success:
-                operation.status = OperationStatus.COMPLETED
-                operation.completed_at = datetime.utcnow()
-                self.session.commit()
-                
-                self._log_operation(
-                    operation.id, 
-                    "completed", 
-                    f"Immediate sync successful for account {account_name}"
-                )
-                return SyncResult(
-                    success=True, 
-                    operation_id=operation_id,
-                    details={"account_name": account_name, "immediate_sync": True}
-                )
-            else:
-                # Оставляем в pending для retry
-                self._log_operation(
-                    operation.id, 
-                    "queued", 
-                    f"Immediate sync failed for account {account_name}, queued for retry"
-                )
-                return SyncResult(
-                    success=False, 
-                    operation_id=operation_id, 
-                    error="Immediate sync failed, queued for retry",
-                    details={"account_name": account_name, "queued_for_retry": True}
-                )
+            # Операция создана и будет обработана process_pending_operations
+            return SyncResult(
+                success=True,
+                operation_id=operation_id,
+                details={"account_name": account_name, "queued_for_processing": True}
+            )
                 
         except Exception as e:
             self.logger.error(f"Error in sync_stock_deduction for account {account_name}: {e}")
             if operation_id:
-                self._log_operation(operation_id, "error", f"Exception: {str(e)}")
+                self._log_operation(operation_id, "error", f"Исключение: {str(e)}")
             return SyncResult(
-                success=False, 
-                operation_id=operation_id, 
+                success=False,
+                operation_id=operation_id,
                 error=str(e),
                 details={"account_name": account_name}
             )
@@ -172,7 +305,7 @@ class StockSynchronizationService:
                 self._log_operation(
                     operation.id, 
                     "sync_success", 
-                    "Microservice sync successful",
+                    "Синхронизация с микросервисом успешна",
                     execution_time_ms=execution_time
                 )
                 return True
@@ -181,7 +314,7 @@ class StockSynchronizationService:
                 self._log_operation(
                     operation.id, 
                     "sync_failed", 
-                    f"Microservice sync failed: {error_msg}",
+                    f"Синхронизация с микросервисом провалена: {error_msg}",
                     execution_time_ms=execution_time
                 )
                 # Обновляем сообщение об ошибке в операции
@@ -194,7 +327,7 @@ class StockSynchronizationService:
             self._log_operation(
                 operation.id, 
                 "sync_error", 
-                f"Exception: {str(e)}"
+                f"Исключение: {str(e)}"
             )
             # Обновляем сообщение об ошибке в операции
             operation.error_message = str(e)
@@ -202,12 +335,13 @@ class StockSynchronizationService:
             return False
     
     def _log_operation(
-        self, 
-        operation_id: UUID, 
-        action: str, 
-        details: str, 
+        self,
+        operation_id: UUID,
+        action: str,
+        details: str,
         execution_time_ms: Optional[int] = None,
-        status: str = "info"
+        status: str = "info",
+        detailed_info: Optional[Dict[str, Any]] = None
     ):
         """
         Логирование операции синхронизации.
@@ -218,13 +352,18 @@ class StockSynchronizationService:
             details: Детальное описание
             execution_time_ms: Время выполнения в миллисекундах
             status: Статус (info, warning, error)
+            detailed_info: Дополнительная детальная информация (например, данные валидации)
         """
         try:
+            log_details = {"message": details}
+            if detailed_info:
+                log_details.update(detailed_info)
+            
             log_entry = StockSynchronizationLog(
                 operation_id=operation_id,
                 action=action,
                 status=status,
-                details={"message": details},
+                details=log_details,
                 execution_time_ms=execution_time_ms
             )
             self.session.add(log_entry)
@@ -232,6 +371,191 @@ class StockSynchronizationService:
         except Exception as e:
             self.logger.error(f"Failed to log operation {operation_id}: {e}")
     
+    def _get_order_line_items(self, token_id: str, order_id: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        Получение lineItems заказа от микросервиса.
+        
+        Args:
+            token_id: ID токена
+            order_id: ID заказа
+            
+        Returns:
+            List[Dict] с позициями заказа или None при ошибке
+        """
+        try:
+            token_uuid = UUID(token_id)
+            
+            # Получаем детали заказа через микросервис
+            order_response = self.orders_client.get_order_by_id(token_uuid, order_id)
+            
+            if order_response and order_response.orders:
+                order_data = order_response.orders[0]
+                line_items = order_data.get('lineItems', [])
+                return line_items if line_items else None
+            else:
+                self.logger.warning(f"Order {order_id} not found in microservice for token {token_id}")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Failed to get order line items from microservice for order {order_id}: {e}")
+            return None
+
+    def _ensure_line_items_loaded(self, operation: PendingStockOperation) -> bool:
+        """
+        Проверяет и загружает line_items если они еще не загружены.
+        Также обновляет account_name если он не заполнен.
+        
+        Args:
+            operation: Операция синхронизации
+            
+        Returns:
+            bool: True если line_items доступны, False при ошибке
+        """
+        # Обновляем account_name если он не заполнен
+        self.update_operation_account_name(operation)
+        
+        # Если line_items уже загружены, возвращаем True
+        if operation.line_items:
+            return True
+        
+        account_name = operation.account_name or self._get_account_name_by_token_id(operation.token_id)
+        
+        self._log_operation(
+            operation.id,
+            "loading_line_items",
+            f"Загрузка позиций заказа из микросервиса для заказа {operation.order_id} (аккаунт: {account_name})"
+        )
+        
+        # Получаем line_items от микросервиса
+        line_items = self._get_order_line_items(operation.token_id, operation.order_id)
+        
+        if not line_items:
+            error_msg = "Не удалось загрузить позиции заказа из микросервиса"
+            operation.error_message = error_msg
+            self._log_operation(
+                operation.id,
+                "line_items_load_failed",
+                error_msg,
+                status="error"
+            )
+            return False
+        
+        # Сохраняем line_items в операцию
+        operation.line_items = line_items
+        operation.updated_at = datetime.utcnow()
+        self.session.commit()
+        
+        self._log_operation(
+            operation.id,
+            "line_items_loaded",
+            f"Загружено {len(line_items)} позиций заказа для заказа {operation.order_id}"
+        )
+        
+        return True
+
+    def _validate_and_deduct_stock(self, operation: PendingStockOperation) -> bool:
+        """
+        Валидирует наличие всех позиций заказа и выполняет списание.
+        
+        Args:
+            operation: Операция синхронизации с загруженными line_items
+            
+        Returns:
+            bool: True если все списания выполнены успешно, False при ошибке
+        """
+        if not operation.line_items:
+            operation.error_message = "No line items available for stock deduction"
+            return False
+        
+        account_name = self._get_account_name_by_token_id(operation.token_id)
+        
+        # Создаем поддельный order_data для валидации
+        order_data = {"lineItems": operation.line_items}
+        
+        # Валидация наличия всех позиций
+        validation_result = self.validation_service.validate_order_stock_availability(
+            order_data, operation.warehouse
+        )
+        
+        if not validation_result.valid:
+            # Подготавливаем детальную информацию для логирования
+            validation_details = {
+                "total_items": validation_result.total_items,
+                "valid_items": validation_result.valid_items,
+                "invalid_items": validation_result.invalid_items,
+                "validation_errors": validation_result.error_summary,
+                "items_details": []
+            }
+            
+            # Добавляем детали по каждому товару
+            for sku, item_validation in validation_result.validation_details.items():
+                item_detail = {
+                    "sku": item_validation.sku,
+                    "warehouse": item_validation.warehouse,
+                    "required_quantity": item_validation.required_quantity,
+                    "available_quantity": item_validation.available_quantity,
+                    "shortage_quantity": item_validation.shortage_quantity,
+                    "shortage_percentage": item_validation.shortage_percentage,
+                    "error_message": item_validation.error_message,
+                    "valid": item_validation.valid
+                }
+                validation_details["items_details"].append(item_detail)
+            
+            # Отправляем уведомление о недоступности товаров с детальным логированием
+            self._log_operation(
+                operation.id,
+                "stock_validation_failed",
+                f"Провал валидации остатков: {validation_result.invalid_items} из {validation_result.total_items} позиций недоступно",
+                execution_time_ms=None,
+                status="warning",
+                detailed_info=validation_details
+            )
+            
+            # Отправляем уведомление в главный чат о провале валидации заказа
+            self.notification_service.notify_order_validation_failure(
+                token_id=operation.token_id,
+                order_id=operation.order_id,
+                account_name=account_name,
+                validation_errors=validation_result.error_summary,
+                order_details={"lineItems": operation.line_items} if operation.line_items else None,
+                operation_id=str(operation.id)
+            )
+            
+            operation.error_message = f"Stock validation failed: {validation_result.invalid_items} of {validation_result.total_items} items unavailable"
+            return False
+        
+        # Все позиции доступны - выполняем списание
+        try:
+            for item in operation.line_items:
+                offer = item.get('offer', {})
+                external = offer.get('external', {})
+                sku = external.get('id')
+                quantity = item.get('quantity', 0)
+                
+                if not sku or quantity <= 0:
+                    continue
+                
+                # Выполняем списание для данной позиции
+                self.inventory_manager.remove_as_sale(
+                    sku,
+                    operation.warehouse,
+                    quantity
+                )
+                
+                self._log_operation(
+                    operation.id,
+                    "stock_deducted",
+                    f"Успешно списано {quantity} единиц товара {sku} со склада {operation.warehouse}"
+                )
+            
+            return True
+            
+        except Exception as e:
+            error_msg = f"Failed to deduct stock: {str(e)}"
+            self.logger.error(f"Stock deduction failed for order {operation.order_id} (account {account_name}): {error_msg}")
+            operation.error_message = error_msg
+            return False
+
     def process_pending_operations(self, limit: int = 50) -> ProcessingResult:
         """
         Обработка операций из очереди с retry логикой.
@@ -246,12 +570,14 @@ class StockSynchronizationService:
         
         # Получаем операции готовые для retry
         now = datetime.utcnow()
+        # Получаем операции готовые для обработки:
+        # - PENDING (нужно списание + синхронизация)
+        # - PROCESSING (только синхронизация, списание уже выполнено)
         statement = (
             select(PendingStockOperation)
             .where(
-                PendingStockOperation.status == OperationStatus.PENDING,
-                PendingStockOperation.next_retry_at <= now,
-                PendingStockOperation.retry_count < PendingStockOperation.max_retries
+                PendingStockOperation.status.in_([OperationStatus.PENDING, OperationStatus.PROCESSING, OperationStatus.FAILED]),
+                PendingStockOperation.next_retry_at <= now
             )
             .order_by(PendingStockOperation.created_at)
             .limit(limit)
@@ -263,18 +589,128 @@ class StockSynchronizationService:
             result.processed += 1
             account_name = self._get_account_name_by_token_id(operation.token_id)
             
-            # Обновляем статус на processing
-            operation.status = OperationStatus.PROCESSING
+            # Увеличиваем счетчик попыток
             operation.retry_count += 1
+            
+            # Если операция в PENDING - нужно выполнить списание
+            if operation.status == OperationStatus.PENDING:
+                self._log_operation(
+                    operation.id,
+                    "processing_started",
+                    f"Попытка обработки #{operation.retry_count} для аккаунта {account_name} - загрузка данных заказа и выполнение списания"
+                )
+                
+                # Загружаем line_items если их еще нет
+                if not self._ensure_line_items_loaded(operation):
+                    # Если не удалось загрузить line_items, переходим к обработке ошибки
+                    if False:  # removed max_retries limit for infinite retries
+                        operation.status = OperationStatus.FAILED
+                        result.max_retries_reached += 1
+                        
+                        self._log_operation(
+                            operation.id,
+                            "line_items_max_retries",
+                            f"Достигнуто максимальное количество попыток загрузки позиций заказа",
+                            status="error"
+                        )
+                    else:
+                        # Exponential backoff для следующей попытки
+                        delay = min(
+                            self.config.retry_initial_delay * (self.config.retry_exponential_base ** (operation.retry_count - 1)),
+                            self.config.retry_max_delay
+                        )
+                        operation.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
+                        result.failed += 1
+                        
+                        self._log_operation(
+                            operation.id,
+                            "line_items_retry_scheduled",
+                            f"Не удалось загрузить позиции заказа, повторная попытка через {delay}с",
+                            status="warning"
+                        )
+                    
+                    operation.updated_at = datetime.utcnow()
+                    self.session.commit()
+                    
+                    # Добавляем детали о неудачной загрузке
+                    result.details.append({
+                        "operation_id": str(operation.id),
+                        "account_name": account_name,
+                        "order_id": operation.order_id,
+                        "retry_count": operation.retry_count,
+                        "status": operation.status,
+                        "success": False,
+                        "error_type": "line_items_load_failed",
+                        "error_message": operation.error_message or "Failed to load line items"
+                    })
+                    continue
+                
+                # Валидируем и выполняем списание
+                if self._validate_and_deduct_stock(operation):
+                    # Переводим в PROCESSING после успешного списания
+                    operation.status = OperationStatus.PROCESSING
+                    self._log_operation(
+                        operation.id,
+                        "stock_deduction_completed",
+                        f"Списание выполнено для заказа {operation.order_id}"
+                    )
+                else:
+                    # Списание не удалось
+                    if False:  # removed max_retries limit for infinite retries
+                        operation.status = OperationStatus.FAILED
+                        result.max_retries_reached += 1
+                        
+                        self._log_operation(
+                            operation.id,
+                            "stock_deduction_max_retries",
+                            f"Достигнуто максимальное количество попыток списания: {operation.error_message}",
+                            status="error"
+                        )
+                    else:
+                        # Возвращаем в PENDING для повторной попытки
+                        operation.status = OperationStatus.PENDING
+                        
+                        # Exponential backoff для следующей попытки
+                        delay = min(
+                            self.config.retry_initial_delay * (self.config.retry_exponential_base ** (operation.retry_count - 1)),
+                            self.config.retry_max_delay
+                        )
+                        operation.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
+                        result.failed += 1
+                        
+                        self._log_operation(
+                            operation.id,
+                            "stock_deduction_retry_scheduled",
+                            f"Списание провалено, повторная попытка через {delay}с: {operation.error_message}",
+                            status="warning"
+                        )
+                    
+                    operation.updated_at = datetime.utcnow()
+                    self.session.commit()
+                    
+                    # Добавляем детали о неудачном списании
+                    result.details.append({
+                        "operation_id": str(operation.id),
+                        "account_name": account_name,
+                        "order_id": operation.order_id,
+                        "retry_count": operation.retry_count,
+                        "status": operation.status,
+                        "success": False,
+                        "error_type": "stock_deduction_failed",
+                        "error_message": operation.error_message or "Stock deduction failed"
+                    })
+                    continue
+            else:
+                # Операция уже в PROCESSING - списание выполнено, только синхронизация
+                self._log_operation(
+                    operation.id,
+                    "sync_retry",
+                    f"Повторная попытка синхронизации #{operation.retry_count} для аккаунта {account_name} - остатки уже списаны"
+                )
+            
             self.session.commit()
             
-            self._log_operation(
-                operation.id,
-                "retry",
-                f"Retry attempt {operation.retry_count} for account {account_name}"
-            )
-            
-            # Попытка синхронизации
+            # Попытка синхронизации с микросервисом
             sync_success = self._try_sync_with_microservice(operation)
             
             if sync_success:
@@ -284,16 +720,16 @@ class StockSynchronizationService:
                 self._log_operation(
                     operation.id, 
                     "completed", 
-                    f"Retry {operation.retry_count} successful for account {account_name}"
+                    f"Попытка #{operation.retry_count} успешна для аккаунта {account_name}"
                 )
             else:
-                if operation.retry_count >= operation.max_retries:
+                if False:  # removed max_retries limit for infinite retries
                     operation.status = OperationStatus.FAILED
                     result.max_retries_reached += 1
                     self._log_operation(
                         operation.id, 
                         "max_retries", 
-                        f"Max retries reached: {operation.max_retries} for account {account_name}",
+                        f"Достигнуто максимальное количество попыток: {operation.max_retries} для аккаунта {account_name}",
                         status="error"
                     )
                 else:
@@ -308,7 +744,7 @@ class StockSynchronizationService:
                     self._log_operation(
                         operation.id, 
                         "retry_failed", 
-                        f"Retry {operation.retry_count} failed for account {account_name}, next in {delay}s",
+                        f"Попытка #{operation.retry_count} провалена для аккаунта {account_name}, следующая через {delay}с",
                         status="warning"
                     )
             
@@ -319,11 +755,11 @@ class StockSynchronizationService:
             result.details.append({
                 "operation_id": str(operation.id),
                 "account_name": account_name,
-                "sku": operation.sku,
                 "order_id": operation.order_id,
                 "retry_count": operation.retry_count,
                 "status": operation.status,
-                "success": sync_success
+                "success": sync_success,
+                "line_items_count": len(operation.line_items) if operation.line_items else 0
             })
         
         self.logger.info(f"Processed {result.processed} operations: {result.succeeded} succeeded, {result.failed} failed, {result.max_retries_reached} max retries reached")
@@ -445,7 +881,7 @@ class StockSynchronizationService:
                         "token_id": str(token_id),
                         "local_deducted": local_stock_updated,
                         "remote_updated": remote_stock_updated,
-                        "sku": local_operation.sku if local_operation else "unknown",
+                        "line_items": local_operation.line_items if local_operation else [],
                         "discrepancy_type": "stock_status_mismatch",
                         "can_auto_fix": self._can_auto_fix_discrepancy(local_stock_updated, remote_stock_updated),
                         "timestamp": datetime.utcnow().isoformat()
@@ -479,11 +915,10 @@ class StockSynchronizationService:
                 token_id = discrepancy['token_id']
                 order_id = discrepancy['order_id']
                 
-                result = self.sync_stock_deduction(
+                # Для автоисправления создаем простую операцию заказа
+                result = self.create_order_processing_operation(
                     token_id=token_id,
                     order_id=order_id,
-                    sku=discrepancy.get('sku', 'unknown'),
-                    quantity=1,  # Предполагаем 1 единицу для расхождения
                     warehouse="Ирина"
                 )
                 
@@ -523,7 +958,7 @@ class StockSynchronizationService:
             self._log_operation(
                 operation_id, 
                 "rolled_back", 
-                f"Operation rolled back manually"
+                f"Операция отменена вручную"
             )
             
             # TODO: Здесь можно добавить логику для отката изменений в микросервисе

@@ -10,7 +10,6 @@ from app.schemas.stock_synchronization import (
     OrderValidationResult
 )
 
-
 class StockValidationService:
     """
     Сервис для валидации складских остатков перед синхронизацией.
@@ -126,6 +125,7 @@ class StockValidationService:
             OrderValidationResult с детальной информацией по каждому товару
         """
         result = OrderValidationResult(valid=True)
+        # logger.info(f"order Data in validate_order_stock_availability: {order_data}")
         line_items = order_data.get("lineItems", [])
         
         if not line_items:

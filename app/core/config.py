@@ -3,7 +3,7 @@ import logging
 import secrets
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import AnyHttpUrl, HttpUrl, PostgresDsn, field_validator, ValidationInfo
+from pydantic import AnyHttpUrl, HttpUrl, PostgresDsn, field_validator, ValidationInfo, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from dotenv import load_dotenv
@@ -45,6 +45,9 @@ class Settings(BaseSettings):
         raise ValueError(v)
 
     PROJECT_NAME: str = "baselinker_to_wix"
+    
+    # Base URL для генерации ссылок в уведомлениях (например, для Telegram)
+    BASE_URL: Optional[str] = None
 
     SENTRY_DSN: Optional[HttpUrl] = None
 

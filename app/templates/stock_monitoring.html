@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+
+{% block title %}Мониторинг синхронизации складов{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Заголовок -->
+    <div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl text-white p-8 mb-8 text-center">
+        <h1 class="text-4xl font-bold mb-3">📊 Мониторинг синхронизации складов</h1>
+        <p class="text-xl opacity-90">Система отслеживания операций списания товаров</p>
+    </div>
+
+    <!-- Статистика -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="bg-white rounded-xl shadow-lg p-6 text-center hover:transform hover:-translate-y-1 transition-transform duration-300">
+            <div class="text-4xl font-bold text-blue-600 mb-2" id="total-operations">{{ total_operations_24h }}</div>
+            <div class="text-gray-600 text-lg">Всего операций за 24ч</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-lg p-6 text-center hover:transform hover:-translate-y-1 transition-transform duration-300">
+            <div class="text-4xl font-bold text-red-600 mb-2" id="failed-operations">{{ failed_operations_24h }}</div>
+            <div class="text-gray-600 text-lg">Провальных операций</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-lg p-6 text-center hover:transform hover:-translate-y-1 transition-transform duration-300">
+            <div class="text-4xl font-bold text-yellow-600 mb-2" id="pending-operations">{{ pending_operations }}</div>
+            <div class="text-gray-600 text-lg">В ожидании</div>
+        </div>
+    </div>
+
+    <!-- Таблица операций -->
+    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+        <div class="bg-gray-800 text-white px-6 py-4">
+            <h3 class="text-xl font-semibold">📋 Список операций</h3>
+        </div>
+        
+        <!-- Фильтры -->
+        <div class="bg-gray-50 px-6 py-4 border-b">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">ID заказа</label>
+                    <input type="text" id="order-filter" placeholder="Введите ID заказа" 
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Имя аккаунта</label>
+                    <input type="text" id="account-filter" placeholder="Введите имя аккаунта" 
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Статус</label>
+                    <select id="status-filter" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">Все статусы</option>
+                        <option value="pending">В ожидании</option>
+                        <option value="processing">В обработке</option>
+                        <option value="completed">Завершено</option>
+                        <option value="failed">Провалено</option>
+                        <option value="cancelled">Отменено</option>
+                    </select>
+                </div>
+                <div class="flex items-end">
+                    <button id="apply-filters" class="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors">
+                        Применить фильтры
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="max-h-96 overflow-y-auto">
+            <!-- Индикатор загрузки -->
+            <div id="loading" class="flex items-center justify-center py-16">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                <span class="ml-3 text-gray-600 text-lg">Загрузка данных...</span>
+            </div>
+            
+            <!-- Сообщение об ошибке -->
+            <div id="error" class="hidden bg-red-50 border border-red-200 text-red-700 px-6 py-4 mx-6 my-4 rounded-lg"></div>
+            
+            <!-- Таблица -->
+            <table id="operations-table" class="hidden w-full">
+                <thead class="bg-gray-50 sticky top-0">
+                    <tr>
+                        <th class="px-6 py-4 text-left text-sm font-semibold text-gray-900">ID заказа</th>
+                        <th class="px-6 py-4 text-left text-sm font-semibold text-gray-900">Имя аккаунта</th>
+                        <th class="px-6 py-4 text-left text-sm font-semibold text-gray-900">Статус</th>
+                        <th class="px-6 py-4 text-left text-sm font-semibold text-gray-900">Попытки</th>
+                        <th class="px-6 py-4 text-left text-sm font-semibold text-gray-900">Ошибка</th>
+                        <th class="px-6 py-4 text-left text-sm font-semibold text-gray-900">Действия</th>
+                    </tr>
+                </thead>
+                <tbody id="operations-tbody" class="divide-y divide-gray-200">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Время последнего обновления -->
+    <div class="text-center text-gray-500 text-sm mt-6" id="last-updated">
+        Последнее обновление: {{ timestamp }}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Автоматическое обновление каждые 30 секунд
+    let autoRefreshInterval;
+    
+    // Загрузка операций при загрузке страницы
+    document.addEventListener('DOMContentLoaded', function() {
+        loadOperations();
+        startAutoRefresh();
+        
+        // Добавляем обработчики для фильтров
+        document.getElementById('apply-filters').addEventListener('click', function() {
+            loadOperations();
+        });
+        
+        // Поиск по Enter в полях фильтров
+        document.getElementById('order-filter').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') loadOperations();
+        });
+        
+        document.getElementById('account-filter').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') loadOperations();
+        });
+    });
+
+    function startAutoRefresh() {
+        autoRefreshInterval = setInterval(() => {
+            refreshData();
+        }, 30000); // 30 секунд
+    }
+
+    function stopAutoRefresh() {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+        }
+    }
+
+    async function refreshData() {
+        // Обновляем статистику
+        try {
+            const healthResponse = await fetch('/api/stock-sync/health', { 
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
+            if (healthResponse.ok) {
+                const healthData = await healthResponse.json();
+                updateStats(healthData.health_data);
+            } else if (healthResponse.status === 401) {
+                // Перенаправляем на страницу входа при ошибке аутентификации
+                window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+                return;
+            }
+        } catch (error) {
+            console.error('Ошибка обновления статистики:', error);
+        }
+        
+        // Обновляем список операций
+        await loadOperations();
+    }
+
+    function updateStats(healthData) {
+        document.getElementById('pending-operations').textContent = healthData.pending_operations || 0;
+        document.getElementById('last-updated').textContent = `Последнее обновление: ${new Date().toLocaleString('ru-RU')}`;
+    }
+
+    async function loadOperations() {
+        const loading = document.getElementById('loading');
+        const error = document.getElementById('error');
+        const table = document.getElementById('operations-table');
+
+        // Показываем индикатор загрузки
+        loading.classList.remove('hidden');
+        error.classList.add('hidden');
+        table.classList.add('hidden');
+
+        try {
+            // Собираем параметры фильтров
+            const orderFilter = document.getElementById('order-filter').value.trim();
+            const accountFilter = document.getElementById('account-filter').value.trim();
+            const statusFilter = document.getElementById('status-filter').value;
+            
+            let url = '/api/stock-sync/operations?limit=100';
+            const params = new URLSearchParams();
+            
+            if (orderFilter) params.append('order_id', orderFilter);
+            if (accountFilter) params.append('account_name', accountFilter);
+            if (statusFilter) params.append('status', statusFilter);
+            
+            if (params.toString()) {
+                url += '&' + params.toString();
+            }
+
+            const response = await fetch(url, { 
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.status === 401) {
+                // Перенаправляем на страницу входа при ошибке аутентификации
+                window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+                return;
+            }
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                renderOperationsTable(data.operations);
+            } else {
+                throw new Error(data.message || 'Неизвестная ошибка');
+            }
+            
+        } catch (err) {
+            console.error('Ошибка загрузки операций:', err);
+            error.textContent = `Ошибка загрузки данных: ${err.message}`;
+            error.classList.remove('hidden');
+        } finally {
+            loading.classList.add('hidden');
+        }
+    }
+
+    function renderOperationsTable(operations) {
+        const tbody = document.getElementById('operations-tbody');
+        const table = document.getElementById('operations-table');
+        
+        tbody.innerHTML = '';
+        
+        if (operations.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="px-6 py-16 text-center text-gray-500">
+                        Нет данных для отображения
+                    </td>
+                </tr>
+            `;
+        } else {
+            operations.forEach(op => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50 transition-colors duration-150';
+                
+                const statusClass = op.status === 'failed' ? 'bg-red-100 text-red-800' : 
+                                   op.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 
+                                   op.status === 'processing' ? 'bg-blue-100 text-blue-800' :
+                                   op.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                   'bg-gray-100 text-gray-800';
+                
+                const statusText = {
+                    'pending': 'В ожидании',
+                    'processing': 'В обработке',
+                    'completed': 'Завершено',
+                    'failed': 'Провалено',
+                    'cancelled': 'Отменено'
+                }[op.status] || op.status;
+                
+                const errorText = op.error_message || 'Нет данных';
+                const shortError = errorText.length > 50 ? errorText.substring(0, 50) + '...' : errorText;
+                
+                // Получаем имя аккаунта из token_id или line_items
+                let accountName = 'Неизвестно';
+                if (op.account_name) {
+                    accountName = op.account_name;
+                } else if (op.token_id) {
+                    accountName = op.token_id.substring(0, 8) + '...';
+                }
+                
+                row.innerHTML = `
+                    <td class="px-6 py-4 text-sm text-gray-900 font-mono">
+                        ${op.order_id}
+                    </td>
+                    <td class="px-6 py-4 text-sm text-gray-900">
+                        ${accountName}
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="inline-flex px-3 py-1 text-xs font-semibold rounded-full ${statusClass}">
+                            ${statusText}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 text-sm text-gray-900">
+                        ${op.retry_count || 0}
+                    </td>
+                    <td class="px-6 py-4 text-sm text-gray-600" title="${errorText}">
+                        ${shortError}
+                    </td>
+                    <td class="px-6 py-4">
+                        <a href="/stock-sync/monitor/operation/${op.id}" 
+                           class="inline-flex items-center px-3 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors duration-150">
+                            📋 Детали
+                        </a>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+        
+        table.classList.remove('hidden');
+    }
+
+    // Остановка автообновления при уходе со страницы
+    window.addEventListener('beforeunload', function() {
+        stopAutoRefresh();
+    });
+</script>
+{% endblock %}

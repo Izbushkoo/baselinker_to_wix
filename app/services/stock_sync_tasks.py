@@ -444,11 +444,16 @@ def validate_pending_operations(self, limit: int = 100):
             
             for operation in pending_operations:
                 try:
-                    # Валидируем операцию
+                    # Валидируем операцию, извлекая SKU и количество из line_items
+                    if not operation.line_items:
+                        continue
+                    item = operation.line_items[0]
+                    sku = item.get("offer", {}).get("external", {}).get("id")
+                    required_quantity = item.get("quantity")
                     validation_result = validation_service.validate_stock_deduction(
-                        sku=operation.sku,
+                        sku=sku,
                         warehouse=operation.warehouse,
-                        required_quantity=operation.quantity
+                        required_quantity=required_quantity
                     )
                     
                     validated_count += 1
@@ -508,12 +513,12 @@ def register_stock_sync_tasks():
             'kwargs': {'limit': 50}
         },
         
-        # Валидация pending операций каждые 15 минут  
-        'validate-pending-operations': {
-            'task': 'app.services.stock_sync_tasks.validate_pending_operations',
-            'schedule': 900.0,  # 15 минут
-            'kwargs': {'limit': 100}
-        },
+        # # Валидация pending операций каждые 15 минут  
+        # 'validate-pending-operations': {
+        #     'task': 'app.services.stock_sync_tasks.validate_pending_operations',
+        #     'schedule': 900.0,  # 15 минут
+        #     'kwargs': {'limit': 100}
+        # },
         
         # Сверка состояний каждый час
         'reconcile-stock-states': {
@@ -535,11 +540,11 @@ def register_stock_sync_tasks():
         },
         
         # Очистка старых логов каждые 24 часа в 02:00 UTC
-        'cleanup-old-sync-logs': {
-            'task': 'app.services.stock_sync_tasks.cleanup_old_sync_logs',
-            'schedule': crontab(hour=2, minute=0).__repr__(),
-            'kwargs': {'days_to_keep': 30}
-        }
+        # 'cleanup-old-sync-logs': {
+        #     'task': 'app.services.stock_sync_tasks.cleanup_old_sync_logs',
+        #     'schedule': crontab(hour=2, minute=0).__repr__(),
+        #     'kwargs': {'days_to_keep': 30}
+        # }
     }
     
     return STOCK_SYNC_SCHEDULE

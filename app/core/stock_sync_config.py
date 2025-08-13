@@ -12,7 +12,10 @@ class StockSyncConfig(BaseSettings):
     
     Настройки можно переопределить через переменные окружения с префиксом STOCK_SYNC_
     """
-    
+    TELEGRAM_MAIN_CHAT_ID: int = None
+    TELEGRAM_CRITICAL_CHAT_ID: int = None
+    TELEGRAM_TECHNICAL_CHAT_ID: int = None
+
     # Настройки retry механизма
     retry_max_attempts: int = 5
     retry_initial_delay: int = 60  # секунды
@@ -49,9 +52,11 @@ class StockSyncConfig(BaseSettings):
     cleanup_failed_operations_days: int = 90
     cleanup_logs_days: int = 60
     
+    validation_low_stock_threshold: int = 5
+
     model_config = {
         "env_prefix": "STOCK_SYNC_",
-        "env_file": ".env",
+        "env_file": ".env.docker",
         "extra": "ignore"  # Игнорировать дополнительные поля из .env
     }
 

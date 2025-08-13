@@ -12,7 +12,6 @@ from app.services.Allegro_Microservice.models import (
     SyncHistory,
     SyncResult,
     DataQualityReport,
-    OrderDetailResponse,
     OrderTechnicalFlags,
     TechnicalFlagsSummary,
     OrderStatusUpdate,
@@ -164,7 +163,7 @@ class OrdersClient(BaseClient):
         self,
         token_id: UUID,
         order_id: str
-    ) -> OrderDetailResponse:
+    ) -> OrdersListResponse:
         params = {"token_id": str(token_id)}
         resp = requests.get(
             f"{self.orders_url}/{order_id}",
@@ -174,7 +173,7 @@ class OrdersClient(BaseClient):
         )
         resp.raise_for_status()
         data = resp.json()
-        return OrderDetailResponse(order=data)
+        return OrdersListResponse(**data)
 
     def sync_single_order(
         self,
