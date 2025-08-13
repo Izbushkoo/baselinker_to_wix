@@ -117,6 +117,61 @@ document.addEventListener('DOMContentLoaded', function() {
     const imageInput = document.getElementById('image');
     const imagePreview = document.getElementById('imagePreview');
     
+    // Функция для получения параметров из URL
+    function getUrlParameter(name) {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get(name);
+    }
+    
+    // Предзаполнение полей из URL параметров
+    function prefillFields() {
+        const sku = getUrlParameter('sku');
+        const name = getUrlParameter('name');
+        const quantity = getUrlParameter('quantity');
+        
+        if (sku) {
+            document.getElementById('sku').value = sku;
+        }
+        if (name) {
+            document.getElementById('name').value = name;
+        }
+        if (quantity) {
+            document.getElementById('quantity').value = quantity;
+        }
+        
+        // Если есть предзаполненные данные, показываем уведомление
+        if (sku || name || quantity) {
+            showPrefillNotification();
+        }
+    }
+    
+    // Показываем уведомление о предзаполнении
+    function showPrefillNotification() {
+        const notification = document.createElement('div');
+        notification.className = 'fixed top-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-opacity duration-300';
+        notification.innerHTML = `
+            <div class="flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>Поля предзаполнены данными из операции</span>
+            </div>
+        `;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 5000);
+    }
+    
+    // Предзаполняем поля при загрузке страницы
+    prefillFields();
+    
     // Предпросмотр изображения
     imageInput.addEventListener('change', function(e) {
         const file = e.target.files[0];

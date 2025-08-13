@@ -171,6 +171,78 @@
     </div>
     {% endif %}
 
+    <!-- Товары операции -->
+    <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-xl font-bold text-gray-800">📦 Товары операции</h3>
+            {% if operation.line_items and operation.line_items|length > 0 %}
+            <a href="/catalog?operation_skus={% for item in operation.line_items %}{{ item.offer.external.id }}{% if not loop.last %},{% endif %}{% endfor %}" 
+               class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2">
+                🛍️ Перейти к товарам
+            </a>
+            {% endif %}
+        </div>
+
+        {% if operation.line_items and operation.line_items|length > 0 %}
+        <div class="grid gap-4">
+            {% for item in operation.line_items %}
+            <div class="border rounded-lg p-4 bg-gray-50">
+                <div class="flex justify-between items-start mb-3">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="font-mono font-bold text-gray-800">{{ item.offer.external.id }}</span>
+                            <button onclick="copyToClipboard('{{ item.offer.external.id }}')" 
+                                    class="text-blue-600 hover:text-blue-800 p-1 rounded transition-colors duration-200" 
+                                    title="Копировать SKU">
+                                📋
+                            </button>
+                        </div>
+                        
+                        {% if item.offer.name %}
+                        <div class="text-gray-700 mb-2">
+                            <strong>Название:</strong> {{ item.offer.name }}
+                        </div>
+                        {% endif %}
+                        
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            <div class="text-center p-3 bg-white rounded-lg">
+                                <div class="text-2xl font-bold text-blue-600">{{ item.quantity }}</div>
+                                <div class="text-sm text-gray-600">Количество</div>
+                            </div>
+                            {% if item.price and item.price.amount %}
+                            <div class="text-center p-3 bg-white rounded-lg">
+                                <div class="text-2xl font-bold text-green-600">{{ "%.2f"|format(item.price.amount|float) }}</div>
+                                <div class="text-sm text-gray-600">{{ item.price.currency or 'PLN' }}</div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="flex flex-col gap-2 ml-4">
+                        {% if item.product_exists %}
+                        <a href="/catalog?search={{ item.offer.external.id }}" 
+                           class="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm font-medium transition-colors duration-200 flex items-center gap-1">
+                            ➡️ К товару
+                        </a>
+                        {% else %}
+                        <a href="/products/add?sku={{ item.offer.external.id }}&name={{ item.offer.name|urlencode }}&quantity={{ item.quantity }}" 
+                           class="bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded text-sm font-medium transition-colors duration-200 flex items-center gap-1">
+                            ➕ Создать товар
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-12 text-gray-500">
+            <div class="text-6xl mb-4">📦</div>
+            <div class="text-lg">Товары операции не найдены</div>
+        </div>
+        {% endif %}
+    </div>
+
     <!-- История попыток -->
     <div class="bg-white rounded-xl shadow-lg p-6">
         <div class="flex justify-between items-center mb-6">

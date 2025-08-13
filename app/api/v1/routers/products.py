@@ -43,6 +43,7 @@ async def catalog(
     min_stock_filter: Optional[int] = None,
     brand_filter: Optional[str] = None,
     sort_order: Optional[str] = None,
+    operation_skus: Optional[str] = None,
     db: AsyncSession = Depends(deps.get_async_session),
     current_user: User = Depends(deps.get_current_user_optional)
 ):
@@ -54,7 +55,7 @@ async def catalog(
         return RedirectResponse(url=f"/login?next=/catalog", status_code=302)
 
     # Логирование параметров запроса
-    logger.info(f"Catalog request parameters: search={search}, stock_filter={stock_filter}, min_stock_filter={min_stock_filter}, brand_filter={brand_filter}, sort_order={sort_order}")
+    logger.info(f"Catalog request parameters: search={search}, stock_filter={stock_filter}, min_stock_filter={min_stock_filter}, brand_filter={brand_filter}, sort_order={sort_order}, operation_skus={operation_skus}")
 
     # Валидация и автоматическая коррекция фильтров
     if (stock_filter is not None and min_stock_filter is not None and 
@@ -83,6 +84,13 @@ async def catalog(
                 Product.eans.contains([search])
             )
         )
+
+    # Фильтр по SKU операции (приоритетный фильтр)
+    if operation_skus:
+        sku_list = [sku.strip() for sku in operation_skus.split(',') if sku.strip()]
+        if sku_list:
+            base_query = base_query.where(Product.sku.in_(sku_list))
+            logger.info(f"Применен фильтр по SKU операции: {sku_list}")
 
     # Собираем условия фильтров по количеству
     having_conditions = []
@@ -297,18 +305,31 @@ async def export_products(
 @web_router.get("/add", response_class=HTMLResponse)
 async def add_product_form(
     request: Request,
+    sku: Optional[str] = Query(None),
+    name: Optional[str] = Query(None),
+    quantity: Optional[int] = Query(None),
     current_user: User = Depends(deps.get_current_user_from_cookie)
 ):
     """Отображает форму добавления нового товара."""
     # Получаем список складов из перечисления
     warehouses = [w.value for w in Warehouses]
     
+    # Подготавливаем данные для предзаполнения
+    prefill_data = {}
+    if sku:
+        prefill_data['sku'] = sku
+    if name:
+        prefill_data['name'] = name
+    if quantity is not None:
+        prefill_data['quantity'] = quantity
+    
     return templates.TemplateResponse(
         "add_product.html",
         {
             "request": request,
             "user": current_user,
-            "warehouses": warehouses
+            "warehouses": warehouses,
+            "prefill_data": prefill_data
         }
     )
 

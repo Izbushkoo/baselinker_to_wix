@@ -1022,6 +1022,19 @@ async def operation_details_page(
                 logger.error(f"Ошибка обработки лога валидации {log.id}: {log_error}")
                 continue
         
+        # Проверяем существование товаров в базе, если есть line_items
+        if operation.line_items:
+            from app.models.warehouse import Product
+            
+            for item in operation.line_items:
+                # line_items содержит словари, обращаемся к ним как к словарям
+                if isinstance(item, dict) and 'offer' in item and 'external' in item['offer'] and 'id' in item['offer']['external']:
+                    sku = item['offer']['external']['id']
+                    # Проверяем существование товара в базе
+                    product = session.get(Product, sku)
+                    # Добавляем флаг существования товара к item (словарю)
+                    item['product_exists'] = product is not None
+        
         return templates.TemplateResponse("operation_details.html", {
             "request": request,
             "user": current_user,

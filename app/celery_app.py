@@ -213,11 +213,11 @@ DEFAULT_BEAT_SCHEDULE = {
         'schedule': 300,  # 5 минут
         'kwargs': {'limit': 50}
     },
-    'validate-pending-operations': {
-        'task': 'app.services.stock_sync_tasks.validate_pending_operations',
-        'schedule': 900,  # 15 минут
-        'kwargs': {'limit': 100}
-    },
+    # 'validate-pending-operations': {
+    #     'task': 'app.services.stock_sync_tasks.validate_pending_operations',
+    #     'schedule': 900,  # 15 минут
+    #     'kwargs': {'limit': 100}
+    # },
     'reconcile-stock-states': {
         'task': 'app.services.stock_sync_tasks.reconcile_stock_states',
         'schedule': 3600,  # 1 час
@@ -231,11 +231,11 @@ DEFAULT_BEAT_SCHEDULE = {
         'task': 'app.services.stock_sync_tasks.send_daily_sync_summary',
         'schedule': crontab(hour=8, minute=0)  # 8:00 UTC ежедневно
     },
-    'cleanup-old-sync-logs': {
-        'task': 'app.services.stock_sync_tasks.cleanup_old_sync_logs',
-        'schedule': crontab(hour=2, minute=0),  # 02:00 UTC ежедневно
-        'kwargs': {'days_to_keep': 30}
-    }
+    # 'cleanup-old-sync-logs': {
+    #     'task': 'app.services.stock_sync_tasks.cleanup_old_sync_logs',
+    #     'schedule': crontab(hour=2, minute=0),  # 02:00 UTC ежедневно
+    #     'kwargs': {'days_to_keep': 30}
+    # }
 }
 
 def serialize_schedule_for_redis(schedule):

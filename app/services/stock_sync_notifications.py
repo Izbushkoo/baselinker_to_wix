@@ -127,6 +127,12 @@ class StockSyncNotificationService:
         self.config = stock_sync_config
         self.base_url = settings.BASE_URL
         
+        # Логируем инициализацию BASE_URL
+        self.logger.info(f"StockSyncNotificationService инициализирован с BASE_URL: {self.base_url}")
+        
+        if not self.base_url:
+            self.logger.warning("BASE_URL не установлен в конфигурации! Ссылки в уведомлениях не будут работать.")
+        
         # Инициализируем Telegram менеджеры для разных типов уведомлений
         self._managers = {}
         self._init_telegram_managers()
@@ -392,7 +398,7 @@ class StockSyncNotificationService:
         # Добавляем ссылку на детали операции, если доступен базовый URL
         operation_url = self._get_operation_url(operation_id)
         if operation_url:
-            message += f"\n<a href=\"{operation_url}\">📋 Подробности</a>"
+            message += f"""\n<a href="{operation_url}">📋 Подробности</a>"""
         
         # Определяем приоритет по количеству попыток
         if retry_count >= self.config.retry_max_attempts - 1:
@@ -475,7 +481,7 @@ class StockSyncNotificationService:
         # Добавляем ссылку на мониторинг, если доступен базовый URL
         monitoring_url = self._get_monitoring_url("status=failed&days=7")
         if monitoring_url:
-            message += f"\n<a href=\"{monitoring_url}\">📋 Мониторинг</a>"
+            message += f"""\n<a href="{monitoring_url}">📋 Мониторинг</a>"""
         
         if order_id:
             message += f"\nЗаказ: <code>{order_id}</code>"
@@ -805,12 +811,18 @@ class StockSyncNotificationService:
         if operation_id:
             operation_url = self._get_operation_url(operation_id)
             if operation_url:
-                message += f"\n📋 Подробности операции: {operation_url}"
+                message += f"""\n<a href="{operation_url}">📋 Подробности операции</a>"""
+                self.logger.info(f"Добавлена ссылка на операцию: {operation_url}")
+            else:
+                self.logger.warning(f"Не удалось сгенерировать URL для операции {operation_id}, base_url={self.base_url}")
         else:
             # Fallback на мониторинг, если operation_id не передан
             monitoring_url = self._get_monitoring_url(f"order_id={order_id}&account={account_name}")
             if monitoring_url:
-                message += f"\n📋 Подробности: {monitoring_url}"
+                message += f"""\n<a href="{monitoring_url}">📋 Подробности</a>"""
+                self.logger.info(f"Добавлена ссылка на мониторинг: {monitoring_url}")
+            else:
+                self.logger.warning(f"Не удалось сгенерировать URL для мониторинга, base_url={self.base_url}")
         
         self._send_message(message, 'main', 'high', account_name)
         
