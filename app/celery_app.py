@@ -21,7 +21,7 @@ from app.core.config import settings
 from app.core.security import create_access_token
 from celery import chord, group, chain
 from celery.schedules import crontab, schedule
-from app.celery_shared import celery, SessionLocal, get_allegro_token
+from app.celery_shared import celery, SessionLocal, get_allegro_token, get_celery_session
 
 from app.services.warehouse.manager import Warehouses
 from app.services import baselinker as BL
@@ -491,8 +491,7 @@ def check_and_update_stock():
         total_updated = 0
         
         # Создаем сессию БД для работы со stock_service
-        session = SessionLocal()
-        try:
+        with get_celery_session() as session:
             stock_service = AllegroStockService(manager.get_manager())
 
             for token in tokens:
@@ -548,9 +547,6 @@ def check_and_update_stock():
                 "total_processed": total_processed,
                 "total_updated": total_updated
             }
-            
-        finally:
-            session.close()
 
     except Exception as e:
         logger.error(f"Ошибка при проверке и обновлении стоков: {str(e)}")
@@ -601,25 +597,25 @@ def sync_wix_inventory():
         }
     
     try:
-        session = SessionLocal()
-        wix_service = WixApiService()
-        
-        # Тестируем подключение к Wix API
-        connection_test = wix_service.test_connection()
-        if connection_test["status"] == "error":
-            logger.error(f"Ошибка подключения к Wix API: {connection_test['message']}")
-            return {
-                "status": "error",
-                "message": f"Ошибка подключения к Wix API: {connection_test['message']}",
-                "total_products": 0,
-                "found_in_wix": 0,
-                "updated_in_wix": 0,
-                "errors": 1
-            }
-        
-        logger.info("Подключение к Wix API успешно установлено")
-        
-        try:
+        # Используем отдельную сессию для Celery с контекстным менеджером
+        with get_celery_session() as session:
+            wix_service = WixApiService()
+            
+            # Тестируем подключение к Wix API
+            connection_test = wix_service.test_connection()
+            if connection_test["status"] == "error":
+                logger.error(f"Ошибка подключения к Wix API: {connection_test['message']}")
+                return {
+                    "status": "error",
+                    "message": f"Ошибка подключения к Wix API: {connection_test['message']}",
+                    "total_products": 0,
+                    "found_in_wix": 0,
+                    "updated_in_wix": 0,
+                    "errors": 1
+                }
+            
+            logger.info("Подключение к Wix API успешно установлено")
+            
             logger.info("Начало синхронизации количества товаров с Wix")
             
             # 1. Получаем все товары и их остатки из локальной базы
@@ -762,9 +758,6 @@ def sync_wix_inventory():
             
             logger.info(f"Синхронизация завершена: {result}")
             return result
-            
-        finally:
-            session.close()
             
     except Exception as e:
         logger.error(f"Критическая ошибка при синхронизации с Wix: {str(e)}")

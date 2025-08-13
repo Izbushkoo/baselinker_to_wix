@@ -1,3 +1,11 @@
+"""
+ * @file: app/services/warehouse/manager.py
+ * @description: Менеджер инвентаря для управления остатками на складах
+ * @dependencies: SQLModel, SQLAlchemy, models.warehouse, operations_service
+ * @created: 2025-01-13
+ * @updated: 2025-01-13 - Исправлены утечки сессий базы данных
+"""
+
 from sqlmodel import SQLModel, Field, Session, create_engine, select
 from sqlalchemy import Column, JSON, text, func
 from sqlalchemy.ext.asyncio import create_async_engine

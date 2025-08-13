@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from uuid import UUID
 
-from app.celery_shared import celery, SessionLocal, get_allegro_token
+from app.celery_shared import celery, SessionLocal, get_allegro_token, get_celery_session
 from app.services.stock_synchronization_service import StockSynchronizationService
 from app.services.stock_validation_service import StockValidationService
 from app.services.stock_sync_notifications import stock_sync_notifications
@@ -40,8 +40,7 @@ def process_pending_stock_operations(self, limit: int = 50):
         Dict: Результат обработки с детальной статистикой
     """
     try:
-        session = SessionLocal()
-        try:
+        with get_celery_session() as session:
             # Создаем JWT токен для работы с микросервисом
             jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
             
@@ -82,9 +81,6 @@ def process_pending_stock_operations(self, limit: int = 50):
                 "task_id": self.request.id
             }
             
-        finally:
-            session.close()
-            
     except Exception as e:
         logger.error(f"Ошибка при обработке pending операций: {e}")
         # Отправляем уведомление об ошибке
@@ -114,8 +110,7 @@ def reconcile_stock_states(self, token_id: Optional[str] = None, limit: int = 10
         Dict: Результат сверки
     """
     try:
-        session = SessionLocal()
-        try:
+        with get_celery_session() as session:
             # Создаем JWT токен для работы с микросервисом
             jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
             
@@ -176,9 +171,6 @@ def reconcile_stock_states(self, token_id: Optional[str] = None, limit: int = 10
                 "task_id": self.request.id
             }
             
-        finally:
-            session.close()
-            
     except Exception as e:
         logger.error(f"Ошибка при сверке состояний: {e}")
         # Отправляем уведомление об ошибке
@@ -205,8 +197,7 @@ def monitor_sync_system_health(self):
         Dict: Статистика состояния системы
     """
     try:
-        session = SessionLocal()
-        try:
+        with get_celery_session() as session:
             # Создаем JWT токен для работы с микросервисом
             jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
             
@@ -244,9 +235,6 @@ def monitor_sync_system_health(self):
                 "task_id": self.request.id
             }
             
-        finally:
-            session.close()
-            
     except Exception as e:
         logger.error(f"Ошибка при мониторинге системы: {e}")
         # Отправляем критическое уведомление об ошибке мониторинга
@@ -271,8 +259,7 @@ def send_daily_sync_summary(self):
         Dict: Результат отправки сводки
     """
     try:
-        session = SessionLocal()
-        try:
+        with get_celery_session() as session:
             # Создаем JWT токен для работы с микросервисом
             jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
             
@@ -318,9 +305,6 @@ def send_daily_sync_summary(self):
                 "task_id": self.request.id
             }
             
-        finally:
-            session.close()
-            
     except Exception as e:
         logger.error(f"Ошибка при отправке ежедневной сводки: {e}")
         stock_sync_notifications.notify_custom_alert(
@@ -354,8 +338,7 @@ def cleanup_old_sync_logs(self, days_to_keep: int = 30):
         from app.models.stock_synchronization import StockSynchronizationLog, OperationStatus
         from sqlmodel import select
         
-        session = SessionLocal()
-        try:
+        with get_celery_session() as session:
             # Вычисляем дату отсечки
             cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
             
@@ -381,9 +364,6 @@ def cleanup_old_sync_logs(self, days_to_keep: int = 30):
                 "cutoff_date": cutoff_date.isoformat(),
                 "task_id": self.request.id
             }
-            
-        finally:
-            session.close()
             
     except Exception as e:
         logger.error(f"Ошибка при очистке старых логов: {e}")
@@ -415,8 +395,7 @@ def validate_pending_operations(self, limit: int = 100):
         from app.models.stock_synchronization import PendingStockOperation, OperationStatus
         from sqlmodel import select
         
-        session = SessionLocal()
-        try:
+        with get_celery_session() as session:
             inventory_manager = get_manager()
             
             # Создаем сервис валидации
@@ -487,9 +466,6 @@ def validate_pending_operations(self, limit: int = 100):
                 "invalid_count": invalid_count,
                 "task_id": self.request.id
             }
-            
-        finally:
-            session.close()
             
     except Exception as e:
         logger.error(f"Ошибка при валидации pending операций: {e}")

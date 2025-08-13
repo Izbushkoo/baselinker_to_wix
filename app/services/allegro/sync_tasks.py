@@ -5,7 +5,7 @@
  * @created: 2024-06-13
 """
 
-from app.celery_shared import celery, SessionLocal, get_allegro_token
+from app.celery_shared import celery, SessionLocal, get_allegro_token, get_celery_session
 from app.models.allegro_token import AllegroToken
 from app.services.warehouse.manager import get_manager
 from app.services.allegro.rate_limiter import AllegroRateLimiter
@@ -29,7 +29,7 @@ def sync_allegro_stock_all_accounts():
     logger.info("[AllegroSync] Старт массовой синхронизации остатков по всем аккаунтам Allegro")
     
     # Получаем все активные токены Allegro
-    with SessionLocal() as session:
+    with get_celery_session() as session:
         tokens = session.exec(select(AllegroToken)).all()
     
     if not tokens:
@@ -65,7 +65,7 @@ def sync_allegro_stock_single_product(sku: str):
     logger.info(f"[AllegroSync] Старт синхронизации товара {sku} по всем аккаунтам Allegro")
     
     # Получаем все активные токены Allegro
-    with SessionLocal() as session:
+    with get_celery_session() as session:
         tokens = session.exec(select(AllegroToken)).all()
     
     if not tokens:
@@ -74,7 +74,7 @@ def sync_allegro_stock_single_product(sku: str):
     
     # Проверяем существование товара в БД
     from app.models.warehouse import Product
-    with SessionLocal() as session:
+    with get_celery_session() as session:
         product = session.exec(select(Product).where(Product.sku == sku)).first()
         if not product:
             logger.error(f"[AllegroSync] Товар с SKU {sku} не найден в БД")

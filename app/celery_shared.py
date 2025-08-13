@@ -24,7 +24,7 @@ if is_docker:
     print("Celery: Загружены переменные из .env.docker")
 
 from app.core.config import settings
-from app.database import engine
+from app.database import engine, CelerySessionLocal
 from app.models.allegro_token import AllegroToken
 
 # Настройки брокера (Redis)
@@ -63,6 +63,14 @@ celery.conf.update(
 
 # Создаем фабрику сессий
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=Session)
+
+# Функция для получения Celery-сессии
+def get_celery_session():
+    """
+    Возвращает новую сессию базы данных для использования в Celery задачах.
+    Использует отдельный пул соединений для Celery.
+    """
+    return CelerySessionLocal()
 
 def get_allegro_token(session: Session, token_id: str) -> AllegroToken:
     """

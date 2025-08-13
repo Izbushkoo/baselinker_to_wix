@@ -1,0 +1,21 @@
+ДЕТАЛЬНЫЙ ОТЧЁТ О ПРОБЛЕМАХ С СЕССИЯМИ
+==================================================
+
+Файл: ./fix_session_leaks.py
+Строка: 52
+Серьёзность: MEDIUM
+Проблема: Ручное закрытие сессии в finally (может быть излишним)
+Код: if 'session.close()' in line_stripped and 'finally:' in '\n'.join(lines[max(0,i-5):i]):
+------------------------------
+Файл: ./fix_session_leaks.py
+Строка: 75
+Серьёзность: MEDIUM
+Проблема: Потенциально длительная операция рядом с SessionLocal
+Код: if any(pattern in line_stripped.lower() for pattern in ['time.sleep', 'requests.', 'http']):
+------------------------------
+Файл: ./app/database.py
+Строка: 44
+Серьёзность: MEDIUM
+Проблема: Ручное закрытие сессии в finally (может быть излишним)
+Код: session.close()
+------------------------------
