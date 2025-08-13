@@ -43,7 +43,7 @@ from app.utils.date_utils import parse_date
 from app.drive import authenticate_service_account, imperson_auth
 from app.utils.dump_utils import dump_and_upload_to_drive
 import redis
-from celery.beat import PersistentScheduler, ScheduleEntry
+from celery.beat import PersistentScheduler, ScheduleEntry, Scheduler
 import json
 from collections import UserDict
 from app.services.stock_service import AllegroStockService
@@ -77,7 +77,7 @@ class RedisScheduler(PersistentScheduler):
         # Получаем URL Redis из переменной окружения (по умолчанию: redis://redis:6379/0)
         redis_url = os.getenv("CELERY_REDIS_URL", "redis://redis:6379/0")
         self.redis_client = redis.Redis.from_url(redis_url)
-        self.schedule_key = "celery_beat_schedule"
+        self.schedule_key = "celery_beat_schedule.db"
         self.last_schedule = None
         self.reload_schedule_from_redis()
 
