@@ -1,8 +1,9 @@
 from sqlmodel import SQLModel, Field, Session, create_engine, select, Relationship
 from sqlalchemy import Column, LargeBinary, ForeignKey
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from typing import List, Dict, Optional
 from datetime import datetime
+import uuid
 
 
 # ORM-модели
@@ -54,7 +55,10 @@ class Stock(SQLModel, table=True):
 
 class Sale(SQLModel, table=True):
     '''Лог продаж (списаний) для аналитики.'''
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: Optional[str] = Field(
+        default_factory=lambda: str(uuid.uuid4()),
+        primary_key=True
+    )
     sku: str = Field(
         sa_column=Column(
             ForeignKey("product.sku", ondelete="CASCADE", onupdate="CASCADE")
@@ -70,7 +74,10 @@ class Sale(SQLModel, table=True):
 
 class Transfer(SQLModel, table=True):
     '''Лог перемещений товаров между складами.'''
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: Optional[str] = Field(
+        default_factory=lambda: str(uuid.uuid4()),
+        primary_key=True
+    )
     sku: str = Field(
         sa_column=Column(
             ForeignKey("product.sku", ondelete="CASCADE", onupdate="CASCADE")
