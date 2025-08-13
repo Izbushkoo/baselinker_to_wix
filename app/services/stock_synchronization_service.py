@@ -62,6 +62,80 @@ class StockSynchronizationService:
             self.logger.warning(f"Failed to get account name for token {token_id}: {e}")
             return f"Unknown({token_id})"
     
+    def _check_order_status_in_microservice(self, token_id: str, order_id: str) -> Dict[str, Any]:
+        """
+        Проверяет текущее состояние заказа в микросервисе.
+        
+        Args:
+            token_id: ID токена Allegro
+            order_id: ID заказа
+            
+        Returns:
+            Dict с информацией о заказе или None при ошибке
+        """
+        try:
+            # Получаем актуальную информацию о заказе из микросервиса
+            order_response = self.orders_client.get_order_by_id(
+                token_id=UUID(token_id),
+                order_id=order_id
+            )
+            
+            if not order_response or not order_response.orders:
+                self.logger.warning(f"Заказ {order_id} не найден в микросервисе для токена {token_id}")
+                return None
+            
+            # Берем первый заказ (должен быть только один)
+            order_data = order_response.orders[0]
+            
+            # Извлекаем технические флаги
+            technical_flags = order_data.get("technical_flags", {})
+            is_stock_updated = technical_flags.get("is_stock_updated", False)
+            status = order_data.get("status")
+            fulfillment = order_data.get("fulfillment", {})
+            
+            return {
+                "order_id": order_id,
+                "status": status,
+                "is_stock_updated": is_stock_updated,
+                "fulfillment_status": fulfillment.get("status"),
+                "technical_flags": technical_flags,
+                "raw_data": order_data
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Ошибка при проверке состояния заказа {order_id} в микросервисе: {e}")
+            return None
+    
+    def _check_existing_operation(self, token_id: str, order_id: str) -> Optional[PendingStockOperation]:
+        """
+        Проверяет существование операции для данного заказа.
+        
+        Args:
+            token_id: ID токена Allegro
+            order_id: ID заказа
+            
+        Returns:
+            PendingStockOperation если операция существует, None если нет
+        """
+        try:
+            existing_operation = self.session.exec(
+                select(PendingStockOperation).where(
+                    PendingStockOperation.token_id == token_id,
+                    PendingStockOperation.order_id == order_id
+                )
+            ).first()
+            
+            if existing_operation:
+                self.logger.warning(
+                    f"Операция для заказа {order_id} (токен {token_id}) уже существует "
+                    f"со статусом {existing_operation.status} (ID: {existing_operation.id})"
+                )
+            
+            return existing_operation
+        except Exception as e:
+            self.logger.error(f"Ошибка при проверке существующей операции: {e}")
+            return None
+    
     def create_order_processing_operation(
         self,
         token_id: str,
@@ -82,6 +156,20 @@ class StockSynchronizationService:
         """
         operation_id = None
         account_name = self._get_account_name_by_token_id(token_id)
+        
+        # Проверяем существование операции для данного заказа
+        existing_operation = self._check_existing_operation(token_id, order_id)
+        if existing_operation:
+            return SyncResult(
+                success=True,
+                operation_id=existing_operation.id,
+                details={
+                    "account_name": account_name, 
+                    "already_exists": True,
+                    "status": existing_operation.status.value,
+                    "message": f"Операция для заказа {order_id} уже существует"
+                }
+            )
         
         try:
             # Создаем запись операции без данных заказа (будут загружены при обработке)
@@ -172,6 +260,20 @@ class StockSynchronizationService:
         operation_id = None
         account_name = self._get_account_name_by_token_id(token_id)
         
+        # Проверяем существование операции для данного заказа
+        existing_operation = self._check_existing_operation(token_id, order_id)
+        if existing_operation:
+            return SyncResult(
+                success=True,
+                operation_id=existing_operation.id,
+                details={
+                    "account_name": account_name, 
+                    "already_exists": True,
+                    "status": existing_operation.status.value,
+                    "message": f"Операция для заказа {order_id} уже существует"
+                }
+            )
+        
         try:
             # Создаем запись операции со старой логикой (для совместимости)
             operation = PendingStockOperation(
@@ -236,6 +338,20 @@ class StockSynchronizationService:
         """
         operation_id = None
         account_name = self._get_account_name_by_token_id(token_id)
+        
+        # Проверяем существование операции для данного заказа
+        existing_operation = self._check_existing_operation(token_id, order_id)
+        if existing_operation:
+            return SyncResult(
+                success=True,
+                operation_id=existing_operation.id,
+                details={
+                    "account_name": account_name, 
+                    "already_exists": True,
+                    "status": existing_operation.status.value,
+                    "message": f"Операция для заказа {order_id} уже существует"
+                }
+            )
         
         try:
             # Создаем запись операции со старой логикой (для совместимости)
@@ -597,8 +713,135 @@ class StockSynchronizationService:
                 self._log_operation(
                     operation.id,
                     "processing_started",
-                    f"Попытка обработки #{operation.retry_count} для аккаунта {account_name} - загрузка данных заказа и выполнение списания"
+                    f"Попытка обработки #{operation.retry_count} для аккаунта {account_name} - проверка состояния заказа и выполнение списания"
                 )
+                
+                # Проверяем текущее состояние заказа в микросервисе
+                order_status = self._check_order_status_in_microservice(operation.token_id, operation.order_id)
+                
+                if order_status is None:
+                    # Не удалось получить статус заказа - планируем повторную попытку
+                    delay = min(
+                        self.config.retry_initial_delay * (self.config.retry_exponential_base ** (operation.retry_count - 1)),
+                        self.config.retry_max_delay
+                    )
+                    operation.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
+                    result.failed += 1
+                    
+                    self._log_operation(
+                        operation.id,
+                        "order_status_check_failed",
+                        f"Не удалось проверить состояние заказа в микросервисе, повторная попытка через {delay}с",
+                        status="warning"
+                    )
+                    
+                    operation.updated_at = datetime.utcnow()
+                    self.session.commit()
+                    
+                    # Добавляем детали о неудачной проверке статуса
+                    result.details.append({
+                        "operation_id": str(operation.id),
+                        "account_name": account_name,
+                        "order_id": operation.order_id,
+                        "retry_count": operation.retry_count,
+                        "status": operation.status,
+                        "success": False,
+                        "error_type": "order_status_check_failed",
+                        "error_message": "Failed to check order status in microservice"
+                    })
+                    continue
+                
+                # Проверяем, не был ли заказ уже списан вручную
+                if order_status.get("is_stock_updated", False):
+                    # Заказ уже списан - помечаем операцию как завершенную
+                    operation.status = OperationStatus.COMPLETED
+                    operation.completed_at = datetime.utcnow()
+                    result.succeeded += 1
+                    
+                    self._log_operation(
+                        operation.id,
+                        "already_processed",
+                        f"Заказ {operation.order_id} уже был списан вручную в микросервисе - операция завершена"
+                    )
+                    
+                    operation.updated_at = datetime.utcnow()
+                    self.session.commit()
+                    
+                    # Добавляем детали о завершенной операции
+                    result.details.append({
+                        "operation_id": str(operation.id),
+                        "account_name": account_name,
+                        "order_id": operation.order_id,
+                        "retry_count": operation.retry_count,
+                        "status": operation.status,
+                        "success": True,
+                        "completion_reason": "already_processed_in_microservice",
+                        "order_status": order_status
+                    })
+                    continue
+                
+                # Проверяем статус заказа - должен быть READY_FOR_PROCESSING
+                if order_status.get("status") != "READY_FOR_PROCESSING":
+                    # Заказ не готов к обработке - планируем повторную попытку
+                    delay = min(
+                        self.config.retry_initial_delay * (self.config.retry_exponential_base ** (operation.retry_count - 1)),
+                        self.config.retry_max_delay
+                    )
+                    operation.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
+                    result.failed += 1
+                    
+                    self._log_operation(
+                        operation.id,
+                        "order_not_ready",
+                        f"Заказ {operation.order_id} не готов к обработке (статус: {order_status.get('status')}), повторная попытка через {delay}с",
+                        status="warning"
+                    )
+                    
+                    operation.updated_at = datetime.utcnow()
+                    self.session.commit()
+                    
+                    # Добавляем детали о неготовности заказа
+                    result.details.append({
+                        "operation_id": str(operation.id),
+                        "account_name": account_name,
+                        "order_id": operation.order_id,
+                        "retry_count": operation.retry_count,
+                        "status": operation.status,
+                        "success": False,
+                        "error_type": "order_not_ready",
+                        "error_message": f"Order status is {order_status.get('status')}, expected READY_FOR_PROCESSING",
+                        "order_status": order_status
+                    })
+                    continue
+                
+                # Проверяем, не отменен ли заказ
+                if order_status.get("fulfillment_status") == "CANCELLED":
+                    # Заказ отменен - помечаем операцию как завершенную
+                    operation.status = OperationStatus.COMPLETED
+                    operation.completed_at = datetime.utcnow()
+                    result.succeeded += 1
+                    
+                    self._log_operation(
+                        operation.id,
+                        "order_cancelled",
+                        f"Заказ {operation.order_id} отменен - операция завершена"
+                    )
+                    
+                    operation.updated_at = datetime.utcnow()
+                    self.session.commit()
+                    
+                    # Добавляем детали о завершенной операции
+                    result.details.append({
+                        "operation_id": str(operation.id),
+                        "account_name": account_name,
+                        "order_id": operation.order_id,
+                        "retry_count": operation.retry_count,
+                        "status": operation.status,
+                        "success": True,
+                        "completion_reason": "order_cancelled",
+                        "order_status": order_status
+                    })
+                    continue
                 
                 # Загружаем line_items если их еще нет
                 if not self._ensure_line_items_loaded(operation):
@@ -707,6 +950,37 @@ class StockSynchronizationService:
                     "sync_retry",
                     f"Повторная попытка синхронизации #{operation.retry_count} для аккаунта {account_name} - остатки уже списаны"
                 )
+                
+                # Проверяем, не был ли заказ уже обработан в микросервисе
+                order_status = self._check_order_status_in_microservice(operation.token_id, operation.order_id)
+                
+                if order_status and order_status.get("is_stock_updated", False):
+                    # Заказ уже обработан в микросервисе - помечаем операцию как завершенную
+                    operation.status = OperationStatus.COMPLETED
+                    operation.completed_at = datetime.utcnow()
+                    result.succeeded += 1
+                    
+                    self._log_operation(
+                        operation.id,
+                        "sync_completed",
+                        f"Заказ {operation.order_id} уже обработан в микросервисе - операция завершена"
+                    )
+                    
+                    operation.updated_at = datetime.utcnow()
+                    self.session.commit()
+                    
+                    # Добавляем детали о завершенной операции
+                    result.details.append({
+                        "operation_id": str(operation.id),
+                        "account_name": account_name,
+                        "order_id": operation.order_id,
+                        "retry_count": operation.retry_count,
+                        "status": operation.status,
+                        "success": True,
+                        "completion_reason": "already_synced_in_microservice",
+                        "order_status": order_status
+                    })
+                    continue
             
             self.session.commit()
             

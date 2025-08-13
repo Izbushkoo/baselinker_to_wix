@@ -347,6 +347,7 @@ def stop_events_task(token_id: str, db: Session = Depends(get_db)) -> Dict[str, 
             detail=f"Ошибка при остановке синхронизации: {str(e)}"
         )
 
+
 @router.get("/status-events/{token_id}")
 def get_events_status(token_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
@@ -381,6 +382,38 @@ def get_events_status(token_id: str, db: Session = Depends(get_db)) -> Dict[str,
             status_code=500,
             detail=f"Ошибка при остановке синхронизации: {str(e)}"
         )
+
+
+@router.get("/orders/{token_id}/{order_id}")
+async def get_order_info(
+    token_id: str,
+    order_id: str,
+    database: AsyncSession = Depends(deps.get_async_session)
+):
+    """
+    Получить информацию о заказе по token_id и order_id.
+    """
+    try:
+        orders_client = OrdersClient(
+            jwt_token=create_access_token(
+                user_id=settings.PROJECT_NAME
+            ),
+            base_url=settings.MICRO_SERVICE_URL
+        )
+
+        # Получаем информацию о заказе
+        from uuid import UUID
+        order_info = orders_client.get_order_by_id(UUID(token_id), order_id)
+        
+        # Возвращаем первый заказ из списка (должен быть только один)
+        if order_info.orders and len(order_info.orders) > 0:
+            return order_info.orders[0]
+        else:
+            raise HTTPException(status_code=404, detail="Заказ не найден")
+            
+    except Exception as e:
+        logger.error(f"Ошибка при получении информации о заказе: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.patch("/orders/{token_id}/{order_id}/mark_stock_updated")

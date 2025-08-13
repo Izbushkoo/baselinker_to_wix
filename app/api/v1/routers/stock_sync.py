@@ -1064,3 +1064,110 @@ async def operation_details_page(
             """,
             status_code=500
         )
+
+
+@web_router.get("/stock-sync/monitor/operation-by-order/{order_id}", response_class=HTMLResponse, summary="Страница деталей операции по order_id")
+async def operation_details_by_order_page(
+    order_id: str,
+    request: Request,
+    session: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user_optional)
+):
+    """
+    HTML страница с детальной информацией об операции по ID заказа.
+    Используется для перехода с страницы заказов Allegro.
+    """
+
+    if not current_user:
+        return RedirectResponse(url=f"/login?next=/stock-sync/monitor/operation-by-order/{order_id}", status_code=302)
+
+    try:
+        # Ищем операцию по order_id
+        operations = session.exec(
+            select(PendingStockOperation).where(
+                PendingStockOperation.order_id == order_id
+            ).order_by(PendingStockOperation.created_at.desc())
+        ).all()
+        
+        if not operations:
+            return HTMLResponse(
+                content=f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Операция не найдена</title>
+                    <meta charset="utf-8">
+                </head>
+                <body>
+                    <h1>Операция не найдена</h1>
+                    <p>Операция для заказа с ID {order_id} не существует.</p>
+                    <p>Возможно, заказ еще не был обработан или операция была удалена.</p>
+                </body>
+                </html>
+                """,
+                status_code=404
+            )
+        
+        # Берем самую последнюю операцию для этого заказа
+        operation = operations[0]
+        
+        # Получаем логи операции
+        logs = session.exec(
+            select(StockSynchronizationLog).where(
+                StockSynchronizationLog.operation_id == operation.id
+            ).order_by(StockSynchronizationLog.timestamp.desc())
+        ).all()
+        
+        # Получаем детали валидации
+        validation_details = None
+        for log in logs:
+            try:
+                if log.action == "stock_validation_failed" and "items_details" in log.details:
+                    validation_details = log.details
+                    break
+            except Exception as log_error:
+                logger.error(f"Ошибка обработки лога валидации {log.id}: {log_error}")
+                continue
+        
+        # Проверяем существование товаров в базе, если есть line_items
+        if operation.line_items:
+            from app.models.warehouse import Product
+            
+            for item in operation.line_items:
+                # line_items содержит словари, обращаемся к ним как к словарям
+                if isinstance(item, dict) and 'offer' in item and 'external' in item['offer'] and 'id' in item['offer']['external']:
+                    sku = item['offer']['external']['id']
+                    # Проверяем существование товара в базе
+                    product = session.get(Product, sku)
+                    # Добавляем флаг существования товара к item (словарю)
+                    item['product_exists'] = product is not None
+        
+        return templates.TemplateResponse("operation_details.html", {
+            "request": request,
+            "user": current_user,
+            "current_user": current_user,
+            "operation": operation,
+            "logs": logs,
+            "validation_details": validation_details,
+            "logs_count": len(logs)
+        })
+        
+    except Exception as e:
+        logger.error(f"Ошибка загрузки деталей операции для заказа {order_id}: {e}")
+        return HTMLResponse(
+            content=f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Ошибка загрузки операции</title>
+                <meta charset="utf-8">
+            </head>
+            <body>
+                <h1>Ошибка загрузки деталей операции</h1>
+                <p>Произошла ошибка: {str(e)}</p>
+                <p>ID заказа: {order_id}</p>
+            </body>
+            </html>
+            """,
+            status_code=500
+        )

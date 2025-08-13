@@ -2,6 +2,28 @@
 
 {% block title %}Детали операции {{ operation.id|string|truncate(8) }}... | Синхронизация складов{% endblock %}
 
+{% block extra_css %}
+<style>
+    .tooltip-text {
+        position: absolute;
+        z-index: 10;
+        background-color: #1f2937;
+        color: white;
+        padding: 0.5rem;
+        border-radius: 0.375rem;
+        font-size: 0.75rem;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+    
+    .group:hover .tooltip-text {
+        opacity: 1;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
     <!-- Заголовок -->
@@ -9,17 +31,37 @@
         <a href="/stock-sync/monitor" class="inline-block text-white hover:text-blue-200 mb-4 transition-colors duration-200">
             ← Назад к списку операций
         </a>
-        <h1 class="text-4xl font-bold mb-3">🔍 Детали операции</h1>
+        <h1 class="text-4xl font-bold mb-3">🔍 Детали операции заказа </h1>
         <div class="bg-white bg-opacity-20 text-sm font-mono px-3 py-2 rounded-lg inline-block">
-            ID: {{ operation.id }}
+            ID заказа: <button onclick="copyToClipboard('{{ operation.order_id }}', this)" class="font-mono text-blue-400 hover:text-blue-600 focus:outline-none bg-transparent relative group">
+                {{ operation.order_id }}
+                <span class="tooltip-text hidden group-hover:block absolute left-1/2 -translate-x-1/2 top-full mt-1 px-2 py-1 rounded bg-gray-800 text-xs text-white z-10 whitespace-nowrap">Скопировать ID заказа</span>
+            </button>
+        </div>
+        <div class="bg-white bg-opacity-20 text-sm font-mono px-3 py-2 rounded-lg inline-block">
+            ID операции: {{ operation.id }}
         </div>
     </div>
 
-    <!-- Кнопка обновления -->
-    <button onclick="location.reload()" 
-            class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 mb-8 flex items-center gap-2">
-        🔄 Обновить данные
-    </button>
+    <!-- Кнопки действий -->
+    <div class="flex gap-4 mb-8">
+        <button onclick="location.reload()" 
+                class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2">
+            🔄 Обновить данные
+        </button>
+        
+        {% if operation.order_id and operation.token_id and operation.account_name %}
+        <a href="/allegro/orders/{{ operation.token_id }}/{{ operation.account_name }}?search={{ operation.order_id }}" 
+           class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2">
+            📋 Перейти к заказу
+        </a>
+        {% elif operation.order_id %}
+        <a href="/synchronization" 
+           class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2">
+            📋 Перейти к заказам
+        </a>
+        {% endif %}
+    </div>
 
     <!-- Основная информация -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
@@ -53,8 +95,8 @@
                     {% endif %}
                 </div>
                 <div class="flex justify-between items-center">
-                    <span class="font-semibold text-gray-600">Token ID:</span>
-                    <span class="bg-gray-100 px-3 py-1 rounded font-mono text-sm">{{ operation.token_id|string|truncate(16) }}...</span>
+                    <span class="font-semibold text-gray-600">Аккаунт:</span>
+                    <span class="bg-gray-100 px-3 py-1 rounded font-mono text-sm">{{ operation.account_name or 'Не указан' }}</span>
                 </div>
             </div>
         </div>
@@ -175,12 +217,47 @@
     <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
         <div class="flex justify-between items-center mb-6">
             <h3 class="text-xl font-bold text-gray-800">📦 Товары операции</h3>
-            {% if operation.line_items and operation.line_items|length > 0 %}
-            <a href="/catalog?operation_skus={% for item in operation.line_items %}{{ item.offer.external.id }}{% if not loop.last %},{% endif %}{% endfor %}" 
-               class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2">
-                🛍️ Перейти к товарам
-            </a>
-            {% endif %}
+            <div class="flex items-center gap-3">
+                {% if operation.order_id and operation.token_id and operation.account_name %}
+                <!-- Кнопки управления списанием -->
+                <div class="flex items-center gap-2">
+                    <!-- Статус списания -->
+                    <div id="stock-status-{{ operation.order_id }}" class="px-3 py-1 rounded-full text-sm font-medium">
+                        {% if operation.line_items and operation.line_items|length > 0 %}
+                            {% set first_item = operation.line_items[0] %}
+                            {% if first_item.offer and first_item.offer.external and first_item.offer.external.id %}
+                                <span class="bg-gray-100 text-gray-800 px-3 py-1 rounded-full text-sm font-medium" id="status-indicator">
+                                    Загрузка статуса...
+                                </span>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Кнопка "Списать" -->
+                    <button onclick="saleFromOrder('{{ operation.order_id }}', '{{ operation.token_id }}')" 
+                            class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors duration-200 flex items-center gap-1"
+                            id="write-off-btn-{{ operation.order_id }}"
+                            data-warehouse="{{ operation.warehouse or 'Ирина' }}"
+                            data-line-items='{{ operation.line_items | tojson if operation.line_items else "[]" | safe }}'>
+                        📝 Списать
+                    </button>
+                    
+                    <!-- Кнопка "Пометить списанным" -->
+                    <button onclick="markOrderStockUpdated('{{ operation.order_id }}', '{{ operation.token_id }}')" 
+                            class="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors duration-200 flex items-center gap-1"
+                            id="mark-written-off-btn-{{ operation.order_id }}">
+                        ✅ Пометить списанным
+                    </button>
+                </div>
+                {% endif %}
+                
+                {% if operation.line_items and operation.line_items|length > 0 %}
+                <a href="/catalog?operation_skus={% for item in operation.line_items %}{{ item.offer.external.id }}{% if not loop.last %},{% endif %}{% endfor %}" 
+                   class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2">
+                    🛍️ Перейти к товарам
+                </a>
+                {% endif %}
+            </div>
         </div>
 
         {% if operation.line_items and operation.line_items|length > 0 %}
@@ -294,12 +371,31 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Скрытый элемент с данными для JavaScript -->
+<div id="operation-data" 
+     data-order-id="{{ operation.order_id or '' }}"
+     data-token-id="{{ operation.token_id or '' }}"
+     data-account-name="{{ operation.account_name or '' }}"
+     data-warehouse="{{ operation.warehouse or 'Ирина' }}"
+     data-status="{{ operation.status }}"
+     data-has-order-data="{{ 'true' if operation.order_id and operation.token_id and operation.account_name else 'false' }}"
+     style="display: none;">
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+    // Получаем данные операции из data-атрибутов
+    const operationData = document.getElementById('operation-data');
+    const operationOrderId = operationData.dataset.orderId;
+    const operationTokenId = operationData.dataset.tokenId;
+    const operationAccountName = operationData.dataset.accountName;
+    const operationWarehouse = operationData.dataset.warehouse;
+    const operationStatus = operationData.dataset.status;
+    const operationHasOrderData = operationData.dataset.hasOrderData === 'true';
+
     // Автоматическое обновление каждые 60 секунд для активных операций
-    const operationStatus = '{{ operation.status }}';
     if (operationStatus === 'pending' || operationStatus === 'processing') {
         setInterval(() => {
             location.reload();
@@ -307,21 +403,21 @@
     }
 
     // Функция копирования в буфер обмена
-    function copyToClipboard(text) {
+    function copyToClipboard(text, button) {
         if (navigator.clipboard && window.isSecureContext) {
             // Современный способ
             navigator.clipboard.writeText(text).then(() => {
-                showCopySuccess();
+                showCopySuccess(button);
             }).catch(() => {
-                fallbackCopy(text);
+                fallbackCopy(text, button);
             });
         } else {
             // Fallback для старых браузеров
-            fallbackCopy(text);
+            fallbackCopy(text, button);
         }
     }
 
-    function fallbackCopy(text) {
+    function fallbackCopy(text, button) {
         const textArea = document.createElement('textarea');
         textArea.value = text;
         textArea.style.position = 'fixed';
@@ -333,7 +429,7 @@
         
         try {
             document.execCommand('copy');
-            showCopySuccess();
+            showCopySuccess(button);
         } catch (err) {
             console.error('Failed to copy text: ', err);
         }
@@ -341,10 +437,10 @@
         document.body.removeChild(textArea);
     }
 
-    function showCopySuccess() {
+    function showCopySuccess(button) {
         // Создаем уведомление о копировании
         const notification = document.createElement('div');
-        notification.textContent = 'SKU скопирован!';
+        notification.textContent = 'ID скопирован!';
         notification.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-opacity duration-300';
         document.body.appendChild(notification);
         
@@ -371,6 +467,218 @@
                 card.style.transform = 'translateY(0)';
             }, index * 100);
         });
+
+        // Загружаем статус списания при загрузке страницы для всех заказов
+        if (operationHasOrderData) {
+            // Всегда загружаем статус от микросервиса - он является источником истины
+            console.log('Загружаем статус списания от микросервиса');
+            loadStockStatus(operationOrderId, operationTokenId);
+        }
     });
+
+    // Функция загрузки статуса списания
+    async function loadStockStatus(orderId, tokenId) {
+        try {
+            console.log(`Загружаем статус списания для заказа ${orderId} и токена ${tokenId}`);
+            
+            // Используем эндпоинт для получения списка заказов с правильными параметрами
+            const response = await fetch(`/api/allegro_sync/orders/${tokenId}`);
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Полный ответ от микросервиса:', data);
+                console.log('Тип ответа:', typeof data);
+                console.log('Ключи ответа:', Object.keys(data));
+                
+                // Ищем нужный заказ в списке
+                const order = data.orders ? data.orders.find(o => o.id === orderId) : null;
+                if (order) {
+                    console.log('Найден заказ:', order);
+                    console.log('Флаг is_stock_updated:', order.is_stock_updated);
+                    console.log('Тип флага is_stock_updated:', typeof order.is_stock_updated);
+                    
+                    // Проверяем, есть ли флаг is_stock_updated
+                    if (order.hasOwnProperty('is_stock_updated')) {
+                        updateStockStatus(orderId, order.is_stock_updated);
+                    } else {
+                        console.warn('Флаг is_stock_updated не найден в ответе микросервиса');
+                        // Пытаемся найти флаг в других возможных местах
+                        if (order.stock_updated !== undefined) {
+                            console.log('Найден флаг stock_updated:', order.stock_updated);
+                            updateStockStatus(orderId, order.stock_updated);
+                        } else {
+                            console.error('Не удалось найти флаг статуса списания в ответе');
+                            updateStockStatus(orderId, false);
+                        }
+                    }
+                } else {
+                    console.error(`Заказ ${orderId} не найден в списке заказов`);
+                    updateStockStatus(orderId, false);
+                }
+            } else {
+                console.error('Ошибка при загрузке статуса:', response.status, response.statusText);
+                // Устанавливаем статус "Не списано" по умолчанию
+                updateStockStatus(orderId, false);
+            }
+        } catch (error) {
+            console.error('Ошибка загрузки статуса списания:', error);
+            // Устанавливаем статус "Не списано" по умолчанию
+            updateStockStatus(orderId, false);
+        }
+    }
+
+    // Функция обновления отображения статуса списания
+    function updateStockStatus(orderId, isStockUpdated) {
+        console.log(`Обновляем статус для заказа ${orderId}: isStockUpdated = ${isStockUpdated} (тип: ${typeof isStockUpdated})`);
+        
+        const statusIndicator = document.getElementById('status-indicator');
+        const writeOffBtn = document.getElementById(`write-off-btn-${orderId}`);
+        const markWrittenOffBtn = document.getElementById(`mark-written-off-btn-${orderId}`);
+        
+        console.log('Найденные элементы:', {
+            statusIndicator: !!statusIndicator,
+            writeOffBtn: !!writeOffBtn,
+            markWrittenOffBtn: !!markWrittenOffBtn
+        });
+        
+        if (statusIndicator) {
+            if (isStockUpdated === true || isStockUpdated === 'true') {
+                console.log('Устанавливаем статус "Списано"');
+                statusIndicator.className = 'bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium';
+                statusIndicator.textContent = 'Списано';
+                
+                // Скрываем кнопки списания если уже списано
+                if (writeOffBtn) {
+                    writeOffBtn.style.display = 'none';
+                    console.log('Кнопка "Списать" скрыта');
+                }
+                if (markWrittenOffBtn) {
+                    markWrittenOffBtn.style.display = 'none';
+                    console.log('Кнопка "Пометить списанным" скрыта');
+                }
+            } else {
+                console.log('Устанавливаем статус "Не списано"');
+                statusIndicator.className = 'bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium';
+                statusIndicator.textContent = 'Не списано';
+                
+                // Показываем кнопки списания если не списано
+                if (writeOffBtn) {
+                    writeOffBtn.style.display = 'inline-flex';
+                    console.log('Кнопка "Списать" показана');
+                }
+                if (markWrittenOffBtn) {
+                    markWrittenOffBtn.style.display = 'inline-flex';
+                    console.log('Кнопка "Пометить списанным" показана');
+                }
+            }
+        } else {
+            console.error('Элемент status-indicator не найден');
+        }
+    }
+
+    // Функция списания товаров из заказа
+    async function saleFromOrder(orderId, tokenId) {
+        try {
+            console.log(`Начинаем списание для заказа ${orderId} и токена ${tokenId}`);
+            
+            // Получаем данные о товарах из data-атрибута кнопки
+            const writeOffBtn = document.getElementById(`write-off-btn-${orderId}`);
+            const lineItems = JSON.parse(writeOffBtn.dataset.lineItems);
+            const warehouse = writeOffBtn.dataset.warehouse;
+            
+            console.log('Данные для списания:', {
+                orderId,
+                tokenId,
+                lineItems,
+                warehouse
+            });
+            
+            if (!lineItems || lineItems.length === 0) {
+                showNotification('Нет товаров для списания', 'error');
+                return;
+            }
+
+            // Отправляем запрос на списание
+            const response = await fetch('/api/warehouse/sale-from-order/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    order_id: orderId,
+                    token_id: tokenId,
+                    line_items: lineItems,
+                    warehouse: warehouse
+                })
+            });
+
+            const data = await response.json();
+            console.log('Ответ от API списания:', data);
+            
+            if (response.ok) {
+                // Обновляем статус в интерфейсе
+                updateStockStatus(orderId, true);
+                showNotification(data.message || 'Товары успешно списаны', 'success');
+            } else {
+                showNotification(data.message || 'Ошибка при списании товаров', 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка при списании товаров:', error);
+            showNotification('Ошибка при списании товаров: ' + error.message, 'error');
+        }
+    }
+
+    // Функция пометки заказа как списанного
+    async function markOrderStockUpdated(orderId, tokenId) {
+        try {
+            console.log(`Помечаем заказ ${orderId} как списанный для токена ${tokenId}`);
+            
+            const response = await fetch(`/api/allegro_sync/orders/${tokenId}/${orderId}/mark_stock_updated`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            
+            console.log('Ответ от API пометки:', response.status, response.statusText);
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Данные ответа от API пометки:', data);
+                console.log('Флаг is_stock_updated в ответе:', data.is_stock_updated);
+                
+                // Обновляем статус в интерфейсе
+                updateStockStatus(orderId, data.is_stock_updated);
+                showNotification('Заказ помечен как списанный', 'success');
+            } else {
+                const errorData = await response.json();
+                console.error('Ошибка при пометке заказа:', errorData);
+                showNotification('Ошибка при пометке заказа', 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка при пометке заказа:', error);
+            showNotification('Ошибка при пометке заказа: ' + error.message, 'error');
+        }
+    }
+
+    // Функция показа уведомлений
+    function showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.textContent = message;
+        
+        let bgColor = 'bg-blue-600';
+        if (type === 'success') bgColor = 'bg-green-600';
+        if (type === 'error') bgColor = 'bg-red-600';
+        if (type === 'warning') bgColor = 'bg-yellow-600';
+        
+        notification.className = `fixed top-4 right-4 ${bgColor} text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-opacity duration-300`;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 3000);
+    }
 </script>
 {% endblock %}

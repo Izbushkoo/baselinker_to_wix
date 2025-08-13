@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
 from fastapi.templating import Jinja2Templates
@@ -17,6 +17,62 @@ web_router = APIRouter()
 
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["operation_type_label"] = operation_type_label
+
+
+@router.get("/by-order/{order_id}")
+async def get_operation_by_order_id(
+    order_id: str,
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Получает операцию по ID заказа
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    # Сначала ищем в PendingStockOperation (если это операция синхронизации)
+    from app.models.stock_synchronization import PendingStockOperation
+    
+    pending_operation = await db.exec(
+        select(PendingStockOperation).where(PendingStockOperation.order_id == order_id)
+    ).first()
+    
+    if pending_operation:
+        return {
+            "operation_id": str(pending_operation.id),
+            "operation_type": pending_operation.operation_type.value,
+            "order_id": pending_operation.order_id,
+            "token_id": pending_operation.token_id,
+            "account_name": pending_operation.account_name,
+            "warehouse_id": pending_operation.warehouse,
+            "created_at": pending_operation.created_at.isoformat(),
+            "user_email": None,  # В PendingStockOperation нет user_email
+            "comment": None
+        }
+    
+    # Если не найдено в PendingStockOperation, ищем в обычных операциях
+    query = select(Operation).where(Operation.order_id == order_id)
+    result = await db.exec(query)
+    operations = result.all()
+    
+    if not operations:
+        raise HTTPException(status_code=404, detail="Операции с таким order_id не найдены")
+    
+    # Возвращаем первую найденную операцию (обычно для заказа создается одна операция)
+    operation = operations[0]
+    
+    return {
+        "operation_id": str(operation.id),
+        "operation_type": operation.operation_type,
+        "order_id": operation.order_id,
+        "token_id": None,  # В обычных операциях нет token_id
+        "account_name": None,  # В обычных операциях нет account_name
+        "warehouse_id": operation.warehouse_id,
+        "created_at": operation.created_at.isoformat(),
+        "user_email": operation.user_email,
+        "comment": operation.comment
+    }
 
 
 @web_router.get("/import-export")

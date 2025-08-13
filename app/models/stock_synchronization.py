@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from sqlmodel import SQLModel, Field
 from sqlalchemy import JSON, Column
+import sqlalchemy as sa
 from uuid import UUID, uuid4
 from enum import Enum
 
@@ -45,6 +46,11 @@ class PendingStockOperation(SQLModel, table=True):
     token_id: str = Field(index=True, description="ID токена Allegro из микросервиса")
     order_id: str = Field(index=True, description="ID заказа Allegro")
     account_name: Optional[str] = Field(default=None, index=True, description="Имя аккаунта Allegro")
+    
+    # Уникальное ограничение: один заказ = одна операция
+    __table_args__ = (
+        sa.UniqueConstraint('token_id', 'order_id', name='uq_pending_stock_operations_token_order'),
+    )
     
     # Детали операции
     operation_type: OperationType = Field(description="Тип операции")
