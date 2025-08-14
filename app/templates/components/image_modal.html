@@ -1,26 +1,27 @@
 <!-- Image Modal Component -->
 <div id="imageModal"
-     class="fixed inset-0 bg-black bg-opacity-75 hidden flex items-center justify-center z-50 p-4">
-    <div class="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center">
+     class="fixed inset-0 bg-black bg-opacity-75 hidden flex items-center justify-center z-50">
+    <div class="relative w-[75vw] h-[75vh] bg-white rounded-lg shadow-xl flex flex-col">
         <!-- Close button -->
         <button id="imageModalCloseBtn" 
-                class="absolute top-2 right-2 z-10 bg-black bg-opacity-50 hover:bg-opacity-70 text-white rounded-full p-2 transition-all duration-200"
-                onclick="closeImageModal()"
-                style="transform: translate(50%, -50%)">
+                class="absolute top-4 right-4 z-10 bg-black bg-opacity-50 hover:bg-opacity-70 text-white rounded-full p-2 transition-all duration-200"
+                onclick="closeImageModal()">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
             </svg>
         </button>
         
-        <!-- Image -->
-        <img id="imageModalImg" 
-             src="" 
-             alt="" 
-             class="max-w-full max-h-full object-contain rounded-lg shadow-xl">
+        <!-- Image container -->
+        <div class="flex-1 flex items-center justify-center p-6">
+            <img id="imageModalImg" 
+                 src="" 
+                 alt="" 
+                 class="max-w-full max-h-full object-contain">
+        </div>
         
         <!-- Product info -->
-        <div class="mt-4 bg-black bg-opacity-50 rounded-lg px-4 py-2">
-            <h3 id="imageModalTitle" class="text-white text-lg font-semibold text-center"></h3>
+        <div class="bg-gray-50 px-6 py-4 rounded-b-lg">
+            <h3 id="imageModalTitle" class="text-gray-800 text-lg font-semibold text-center"></h3>
         </div>
     </div>
 </div>
