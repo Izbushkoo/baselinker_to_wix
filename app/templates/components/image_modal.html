@@ -1,27 +1,26 @@
 <!-- Image Modal Component -->
 <div id="imageModal"
-     class="fixed inset-0 bg-black bg-opacity-75 hidden flex items-center justify-center z-50">
-    <div class="relative max-w-[75vw] max-h-[75vh] bg-white rounded-lg shadow-xl overflow-hidden">
+     class="fixed inset-0 bg-black bg-opacity-75 hidden flex items-center justify-center z-50 p-4">
+    <div class="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center">
         <!-- Close button -->
         <button id="imageModalCloseBtn" 
-                class="absolute top-4 right-4 z-10 bg-black bg-opacity-50 hover:bg-opacity-70 text-white rounded-full p-2 transition-all duration-200"
-                onclick="closeImageModal()">
+                class="absolute top-2 right-2 z-10 bg-black bg-opacity-50 hover:bg-opacity-70 text-white rounded-full p-2 transition-all duration-200"
+                onclick="closeImageModal()"
+                style="transform: translate(50%, -50%)">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
             </svg>
         </button>
         
-        <!-- Image container -->
-        <div class="w-full h-full flex items-center justify-center p-4">
-            <img id="imageModalImg" 
-                 src="" 
-                 alt="" 
-                 class="max-w-full max-h-full object-contain">
-        </div>
+        <!-- Image -->
+        <img id="imageModalImg" 
+             src="" 
+             alt="" 
+             class="max-w-full max-h-full object-contain rounded-lg shadow-xl">
         
         <!-- Product info -->
-        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
-            <h3 id="imageModalTitle" class="text-white text-lg font-semibold"></h3>
+        <div class="mt-4 bg-black bg-opacity-50 rounded-lg px-4 py-2">
+            <h3 id="imageModalTitle" class="text-white text-lg font-semibold text-center"></h3>
         </div>
     </div>
 </div>
