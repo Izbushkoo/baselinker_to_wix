@@ -69,7 +69,7 @@
                                 {% if user.is_admin %}
                                 <button 
                                     type="button"
-                                    onclick="openTransferModal()"
+                                    onclick="openProductTransferModal()"
                                     class="px-3 py-1 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700">
                                     Переместить товар
                                 </button>
@@ -504,7 +504,7 @@
             </div>
             
             <div class="flex justify-end gap-2 mt-6">
-                <button type="button" onclick="closeTransferModal()" class="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300">
+                <button type="button" onclick="closeProductTransferModal()" class="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300">
                     Отмена
                 </button>
                 <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
@@ -886,12 +886,20 @@ function closePriceEditModal() {
 }
 
 // Функция для открытия модального окна перемещения товара
-function openTransferModal() {
+function openProductTransferModal() {
+    console.log('openProductTransferModal called');
     const modal = document.getElementById('transferModal');
-    modal.classList.remove('hidden');
+    console.log('Modal element:', modal);
+    if (modal) {
+        modal.classList.remove('hidden');
+        console.log('Modal opened successfully');
+    } else {
+        console.error('Transfer modal element not found!');
+    }
 }
 
-function closeTransferModal() {
+function closeProductTransferModal() {
+    console.log('closeProductTransferModal called');
     const modal = document.getElementById('transferModal');
     modal.classList.add('hidden');
 }
@@ -1186,7 +1194,7 @@ document.getElementById('transferForm').addEventListener('submit', function(e) {
         // Обновляем отображение остатков
         location.reload(); // Простое решение - перезагрузка страницы
         
-        closeTransferModal();
+        closeProductTransferModal();
         showNotification('Товар успешно перемещен', 'success');
     })
     .catch(error => {
@@ -1223,7 +1231,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Закрытие модального окна трансфера по клику на фон
     transferModal.addEventListener('click', function(e) {
         if (e.target === transferModal) {
-            closeTransferModal();
+            closeProductTransferModal();
         }
     });
     
@@ -1237,7 +1245,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Закрытие модальных окон по нажатию Escape
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
-            closeTransferModal();
+            closeProductTransferModal();
             errorModal.classList.add('hidden');
         }
     });
