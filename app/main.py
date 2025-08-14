@@ -53,38 +53,13 @@ logger = get_logger(__name__)
 @app.get("/")
 async def home(
     request: Request,
-    current_user: Optional[UserModel] = Depends(deps.get_current_user_optional),
-    inventory_manager: manager.InventoryManager = Depends(manager.get_manager)
+    current_user: Optional[UserModel] = Depends(deps.get_current_user_optional)
 ):
     if not current_user:
-        return RedirectResponse(url="/login?next=/", status_code=302)
+        return RedirectResponse(url="/login?next=/catalog", status_code=302)
 
-    total_items = await inventory_manager.count_products()
-    low_stock = await inventory_manager.get_low_stock_products()
-    logger.info(f"Total items: {total_items}")
-    logger.info(f"Low stock: {low_stock}")
-
-    # Получаем сервис операций
-    operations_service = get_operations_service()
-    
-    # Получаем последние 10 операций
-    recent_operations = operations_service.get_latest_operations(limit=50)
-    
-    # Получаем статистику операций за сегодня
-    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end = datetime.now()
-    today_stats = operations_service.get_operations_stats(today_start, today_end)
-
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "user": current_user,
-        "stats": {
-            "total_items": total_items,
-            "low_stock": low_stock,
-            "today_operations": today_stats["total"]
-        },
-        "recent_operations": recent_operations
-    })
+    # Перенаправляем авторизованных пользователей на каталог
+    return RedirectResponse(url="/catalog", status_code=302)
 
 @app.get("/status")
 async def status_page(request: Request):

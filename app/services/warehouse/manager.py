@@ -21,11 +21,16 @@ import logging
 import openpyxl
 from PIL import Image
 import io
+import requests
+from urllib.parse import urlparse
 
 from app.celery_shared import celery
 from app.models.warehouse import Product, Stock, Sale, Transfer
 from app.core.config import settings
 from app.services.operations_service import OperationsService, get_operations_service
+from app.services.Allegro_Microservice.tokens_endpoint import AllegroTokenMicroserviceClient
+from app.services.Allegro_Microservice.offers_endpoint import AllegroOffersMicroserviceClient
+from app.core.security import create_access_token
 
 logger = logging.getLogger(__name__)
 
@@ -366,6 +371,50 @@ class InventoryManager:
             logging.error(f"Ошибка при масштабировании и сохранении: {e}")
             return None, None
 
+    def download_image_from_url(self, url: str, timeout: int = 10) -> Optional[bytes]:
+        """
+        Скачивает изображение по URL.
+        
+        Args:
+            url: URL изображения
+            timeout: Таймаут в секундах (по умолчанию 10)
+            
+        Returns:
+            bytes: Данные изображения или None в случае ошибки
+        """
+        if not url or not url.strip():
+            return None
+            
+        try:
+            # Проверяем, что это валидный URL
+            parsed_url = urlparse(url.strip())
+            if not parsed_url.scheme or not parsed_url.netloc:
+                logging.warning(f"Неверный URL: {url}")
+                return None
+                
+            # Скачиваем изображение
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            response = requests.get(url.strip(), headers=headers, timeout=timeout)
+            response.raise_for_status()
+            
+            # Проверяем, что это действительно изображение
+            content_type = response.headers.get('content-type', '').lower()
+            if not content_type.startswith('image/'):
+                logging.warning(f"URL не содержит изображение (content-type: {content_type}): {url}")
+                return None
+                
+            return response.content
+            
+        except requests.exceptions.RequestException as e:
+            logging.warning(f"Ошибка при скачивании изображения с URL {url}: {str(e)}")
+            return None
+        except Exception as e:
+            logging.error(f"Неожиданная ошибка при скачивании изображения с URL {url}: {str(e)}")
+            return None
+
     def find_header_row(self, file_bytes: bytes, required_cols: list, max_rows: int = 10) -> int:
         """Автоматически определяет строку с заголовками по наличию нужных колонок."""
         for header in range(max_rows):
@@ -481,12 +530,32 @@ class InventoryManager:
                     original_image = None
                     image_url = None
                     
+                    # Сначала проверяем встроенные изображения в Excel
                     if image_info:
                         compressed_image = image_info.get('compressed')
                         original_image = image_info.get('original')
                         # Генерируем относительный URL для оригинального изображения
                         # (в методе импорта нет доступа к Request, поэтому используем относительный)
                         image_url = f"/api/products/{sku}/image/original"
+                    # Если встроенных изображений нет, проверяем ссылки из колонки Foto
+                    elif 'image' in col_indices:
+                        image_url_cell = row[col_indices['image']].value
+                        if image_url_cell and str(image_url_cell).strip():
+                            image_url_from_cell = str(image_url_cell).strip()
+                            logging.info(f"Обнаружена ссылка на изображение для SKU {sku}: {image_url_from_cell}")
+                            
+                            # Скачиваем изображение по ссылке
+                            downloaded_image_data = self.download_image_from_url(image_url_from_cell)
+                            if downloaded_image_data:
+                                # Обрабатываем скачанное изображение
+                                compressed_image, original_image, _ = self.compress_image(downloaded_image_data, None, None)
+                                if compressed_image and original_image:
+                                    image_url = f"/api/products/{sku}/image/original"
+                                    logging.info(f"Успешно обработано изображение из URL для SKU {sku}")
+                                else:
+                                    logging.warning(f"Не удалось обработать скачанное изображение для SKU {sku}")
+                            else:
+                                logging.warning(f"Не удалось скачать изображение по ссылке для SKU {sku}: {image_url_from_cell}")
                     
                     with Session(self.engine) as session:
                         product = session.get(Product, sku)
@@ -717,9 +786,8 @@ class InventoryManager:
             stocks = session.exec(select(Stock)).all()
 
         if not products:
-            empty_df = pd.DataFrame(columns=[
-                'sku', 'name', 'eans', 'total'
-            ] + [f'warehouse_{w.value}' for w in Warehouses])
+            columns = ['sku', 'name', 'eans', 'total'] + [f'warehouse_{w.value}' for w in Warehouses]
+            empty_df = pd.DataFrame(columns=columns)
             return empty_df, []
 
         # накапливаем строки
@@ -955,5 +1023,106 @@ class InventoryManager:
                     '30d': sum(s.quantity for s in sku_sales if s.timestamp >= periods['30d']),
                     '60d': sum(s.quantity for s in sku_sales if s.timestamp >= periods['60d'])
                 }
+        
+        return result
+
+    def get_first_offer_dates(self, skus: Optional[List[str]] = None) -> Dict[str, Optional[datetime]]:
+        """
+        Получает даты первых оферт для указанных SKU через микросервисы Allegro.
+        
+        Args:
+            skus: Список SKU для получения дат оферт. Если None, получает для всех продуктов.
+            
+        Returns:
+            Dict[str, Optional[datetime]]: Словарь {sku: дата_первой_оферты}
+                                         где дата может быть None если оферты не найдены
+        """
+        logger.info(f"Запрос дат первых оферт для SKU: {skus}")
+        
+        # Если SKU не переданы, получаем все SKU из базы данных
+        if skus is None:
+            with Session(self.engine) as session:
+                products = session.exec(select(Product.sku)).all()
+                skus = products
+        
+        if not skus:
+            return {}
+        
+        result = {}
+        
+        try:
+            # Создаем JWT токен для аутентификации в микросервисах
+            jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
+            
+            # Получаем список активных токенов
+            token_client = AllegroTokenMicroserviceClient(jwt_token=jwt_token)
+            tokens_response = token_client.get_tokens(per_page=100, active_only=True)
+            
+            if not tokens_response.items:
+                logger.warning("Нет активных токенов Allegro для получения дат оферт")
+                return {sku: None for sku in skus}
+            
+            # Извлекаем ID токенов
+            token_ids = [token['id'] for token in tokens_response.items]
+            logger.info(f"Найдено активных токенов: {len(token_ids)}")
+            
+            # Создаем клиент для работы с офертами
+            offers_client = AllegroOffersMicroserviceClient(jwt_token=jwt_token)
+            
+            # Для каждого SKU ищем самую раннюю дату создания оферты
+            for sku in skus:
+                earliest_date = None
+                
+                try:
+                    # Получаем все оферты для данного SKU через все токены
+                    offers_response = offers_client.get_offers_by_external_id(
+                        token_ids=token_ids,
+                        external_id=sku
+                    )
+                    
+                    if offers_response.offers:
+                        # Ищем самую раннюю дату среди всех оферт
+                        for offer_data in offers_response.offers:
+                            if isinstance(offer_data, dict) and 'offers' in offer_data:
+                                # offer_data может содержать список оферт для конкретного токена
+                                for offer in offer_data['offers']:
+                                    created_at = offer.get('createdAt') or offer.get('created_at')
+                                    if created_at:
+                                        try:
+                                            # Парсим дату (может быть в разных форматах)
+                                            if isinstance(created_at, str):
+                                                # Пробуем разные форматы дат
+                                                for fmt in ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d %H:%M:%S']:
+                                                    try:
+                                                        offer_date = datetime.strptime(created_at, fmt)
+                                                        break
+                                                    except ValueError:
+                                                        continue
+                                                else:
+                                                    # Если ни один формат не подошел, пропускаем
+                                                    logger.warning(f"Не удалось распарсить дату {created_at} для SKU {sku}")
+                                                    continue
+                                            else:
+                                                offer_date = created_at
+                                            
+                                            # Сравниваем с текущей самой ранней датой
+                                            if earliest_date is None or offer_date < earliest_date:
+                                                earliest_date = offer_date
+                                        except Exception as e:
+                                            logger.warning(f"Ошибка при обработке даты оферты для SKU {sku}: {e}")
+                                            continue
+                    
+                    result[sku] = earliest_date
+                    
+                except Exception as e:
+                    logger.warning(f"Ошибка при получении оферт для SKU {sku}: {e}")
+                    result[sku] = None
+            
+            logger.info(f"Получены даты первых оферт для {len([d for d in result.values() if d is not None])} из {len(skus)} SKU")
+            
+        except Exception as e:
+            logger.error(f"Ошибка при получении дат первых оферт: {e}")
+            # В случае ошибки возвращаем None для всех SKU
+            result = {sku: None for sku in skus}
         
         return result

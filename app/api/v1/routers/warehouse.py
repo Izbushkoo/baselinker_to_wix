@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel.ext.asyncio.session import AsyncSession
 import openpyxl
 from openpyxl.utils import get_column_letter
+import openpyxl.styles
 from app.models.user import User
 from openpyxl.drawing.image import Image as XLImage
 from app.api import deps
@@ -168,6 +169,169 @@ async def upload_transfer(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get('/template/incoming', summary='Скачивание шаблона для импорта прихода')
+async def download_incoming_template():
+    '''Возвращает шаблон Excel для импорта прихода на склад с правильными размерами ячеек для изображений.'''
+    
+    # Создаем новый Excel файл
+    workbook = openpyxl.Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Шаблон прихода"
+    
+    # Заголовки колонок
+    headers = [
+        'sku',          # Артикул товара (обязательно)
+        'Кол-во',       # Количество для прихода (обязательно)
+        'EAN',          # EAN код товара (опционально)
+        'Name',         # Название товара (опционально)
+        'Foto'          # Ссылка на фото товара (опционально)
+    ]
+    
+    # Устанавливаем заголовки
+    for col_num, header in enumerate(headers, 1):
+        cell = worksheet.cell(row=1, column=col_num, value=header)
+        cell.font = openpyxl.styles.Font(bold=True)
+    
+    # Добавляем комментарий-объяснение в качестве второй строки
+    comment_row = [
+        'ОБЯЗАТЕЛЬНО',
+        'ОБЯЗАТЕЛЬНО', 
+        'ОПЦИОНАЛЬНО', 
+        'ОПЦИОНАЛЬНО', 
+        'ОПЦИОНАЛЬНО - URL или вставить изображение'
+    ]
+    
+    for col_num, comment in enumerate(comment_row, 1):
+        cell = worksheet.cell(row=2, column=col_num, value=comment)
+        cell.font = openpyxl.styles.Font(italic=True, color='666666')
+    
+    # Добавляем пример данных
+    sample_data = [
+        ['EXAMPLE-SKU-001', 10, '1234567890123', 'Пример товара 1', ''],
+        ['EXAMPLE-SKU-002', 5, '1234567890124', 'Пример товара 2', ''],
+        ['EXAMPLE-SKU-003', 15, '', 'Пример товара 3', '']
+    ]
+    
+    for row_num, row_data in enumerate(sample_data, 3):  # Начинаем с 3-й строки, т.к. 2-я занята комментариями
+        for col_num, value in enumerate(row_data, 1):
+            worksheet.cell(row=row_num, column=col_num, value=value)
+    
+    # Создаем простые изображения-заглушки для каждой строки с данными
+    from PIL import Image, ImageDraw, ImageFont
+    import io
+    
+    def create_sample_image(text_content):
+        """Создает изображение-заглушку с заданным текстом"""
+        img_width, img_height = 150, 150
+        img = Image.new('RGB', (img_width, img_height), color='#f8f9fa')
+        draw = ImageDraw.Draw(img)
+        
+        # Рисуем рамку
+        draw.rectangle([5, 5, img_width-5, img_height-5], outline='#dee2e6', width=2)
+        
+        # Добавляем текст
+        try:
+            font = ImageFont.load_default()
+        except:
+            font = None
+        
+        if font:
+            # Центрируем текст
+            bbox = draw.textbbox((0, 0), text_content, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            x = (img_width - text_width) // 2
+            y = (img_height - text_height) // 2
+            draw.text((x, y), text_content, fill='#6c757d', font=font)
+        else:
+            draw.text((50, 65), text_content, fill='#6c757d')
+        
+        # Сохраняем в буфер
+        img_buffer = io.BytesIO()
+        img.save(img_buffer, format='PNG')
+        img_buffer.seek(0)
+        return img_buffer
+    
+    # Встраиваем изображения в каждую строку с данными
+    for row_idx, (sku, qty, ean, name, _) in enumerate(sample_data, 3):
+        img_buffer = create_sample_image(f"Фото\n{sku}")
+        
+        from openpyxl.drawing.image import Image as ExcelImage
+        excel_img = ExcelImage(img_buffer)
+        excel_img.width = 120   # Размер изображения в Excel
+        excel_img.height = 120
+        
+        # Вставляем изображение в колонку E
+        worksheet.add_image(excel_img, f'E{row_idx}')
+        
+        # Устанавливаем высоту строки под изображение
+        worksheet.row_dimensions[row_idx].height = 95  # ~120 пикселей
+    
+    # Устанавливаем ширину колонок
+    column_widths = {
+        'A': 20,  # sku
+        'B': 12,  # Кол-во
+        'C': 18,  # EAN
+        'D': 35,  # Name
+        'E': 18   # Foto - ширина под изображение
+    }
+    
+    for column, width in column_widths.items():
+        worksheet.column_dimensions[column].width = width
+    
+    # Добавляем инструкции в отдельный лист
+    instructions_sheet = workbook.create_sheet("Инструкции")
+    instructions = [
+        "ИНСТРУКЦИЯ ПО ЗАПОЛНЕНИЮ ШАБЛОНА:",
+        "",
+        "1. Колонка 'sku' - обязательная, уникальный артикул товара",
+        "2. Колонка 'Кол-во' - обязательная, количество для прихода",
+        "3. Колонка 'EAN' - опциональная, штрих-код товара",
+        "4. Колонка 'Name' - опциональная, название товара",
+        "5. Колонка 'Foto' - опциональная, изображение товара",
+        "",
+        "ДЛЯ ВСТАВКИ ИЗОБРАЖЕНИЙ:",
+        "• Можно вставить URL на изображение в ячейку",
+        "• Можно вставить изображение прямо в ячейку:",
+        "  - Щелкните правой кнопкой на ячейку",
+        "  - Выберите 'Вставить' -> 'Изображение'",
+        "  - Выберите файл изображения",
+        "• Рекомендуемый размер изображений: 150x150 пикселей",
+        "• Поддерживаемые форматы: PNG, JPG, JPEG",
+        "",
+        "ВАЖНО:",
+        "• Не удаляйте строки с примерами, замените данные на свои",
+        "• При вставке изображений строки автоматически растянутся",
+        "• Сохраните файл в формате .xlsx"
+    ]
+    
+    for row_idx, instruction in enumerate(instructions, 1):
+        cell = instructions_sheet.cell(row=row_idx, column=1, value=instruction)
+        if instruction.startswith(("ИНСТРУКЦИЯ", "ДЛЯ ВСТАВКИ", "ВАЖНО:")):
+            cell.font = openpyxl.styles.Font(bold=True, size=12)
+        elif instruction.startswith("•"):
+            cell.font = openpyxl.styles.Font(size=10)
+    
+    # Устанавливаем ширину колонки для инструкций
+    instructions_sheet.column_dimensions['A'].width = 70
+    
+    # Сохраняем в BytesIO
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    
+    # Формируем имя файла
+    filename = "template_incoming.xlsx"
+    encoded_filename = quote(filename)
+    
+    return StreamingResponse(
+        BytesIO(output.read()),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename={encoded_filename}"
+        }
+    )
 
 @router.get('/stock/{sku}', summary='Проверка остатков по SKU')
 async def check_stock(
@@ -405,6 +569,7 @@ async def export_stock_with_sales(
         "name": "Наименование",
         "total": "Общий остаток"
     }
+    
     # добавляем названия складов
     for wh in Warehouses:
         column_renames[f"warehouse_{wh.value}"] = f"Склад {wh.value}"
@@ -423,7 +588,7 @@ async def export_stock_with_sales(
     for wh in Warehouses:
         if wh != Warehouses.B:
             cols.append(f"Склад {wh.value}")
-            
+    
     cols.extend(["Продажи за 15 дней", "Продажи за 30 дней", "Продажи за 60 дней"])
     df = df[cols]
 
