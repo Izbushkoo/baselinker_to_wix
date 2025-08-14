@@ -22,6 +22,7 @@ from app.services.Allegro_Microservice.orders_endpoint import OrdersClient
 from app.services.Allegro_Microservice.sync_endpoint import SyncClient
 from app.core.security import create_access_token
 from app.core.config import settings
+from app.models.stock_synchronization import PendingStockOperation
 
 router = APIRouter()
 web_router = APIRouter()
@@ -93,7 +94,8 @@ async def get_all_orders(
     offset: int = Query(0, ge=0, description="Смещение для пагинации"), 
     status: Optional[str] = Query(None, description="Фильтр по статусу заказа"),
     from_date: Optional[str] = Query(None, description="Фильтр по дате (DD-MM-YYYY)"),
-    to_date: Optional[str] = Query(None, description="Фильтр по дате (DD-MM-YYYY)")
+    to_date: Optional[str] = Query(None, description="Фильтр по дате (DD-MM-YYYY)"),
+    db: AsyncSession = Depends(deps.get_async_session)
 ):
     """
     Получает все заказы для указанного токена из базы данных.
@@ -127,19 +129,35 @@ async def get_all_orders(
         orders = orders_response.orders
         pagination = orders_response.pagination
 
+        # Получаем все order_id для проверки pending operations
+        order_ids = [order.get("id") for order in orders if order.get("id")]
+        
+        # Проверяем наличие pending stock operations для всех заказов одним запросом
+        pending_operations_query = select(PendingStockOperation.order_id).where(
+            PendingStockOperation.token_id == token_id,
+            PendingStockOperation.order_id.in_(order_ids)
+        )
+        pending_operations_result = await db.exec(pending_operations_query)
+        pending_order_ids = set(pending_operations_result.all())
+
         orders_data = []
         for order in orders:
             technical_flags = order.get("technical_flags", {})
+            order_id = order.get("id")
+            
+            # Проверяем, есть ли pending stock operation для этого заказа
+            has_pending_operation = order_id in pending_order_ids
             
             # Загружаем позиции заказа
             line_items = order.get("lineItems", [])
             
             
             order_dict = {
-                "id": order.get("id"),
+                "id": order_id,
                 "status": order.get("status"),
                 "is_stock_updated": technical_flags.get("is_stock_updated"),
                 "has_invoice_created": technical_flags.get("has_invoice_created"),
+                "has_pending_operation": has_pending_operation,  # Новое поле
                 "updated_at": order.get("updatedAt") if order.get("updatedAt") else None,
                 "token_id": order.get("token_id") or None,
                 "buyer": order.get("buyer", {}),
@@ -169,6 +187,7 @@ async def search_orders(
     token_id: str,
     query: str,
     limit: int = Query(100, ge=1, le=1000, description="Количество заказов на странице"),
+    db: AsyncSession = Depends(deps.get_async_session)
 ):
     """
     Получает все заказы для указанного токена из базы данных.
@@ -196,19 +215,36 @@ async def search_orders(
         logging.info(f"orders result {orders}")
         pagination = search_response.pagination
 
+        # Получаем все order_id для проверки pending operations
+        order_ids = [order.get("id") for order in orders if order.get("id")]
+        
+        # Проверяем наличие pending stock operations для всех заказов одним запросом
+        pending_operations_query = select(PendingStockOperation.order_id).where(
+            PendingStockOperation.token_id == token_id,
+            PendingStockOperation.order_id.in_(order_ids)
+        )
+        pending_operations_result = await db.exec(pending_operations_query)
+        pending_order_ids = set(pending_operations_result.all())
+
         orders_data = []
         for order in orders:
             technical_flags = order.get("technical_flags", {})
+            order_id = order.get("id")
             logging.info(f"{technical_flags}")
+            
+            # Проверяем, есть ли pending stock operation для этого заказа
+            has_pending_operation = order_id in pending_order_ids
+            
             # Загружаем позиции заказа
             line_items = order.get("lineItems", [])
             
             
             order_dict = {
-                "id": order.get("id"),
+                "id": order_id,
                 "status": order.get("status"),
                 "is_stock_updated": technical_flags.get("is_stock_updated"),
                 "has_invoice_created": technical_flags.get("has_invoice_created"),
+                "has_pending_operation": has_pending_operation,  # Новое поле
                 "updated_at": order.get("updatedAt") if order.get("updatedAt") else None,
                 "token_id": order.get("token_id") or None,
                 "buyer": order.get("buyer", {}),

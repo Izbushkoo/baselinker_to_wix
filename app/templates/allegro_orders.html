@@ -409,7 +409,7 @@ function displayOrders(orders) {
                 <div class="flex items-center justify-end w-full mt-2 gap-2">
                     ${actionButtons}
                     ${stockStatus}
-                    ${order.status === 'READY_FOR_PROCESSING' ? `
+                    ${(order.status === 'READY_FOR_PROCESSING' && order.has_pending_operation) ? `
                         <button onclick="event.stopPropagation(); goToOperationDetails('${order.id}')" class="px-3 py-1 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500">
                             Детали операции
                         </button>
