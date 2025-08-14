@@ -1001,6 +1001,53 @@ document.head.appendChild(style);
   </div>
 </div>
 
+<!-- Transfer Modal -->
+<div id="transferModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-lg max-w-md w-full p-6 relative" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Перемещение товара</h3>
+        <form id="transferForm">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">SKU товара:</label>
+                    <input type="text" id="transferSku" class="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100" readonly>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Откуда:</label>
+                    <select id="transferFrom" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                        <option value="">Выберите склад</option>
+                        <option value="Ирина">Ирина</option>
+                        <option value="Женя">Женя</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Куда:</label>
+                    <select id="transferTo" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                        <option value="">Выберите склад</option>
+                        <option value="Ирина">Ирина</option>
+                        <option value="Женя">Женя</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Количество:</label>
+                    <input type="number" id="transferQuantity" min="1" value="1" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+            </div>
+            
+            <div class="flex justify-end gap-2 mt-6">
+                <button type="button" onclick="closeTransferModal()" class="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300">
+                    Отмена
+                </button>
+                <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
+                    Переместить
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 // Функции для редактирования цены
 function editPrice(sku, currentMinPrice) {
@@ -1081,9 +1128,171 @@ document.addEventListener('DOMContentLoaded', function() {
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
             closePriceEditModal();
+            closeTransferModal();
         }
     });
+    
+    // Transfer Modal handlers
+    const transferModal = document.getElementById('transferModal');
+    const transferForm = document.getElementById('transferForm');
+    
+    // Закрытие модального окна по клику на фон
+    if (transferModal) {
+        transferModal.addEventListener('click', function(e) {
+            if (e.target === transferModal) {
+                closeTransferModal();
+            }
+        });
+    }
+    
+    // Обработчик отправки формы трансфера
+    if (transferForm) {
+        transferForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const sku = document.getElementById('transferSku').value;
+            const fromWarehouse = document.getElementById('transferFrom').value;
+            const toWarehouse = document.getElementById('transferTo').value;
+            const quantity = parseInt(document.getElementById('transferQuantity').value);
+            
+            if (fromWarehouse === toWarehouse) {
+                showNotification('Склад отправления и назначения не могут быть одинаковыми', 'error');
+                return;
+            }
+            
+            if (isNaN(quantity) || quantity < 1) {
+                showNotification('Пожалуйста, введите корректное количество', 'error');
+                return;
+            }
+            
+                fetch('/api/warehouse/transfer-item/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sku: sku,
+                    from_warehouse: fromWarehouse,
+                    to_warehouse: toWarehouse,
+                    quantity: quantity
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Ошибка при перемещении');
+                }
+                return response.json();
+            })
+            .then(data => {
+                closeTransferModal();
+                showNotification('Товар успешно перемещен', 'success');
+                // Обновляем карточку товара вместо перезагрузки страницы
+                updateProductCard(sku);
+            })
+            .catch(error => {
+                showNotification('Ошибка при перемещении товара: ' + error.message, 'error');
+            });
+        });
+    }
 });
+
+// Функции для модалки трансфера
+function openTransferModal(button) {
+    const sku = button.dataset.productSku;
+    const name = button.dataset.productName;
+    
+    console.log('Открываем модалку трансфера для товара:', sku, name);
+    
+    const modal = document.getElementById('transferModal');
+    const skuInput = document.getElementById('transferSku');
+    const quantityInput = document.getElementById('transferQuantity');
+    const fromSelect = document.getElementById('transferFrom');
+    const toSelect = document.getElementById('transferTo');
+    
+    // Заполняем форму
+    skuInput.value = sku;
+    quantityInput.value = 1;
+    fromSelect.value = '';
+    toSelect.value = '';
+    
+    modal.classList.remove('hidden');
+}
+
+function closeTransferModal() {
+    const modal = document.getElementById('transferModal');
+    modal.classList.add('hidden');
+}
+
+// Функция для обновления карточки товара после перемещения
+async function updateProductCard(sku) {
+    try {
+        console.log('Обновление карточки товара:', sku);
+        
+        const response = await fetch(`/${sku}/card`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка при получении обновленных данных товара');
+        }
+        
+        const data = await response.json();
+        
+        // Находим карточку товара на странице по SKU
+        const productCard = document.querySelector(`[data-product-id="${sku}"]`)?.closest('.flex.items-start.gap-6');
+        
+        if (productCard) {
+            // Создаем временный контейнер для нового HTML
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = data.html;
+            
+            // Заменяем старую карточку новой
+            productCard.parentNode.replaceChild(tempDiv.firstElementChild, productCard);
+            
+            console.log('Карточка товара успешно обновлена');
+        } else {
+            console.warn('Карточка товара не найдена на странице, перезагружаем страницу');
+            // Если не удалось найти карточку, делаем полную перезагрузку
+            location.reload();
+        }
+    } catch (error) {
+        console.error('Ошибка при обновлении карточки товара:', error);
+        showNotification('Ошибка при обновлении данных товара', 'error');
+        // В случае ошибки делаем полную перезагрузку
+        setTimeout(() => {
+            location.reload();
+        }, 1000);
+    }
+}
+
+// Функция для показа уведомлений (если её еще нет)
+function showNotification(message, type = 'info') {
+    // Создаем элемент уведомления
+    const notification = document.createElement('div');
+    notification.textContent = message;
+    
+    let bgColor = 'bg-blue-600';
+    if (type === 'success') bgColor = 'bg-green-600';
+    if (type === 'error') bgColor = 'bg-red-600';
+    if (type === 'warning') bgColor = 'bg-yellow-600';
+    
+    notification.className = `fixed top-4 right-4 ${bgColor} text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-opacity duration-300`;
+    document.body.appendChild(notification);
+    
+    // Автоматически скрываем через 3 секунды
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 300);
+    }, 3000);
+}
 </script>
 
 {% endif %}

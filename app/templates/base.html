@@ -34,7 +34,7 @@
     </script>
 </head>
 <body class="h-full">
-    <div class="min-h-full">
+    <div id="mainContainer" class="min-h-full">
         <!-- Навигация -->
         <nav class="fixed top-0 left-0 right-0 bg-gray-900 z-50">
             <div class="mx-auto max-w-7xl px-2 sm:px-4 lg:px-8">
@@ -330,10 +330,9 @@
     })();
     </script>
         
-    {% block extra_js %}{% endblock %}
-    
     <script src="{{ url_for('static', path='js/inventory.js').__str__().replace('http://', 'https://') }}"></script>
     <!-- <script src="{{ url_for('static', path='js/inventory.js') }}"></script> -->
+    {% block extra_js %}{% endblock %}
      
 </body>
 </html> 

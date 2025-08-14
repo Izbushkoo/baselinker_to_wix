@@ -302,6 +302,72 @@ async def export_products(
         headers={'Content-Disposition': 'attachment; filename=products_export.xlsx'}
     )
 
+@web_router.get("/quick_edit", response_class=HTMLResponse)
+async def quick_edit(
+    request: Request,
+    operation_skus: Optional[str] = Query(None),
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    if not current_user:
+        return RedirectResponse(url=f"/login?next=/products/quick_edit?operation_skus={operation_skus}", status_code=302)
+    
+    skus = [s.strip() for s in operation_skus.split(",")] if operation_skus else []
+    
+    # Формируем запрос к БД
+    base_query = (
+        select(Product, func.sum(Stock.quantity).label("total_stock"))
+        .outerjoin(Stock, Stock.sku == Product.sku)
+        .where(Product.sku.in_(skus))
+        .group_by(Product.sku)
+    )
+    result = await db.exec(base_query)
+    rows = result.all()
+    
+    products_with_stocks = []
+    for prod, total in rows:
+        total_stock = total or 0
+        stocks_res = await db.exec(select(Stock).where(Stock.sku == prod.sku))
+        stocks = stocks_res.all()
+        product_data = {
+            "sku": prod.sku,
+            "name": prod.name,
+            "brand": prod.brand,
+            "eans": prod.eans,
+            "ean": prod.eans[0] if prod.eans else None,
+            "image": base64.b64encode(prod.image).decode("utf-8") if prod.image else None,
+            "total_stock": total_stock,
+            "stocks": {w.value: 0 for w in Warehouses}
+        }
+        for st in stocks:
+            product_data["stocks"][st.warehouse] = st.quantity
+        price_info = prices_service.get_price_by_sku(prod.sku)
+        product_data["min_price"] = price_info.min_price if price_info and price_info.min_price else None
+        products_with_stocks.append(product_data)
+    
+    # Check if this is a JSON request (from AJAX)
+    if request.headers.get("Accept") == "application/json":
+        # Рендерим каждый товар через шаблон product_card.html
+        products_html = []
+        for product in products_with_stocks:
+            product_html = templates.get_template("components/product_card.html").render(
+                request=request,
+                product=product,
+                current_user=current_user
+            )
+            products_html.append(product_html)
+        
+        return JSONResponse(content={
+            "products_html": products_html, 
+            "current_user": {"is_admin": current_user.is_admin}
+        })
+    
+    # Otherwise return HTML response (not used anymore, but kept for compatibility)
+    return templates.TemplateResponse(
+        "quick_edit_panel.html",
+        {"request": request, "products": products_with_stocks, "current_user": current_user}
+    )
+
 @web_router.get("/add", response_class=HTMLResponse)
 async def add_product_form(
     request: Request,
@@ -376,6 +442,88 @@ async def edit_product_form(
             "product": product_data
         }
     )
+
+@catalog_router.get("/{sku}/card")
+async def get_product_card(
+    request: Request,
+    sku: str,
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Получить HTML карточки товара по SKU для обновления на странице
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Необходима авторизация")
+    
+    # Получаем товар с остатками
+    product_query = (
+        select(
+            Product,
+            func.sum(Stock.quantity).label('total_stock')
+        )
+        .outerjoin(Stock, Stock.sku == Product.sku)
+        .where(Product.sku == sku)
+        .group_by(Product.sku)
+    )
+    
+    result = await db.exec(product_query)
+    product_row = result.first()
+    
+    if not product_row:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    
+    product = product_row[0]
+    total_stock = product_row[1] or 0
+    
+    # Получаем остатки для продукта
+    stocks_query = select(Stock).where(Stock.sku == product.sku)
+    result = await db.exec(stocks_query)
+    stocks = result.all()
+    
+    # Создаем словарь с данными продукта
+    product_data = {
+        "id": product.sku,
+        "sku": product.sku,
+        "name": product.name,
+        "brand": product.brand,
+        "eans": product.eans,
+        "ean": product.eans[0] if product.eans else None,
+        "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
+        "total_stock": total_stock,
+        "stocks": {}
+    }
+    
+    # Инициализируем остатки для всех складов как 0
+    for warehouse in Warehouses:
+        product_data["stocks"][warehouse.value] = 0
+        
+    # Заполняем фактические остатки
+    for stock in stocks:
+        product_data["stocks"][stock.warehouse] = stock.quantity
+    
+    # Получаем цену если доступен сервис цен
+    if prices_service.is_available():
+        try:
+            price_info = prices_service.get_price_by_sku(product.sku)
+            product_data["min_price"] = price_info.min_price if price_info and price_info.min_price else None
+        except Exception as e:
+            logger.error(f"Ошибка получения цены для SKU {sku}: {str(e)}")
+            product_data["min_price"] = None
+    else:
+        product_data["min_price"] = None
+    
+    # Генерируем HTML карточки товара
+    html = templates.get_template("components/product_card.html").render(
+        product=product_data,
+        selected_products=[],
+        current_user=current_user
+    )
+    
+    return JSONResponse(content={
+        "html": html,
+        "data": product_data
+    })
 
 @router.post("")
 async def create_product(

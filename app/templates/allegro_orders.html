@@ -59,10 +59,10 @@
                 <span>Страница <span id="current-page">1</span> из <span id="total-pages">1</span></span>
             </div>
             <div class="flex space-x-2">
-                <button id="prev-page" onclick="changePage(-1)" class="px-4 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                <button id="prev-page" onclick="changePage(-1)" class="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
                     Назад
                 </button>
-                <button id="next-page" onclick="changePage(1)" class="px-4 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                <button id="next-page" onclick="changePage(1)" class="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
                     Вперед
                 </button>
             </div>
@@ -381,7 +381,7 @@ function displayOrders(orders) {
         }
         // Верхняя строка: ID (слева, кликабельно), статусы (справа)
         const mainInfo = `
-            <div class="flex flex-col gap-2 p-4 cursor-pointer hover:bg-gray-700" onclick="toggleOrderDetails('${order.id}')">
+            <div class="flex flex-col gap-2 p-4 cursor-pointer" onclick="toggleOrderDetails('${order.id}')">
                 <div class="flex items-center w-full">
                     <span class="text-sm text-gray-400">${new Date(order.updated_at).toLocaleString()}</span>
                     <div class="flex-1 flex justify-center">
@@ -419,7 +419,7 @@ function displayOrders(orders) {
         `;
 
         const details = `
-            <div id="details-${order.id}" class="hidden border-t border-gray-700 p-4 bg-gray-700">
+            <div id="details-${order.id}" class="hidden border-t border-gray-700 p-4">
                 ${order.buyer ? `
                     <div class="mb-4">
                         <h3 class="text-sm font-medium text-gray-400 mb-2">Информация о покупателе</h3>
@@ -431,7 +431,7 @@ function displayOrders(orders) {
                 ${order.delivery ? `
                     <div class="mb-4">
                         <h3 class="text-sm font-medium text-gray-400 mb-2">Адрес доставки</h3>
-                        <div class="text-sm text-white bg-gray-800 p-3 rounded-lg border border-gray-600">
+                        <div class="text-sm text-white bg-gray-700 p-3 rounded-lg">
                             <div class="grid grid-cols-2 gap-2">
                                 ${order.delivery.address ? `
                                     <div class="col-span-2">
@@ -449,7 +449,7 @@ function displayOrders(orders) {
                         <h3 class="text-sm font-medium text-gray-400 mb-2">Товары</h3>
                         <div class="space-y-2">
                             ${order.line_items.map(item => `
-                                <div class="bg-gray-800 p-3 rounded-lg border border-gray-600">
+                                <div class="bg-gray-700 p-3 rounded-lg">
                                     <div class="grid grid-cols-2 gap-2 text-sm text-white">
                                         <div class="col-span-2 font-medium">${item.offer.name}</div>
                                         <div>SKU: <button onclick="copyToClipboard('${item.offer.external.id || '-'}', this)" class="font-mono text-blue-400 hover:text-blue-600 focus:outline-none">${item.offer.external.id || '-'}</button></div>
@@ -581,12 +581,12 @@ function copyToClipboard(text, button) {
         // Показываем уведомление об успешном копировании
         const originalText = button.innerHTML;
         button.innerHTML = 'Скопировано!';
-        button.classList.add('text-green-600');
+        button.classList.add('text-green-400');
         
         // Возвращаем исходный текст через 2 секунды
         setTimeout(() => {
             button.innerHTML = originalText;
-            button.classList.remove('text-green-600');
+            button.classList.remove('text-green-400');
         }, 2000);
     }).catch(err => {
         console.error('Ошибка при копировании:', err);

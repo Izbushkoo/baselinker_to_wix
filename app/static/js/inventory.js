@@ -80,3 +80,22 @@ document.getElementById('transferForm')?.addEventListener('submit', async functi
         alert(error.message);
     }
 }); 
+// Quick Edit Slider
+window.openQuickEdit = function(operationSkus) {
+    const panel = document.getElementById('quickEditOverlay');
+    panel.classList.remove('translate-x-full');
+    panel.classList.add('translate-x-0');
+    fetch(`/products/quick_edit?operation_skus=${encodeURIComponent(operationSkus)}`, {
+        headers: { 'Accept': 'text/html' }
+    })
+    .then(response => response.text())
+    .then(html => {
+        document.getElementById('quickEditContent').innerHTML = html;
+    });
+};
+
+window.closeQuickEdit = function() {
+    const panel = document.getElementById('quickEditOverlay');
+    panel.classList.remove('translate-x-0');
+    panel.classList.add('translate-x-full');
+};
