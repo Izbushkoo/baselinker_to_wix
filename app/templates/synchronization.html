@@ -6,12 +6,12 @@
     window.location.href = '{{ url_for("login", next=request.path) }}';
 </script>
 {% else %}
-<div class="min-h-screen py-6 bg-gray-900">
+<div class="min-h-screen py-6 bg-gray-50">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold text-white">Управление синхронизацией</h1>
+            <h1 class="text-2xl font-bold text-gray-900">Управление синхронизацией</h1>
             <div class="flex space-x-4">
-                <a href="/connect_allegro" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-emerald-500 transition-all duration-200">
+                <a href="/connect_allegro" class="inline-flex items-center px-4 py-2 border border-gray-400 rounded-md shadow-sm text-sm font-medium text-gray-500 bg-gray-200 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 transition-colors duration-200">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                     </svg>
@@ -22,13 +22,13 @@
 
         <div class="space-y-4">
             {% for token in tokens %}
-            <div class="bg-gray-800 rounded-lg shadow overflow-hidden">
+            <div class="bg-gray-200 rounded-lg shadow border border-gray-300 overflow-hidden">
                 <div class="p-4 relative">
                     <a href="/allegro/orders/{{ token.id }}/{{ token.account_name }}" class="absolute inset-0 z-10"></a>
                     <div class="flex items-stretch justify-between relative z-20 pointer-events-none">
                         <div>
-                            <div class="text-xl font-semibold text-white">{{ token.account_name }}</div>
-                            <div class="text-sm text-gray-400">ID: {{ token.id }}</div>
+                            <div class="text-xl font-semibold text-gray-900">{{ token.account_name }}</div>
+                            <div class="text-sm text-gray-600">ID: {{ token.id }}</div>
                             <div class="mt-2">
                                 <div class="flex items-center space-x-2">
                                     <span class="text-sm text-gray-400">Статус синхронизации:</span>
@@ -41,48 +41,47 @@
                         </div>
                         <div class="flex items-stretch space-x-2 pointer-events-auto">
                             <div class="flex flex-col justify-between space-y-2 h-full min-h-[120px]">
-                                <button onclick="event.stopPropagation(); startSync('{{ token.id }}')" class="inline-flex items-center justify-center px-4 py-3 border border-transparent rounded text-sm font-medium text-white bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 focus:outline-none focus:ring-1 focus:ring-green-500 transition-all duration-200 flex-1">
+                                <button onclick="event.stopPropagation(); startSync('{{ token.id }}')" class="inline-flex items-center justify-center px-4 py-3 border border-green-200 rounded text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors duration-200 flex-1">
                                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                     </svg>
                                     Запустить
                                 </button>
-                                <button onclick="event.stopPropagation(); stopSync('{{ token.id }}')" class="inline-flex items-center justify-center px-4 py-3 border border-transparent rounded text-sm font-medium text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 focus:outline-none focus:ring-1 focus:ring-red-500 transition-all duration-200 flex-1">
+                                <button onclick="event.stopPropagation(); stopSync('{{ token.id }}')" class="inline-flex items-center justify-center px-4 py-3 border border-red-200 rounded text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors duration-200 flex-1">
                                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                                     </svg>
                                     Остановить
                                 </button>
                             </div>
-                            <div class="bg-gray-700 rounded-lg p-3 border border-gray-600">
+                            <div class="bg-gray-100 rounded-lg p-3 border border-gray-200">
                                 <div class="flex items-center justify-between mb-2">
                                     <div class="flex items-center space-x-2">
-                                        <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
-                                        <span class="text-sm font-medium text-blue-400">Синхронизировать заказы с даты:</span>
+                                        <span class="text-sm font-medium text-gray-700">Синхронизировать заказы с даты:</span>
                                     </div>
                                 </div>
                                 <div class="flex items-center space-x-3">
                                     <input
                                         type="date"
                                         id="sync-date-{{ token.id }}"
-                                        class="flex-1 px-3 py-2 text-sm border border-gray-500 rounded-md bg-gray-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                                        style="color-scheme: dark;"
+                                        class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-gray-500 transition-colors"
                                         onclick="event.stopPropagation();"
                                     />
-                                    <button onclick="event.stopPropagation(); syncNow('{{ token.id }}')" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-blue-500 transition-all duration-200">
+                                    <button onclick="event.stopPropagation(); syncNow('{{ token.id }}')" class="inline-flex items-center px-4 py-2 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200">
                                         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                                         </svg>
                                         Синхронизировать
                                     </button>
                                 </div>
-                                <div class="mt-2 text-xs text-gray-400">
+                                <div class="mt-2 text-xs text-gray-600">
                                     Загрузит заказы начиная с выбранной даты
                                 </div>
                             </div>
-                            <button onclick="event.stopPropagation(); deleteAccount('{{ token.id }}')" class="inline-flex items-center px-3 py-2 border border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-300 bg-gray-800 hover:bg-gradient-to-r hover:from-gray-700 hover:to-gray-600 hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-gray-500 transition-all duration-200">
+                            <button onclick="event.stopPropagation(); deleteAccount('{{ token.id }}')" class="inline-flex items-center px-3 py-2 border border-red-200 rounded-md shadow-sm text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors duration-200">
                                 <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>

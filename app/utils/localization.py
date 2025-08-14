@@ -17,7 +17,30 @@ ACTION_TRANSLATIONS = {
     "operation_failed": "Операция провалена",
     "stock_deduction_completed": "Списание выполнено успешно",
     "account_name_updated": "Имя аккаунта обновлено",
-    "processing_started": "Начата обработка"
+    "processing_started": "Начата обработка",
+    "manual_completion": "Ручное завершение",
+    "created": "Создана",
+    "loading_line_items": "Загрузка позиций заказа",
+    "line_items_loaded": "Позиции заказа загружены",
+    "line_items_load_failed": "Ошибка загрузки позиций",
+    "stock_deducted": "Товар списан",
+    "stock_deduction_failed": "Ошибка списания",
+    "sales_operation_created": "Создана операция продажи",
+    "sales_operation_failed": "Ошибка создания операции продажи",
+    "sync_success": "Синхронизация успешна",
+    "sync_failed": "Синхронизация провалена",
+    "sync_error": "Ошибка синхронизации",
+    "completed": "Завершена",
+    "retry_failed": "Повторная попытка провалена",
+    "max_retries": "Достигнуто максимум попыток",
+    "rolled_back": "Операция отменена",
+    "already_processed": "Уже обработан",
+    "order_status_check_failed": "Ошибка проверки статуса заказа",
+    "order_not_ready": "Заказ не готов к обработке",
+    "order_cancelled": "Заказ отменен",
+    "sync_retry": "Повторная синхронизация",
+    "sync_completed": "Синхронизация завершена",
+    "error": "Ошибка"
 }
 
 # Словарь локализации статусов
@@ -77,7 +100,8 @@ def localize_log_message(action: str, message: str, details: Dict[str, Any] = No
         "operation_completed": "Операция успешно завершена",
         "operation_failed": "Операция провалена: {error}",
         "stock_deduction_completed": "Списание выполнено успешно для {items_count} позиций",
-        "account_name_updated": "Имя аккаунта обновлено на: {account_name}"
+        "account_name_updated": "Имя аккаунта обновлено на: {account_name}",
+        "manual_completion": "Операция завершена вручную пользователем {completed_by}. Обработано товаров: {products_count}"
     }
     
     # Если есть шаблон для данного действия, используем его
@@ -115,6 +139,12 @@ def localize_log_message(action: str, message: str, details: Dict[str, Any] = No
                 name_match = re.search(r"to: (.+)$", message)
                 account_name = name_match.group(1) if name_match else "неизвестно"
                 return template.format(account_name=account_name)
+            
+            elif action == "manual_completion":
+                # Для ручного завершения используем данные из details
+                completed_by = details.get("completed_by", "Неизвестный пользователь")
+                products_count = details.get("products_count", 0)
+                return template.format(completed_by=completed_by, products_count=products_count)
             
         except Exception:
             # Если не удалось применить шаблон, возвращаем исходное сообщение

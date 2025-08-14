@@ -13,4 +13,83 @@ def operation_type_label(operation_type: str) -> str:
         'product_delete': 'Удаление товара',
         'product_edit': 'Редактирование товара'
     }
-    return labels.get(operation_type, operation_type) 
+    return labels.get(operation_type, operation_type)
+
+def localize_action(action: str) -> str:
+    """Локализация действий операций синхронизации складов."""
+    action_labels = {
+        'created': 'Создана',
+        'processing_started': 'Начата обработка',
+        'loading_line_items': 'Загрузка позиций заказа',
+        'line_items_loaded': 'Позиции заказа загружены',
+        'line_items_load_failed': 'Ошибка загрузки позиций',
+        'stock_validation_failed': 'Провал валидации остатков',
+        'stock_deducted': 'Товар списан',
+        'stock_deduction_completed': 'Списание завершено',
+        'stock_deduction_failed': 'Ошибка списания',
+        'sales_operation_created': 'Создана операция продажи',
+        'sales_operation_failed': 'Ошибка создания операции продажи',
+        'sync_success': 'Синхронизация успешна',
+        'sync_failed': 'Синхронизация провалена',
+        'sync_error': 'Ошибка синхронизации',
+        'completed': 'Завершена',
+        'retry_failed': 'Повторная попытка провалена',
+        'max_retries': 'Достигнуто максимум попыток',
+        'rolled_back': 'Операция отменена',
+        'already_processed': 'Уже обработан',
+        'order_status_check_failed': 'Ошибка проверки статуса заказа',
+        'order_not_ready': 'Заказ не готов к обработке',
+        'order_cancelled': 'Заказ отменен',
+        'manual_completion': 'Ручное завершение',
+        'account_name_updated': 'Имя аккаунта обновлено',
+        'sync_retry': 'Повторная синхронизация',
+        'sync_completed': 'Синхронизация завершена',
+        'error': 'Ошибка'
+    }
+    return action_labels.get(action, action)
+
+def localize_log_message(action: str, message: str, details: dict = None) -> str:
+    """Локализация сообщений в логах операций синхронизации."""
+    # Для ручного завершения добавляем особое форматирование
+    if action == 'manual_completion' and details:
+        completed_by = details.get('completed_by', 'Неизвестно')
+        products_count = details.get('products_count', 0)
+        return f"Операция завершена вручную пользователем {completed_by}. Обработано товаров: {products_count}"
+    
+    # Для остальных действий возвращаем оригинальное сообщение
+    return message
+
+def format_log_details(details: dict) -> str:
+    """Форматирует детали логов для отображения в HTML."""
+    if not details or not isinstance(details, dict):
+        return "Нет данных"
+    
+    # Исключаем основное сообщение из детального вывода
+    filtered_details = {k: v for k, v in details.items() if k != 'message'}
+    
+    if not filtered_details:
+        return "Нет дополнительных данных"
+    
+    html_parts = []
+    for key, value in filtered_details.items():
+        if isinstance(value, dict):
+            # Рекурсивно обрабатываем вложенные словари
+            nested_html = "<ul>"
+            for nested_key, nested_value in value.items():
+                nested_html += f"<li><strong>{nested_key}:</strong> {nested_value}</li>"
+            nested_html += "</ul>"
+            html_parts.append(f"<div><strong>{key}:</strong>{nested_html}</div>")
+        elif isinstance(value, list):
+            # Обрабатываем списки
+            list_html = "<ul>"
+            for item in value:
+                if isinstance(item, dict):
+                    list_html += "<li>" + format_log_details(item) + "</li>"
+                else:
+                    list_html += f"<li>{item}</li>"
+            list_html += "</ul>"
+            html_parts.append(f"<div><strong>{key}:</strong>{list_html}</div>")
+        else:
+            html_parts.append(f"<div><strong>{key}:</strong> {value}</div>")
+    
+    return "<div>" + "".join(html_parts) + "</div>"

@@ -95,10 +95,10 @@
 
                 <!-- Кнопки -->
                 <div class="flex justify-end space-x-3">
-                    <a href="/catalog" 
+                    <button type="button" id="cancelBtn"
                        class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
                         Отмена
-                    </a>
+                    </button>
                     <button type="submit" 
                             class="inline-flex justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
                         Добавить товар
@@ -121,6 +121,20 @@ document.addEventListener('DOMContentLoaded', function() {
     function getUrlParameter(name) {
         const urlParams = new URLSearchParams(window.location.search);
         return urlParams.get(name);
+    }
+    
+    // Функция для получения URL для возврата
+    function getReturnUrl() {
+        const nextUrl = getUrlParameter('next');
+        if (nextUrl) {
+            return decodeURIComponent(nextUrl);
+        }
+        // Если нет параметра next, проверяем referrer
+        if (document.referrer && !document.referrer.includes('/products/add')) {
+            return document.referrer;
+        }
+        // По умолчанию возвращаемся в каталог
+        return '/catalog';
     }
     
     // Предзаполнение полей из URL параметров
@@ -185,6 +199,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
+    // Обработчик кнопки "Отмена"
+    document.getElementById('cancelBtn').addEventListener('click', function() {
+        window.location.href = getReturnUrl();
+    });
+    
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
         
@@ -203,7 +222,8 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const result = await response.json();
             if (result.success) {
-                window.location.href = '/catalog';
+                // Используем функцию для определения URL возврата
+                window.location.href = getReturnUrl();
             }
         } catch (error) {
             console.error('Ошибка:', error);

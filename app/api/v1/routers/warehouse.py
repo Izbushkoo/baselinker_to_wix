@@ -809,6 +809,55 @@ async def sale_from_order(
             order_id=sale_data.order_id,
             is_stock_updated=True
         )
+        
+        # Завершаем соответствующую операцию синхронизации
+        try:
+            from app.models.stock_synchronization import PendingStockOperation, OperationStatus
+            from app.services.stock_synchronization_service import StockSynchronizationService
+            from sqlmodel import select
+            from datetime import datetime
+            
+            # Ищем операцию по order_id и token_id
+            operation_stmt = select(PendingStockOperation).where(
+                PendingStockOperation.order_id == sale_data.order_id,
+                PendingStockOperation.token_id == str(sale_data.token_id),
+                PendingStockOperation.status.in_([OperationStatus.PENDING, OperationStatus.PROCESSING, OperationStatus.FAILED])
+            ).order_by(PendingStockOperation.created_at.desc())
+            
+            # Используем синхронную сессию для работы с операциями
+            from app.database import SessionLocal
+            with SessionLocal() as sync_session:
+                operation = sync_session.exec(operation_stmt).first()
+                
+                if operation:
+                    # Создаем сервис синхронизации для логирования
+                    sync_service = StockSynchronizationService(sync_session)
+                    
+                    # Переводим операцию в завершенное состояние
+                    operation.status = OperationStatus.COMPLETED
+                    operation.completed_at = datetime.utcnow()
+                    operation.updated_at = datetime.utcnow()
+                    
+                    # Логируем ручное завершение
+                    sync_service._log_operation(
+                        operation.id,
+                        "manual_completion",
+                        f"Операция завершена вручную через кнопку 'Списать' пользователем {current_user.email}",
+                        detailed_info={
+                            "completed_by": current_user.email,
+                            "completion_method": "manual_button",
+                            "order_id": sale_data.order_id,
+                            "token_id": str(sale_data.token_id),
+                            "products_count": len(products)
+                        }
+                    )
+                    
+                    sync_session.commit()
+                    logging.info(f"Операция синхронизации {operation.id} завершена вручную для заказа {sale_data.order_id}")
+                    
+        except Exception as e:
+            # Логируем ошибку, но не прерываем основной процесс
+            logging.warning(f"Не удалось завершить операцию синхронизации для заказа {sale_data.order_id}: {str(e)}")
 
         # update_stmt = update(AllegroOrder).where(
         #     AllegroOrder.id == sale_data.order_id

@@ -21,26 +21,29 @@
     }
 </style>
 
-<div class="min-h-screen py-6 bg-gray-900">
+<div class="min-h-screen py-6 bg-gray-50">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center mb-6">
-            <div class="flex items-center space-x-4">
-                <a href="/synchronization" class="text-gray-400 hover:text-white">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                    </svg>
-                </a>
-                <h1 class="text-2xl font-bold text-white">Заказы {{ account_name }}</h1>
+        <!-- Шапка страницы -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-6">
+            <div class="flex justify-between items-center">
+                <div class="flex items-center space-x-4">
+                    <a href="/synchronization" class="text-gray-400 hover:text-white transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                        </svg>
+                    </a>
+                    <h1 class="text-2xl font-bold text-white">Заказы {{ account_name }}</h1>
+                </div>
             </div>
         </div>
 
         <!-- Поиск -->
-        <div class="mb-6">
+        <div class="bg-white rounded-lg p-4 mb-6 shadow-sm">
             <div class="relative">
                 <input type="text" 
                        id="search-input" 
                        placeholder="Поиск по ID заказа..." 
-                       class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                       class="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                        onkeyup="doOrderSearch()">
                 <svg class="absolute right-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -53,18 +56,20 @@
         </div>
 
         <!-- Пагинация -->
-        <div id="pagination" class="mt-6 flex justify-between items-center">
-            <div class="flex space-x-4 text-sm text-gray-400">
-                <span>Всего заказов: <span id="total-orders">0</span></span>
-                <span>Страница <span id="current-page">1</span> из <span id="total-pages">1</span></span>
-            </div>
-            <div class="flex space-x-2">
-                <button id="prev-page" onclick="changePage(-1)" class="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                    Назад
-                </button>
-                <button id="next-page" onclick="changePage(1)" class="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                    Вперед
-                </button>
+        <div class="bg-white rounded-lg p-4 shadow-sm">
+            <div id="pagination" class="flex justify-between items-center">
+                <div class="flex space-x-4 text-sm text-gray-600">
+                    <span>Всего заказов: <span id="total-orders" class="font-medium">0</span></span>
+                    <span>Страница <span id="current-page" class="font-medium">1</span> из <span id="total-pages" class="font-medium">1</span></span>
+                </div>
+                <div class="flex space-x-2">
+                    <button id="prev-page" onclick="changePage(-1)" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                        Назад
+                    </button>
+                    <button id="next-page" onclick="changePage(1)" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                        Вперед
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -341,7 +346,7 @@ function displayOrders(orders) {
     orders.forEach((order, index) => {
         console.log(`Processing order ${index}:`, order);
         const orderElement = document.createElement('div');
-        orderElement.className = 'bg-gray-800 rounded-lg shadow overflow-hidden relative';
+        orderElement.className = 'bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow overflow-hidden relative border border-gray-200';
         console.log('Order details:', order)
         // Получаем статусы
         const orderStatus = getOrderStatus(order);
@@ -369,7 +374,7 @@ function displayOrders(orders) {
             */
             // Кнопка "Пометить списанным" — всегда, если не списан
             actionButtons += `<button onclick="event.stopPropagation(); markOrderStockUpdated('${order.id}')"
-                class="px-3 py-1 bg-yellow-600 text-white text-sm rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500">Пометить списанным</button>`;
+                class="px-3 py-1 bg-amber-50 text-amber-700 text-sm rounded-md hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-200 border border-amber-200 transition-all duration-200">Пометить списанным</button>`;
         }
         
         // Статус списания
@@ -410,7 +415,7 @@ function displayOrders(orders) {
                     ${actionButtons}
                     ${stockStatus}
                     ${(order.status === 'READY_FOR_PROCESSING' && order.has_pending_operation) ? `
-                        <button onclick="event.stopPropagation(); goToOperationDetails('${order.id}')" class="px-3 py-1 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500">
+                        <button onclick="event.stopPropagation(); goToOperationDetails('${order.id}')" class="px-3 py-1 bg-purple-50 text-purple-700 text-sm rounded-md hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-purple-200 border border-purple-200 transition-all duration-200">
                             Детали операции
                         </button>
                     ` : ''}
@@ -419,19 +424,19 @@ function displayOrders(orders) {
         `;
 
         const details = `
-            <div id="details-${order.id}" class="hidden border-t border-gray-700 p-4">
+            <div id="details-${order.id}" class="hidden border-t border-gray-200 p-4 bg-gray-50">
                 ${order.buyer ? `
                     <div class="mb-4">
-                        <h3 class="text-sm font-medium text-gray-400 mb-2">Информация о покупателе</h3>
-                        <div class="text-sm text-white">
+                        <h3 class="text-sm font-medium text-gray-700 mb-2">Информация о покупателе</h3>
+                        <div class="text-sm text-gray-900 bg-white p-3 rounded-lg border border-gray-200">
                             ${formatAddress(order.buyer)}
                         </div>
                     </div>
                 ` : ''}
                 ${order.delivery ? `
                     <div class="mb-4">
-                        <h3 class="text-sm font-medium text-gray-400 mb-2">Адрес доставки</h3>
-                        <div class="text-sm text-white bg-gray-700 p-3 rounded-lg">
+                        <h3 class="text-sm font-medium text-gray-700 mb-2">Адрес доставки</h3>
+                        <div class="text-sm text-gray-900 bg-white p-3 rounded-lg border border-gray-200">
                             <div class="grid grid-cols-2 gap-2">
                                 ${order.delivery.address ? `
                                     <div class="col-span-2">
@@ -446,13 +451,13 @@ function displayOrders(orders) {
 
                 ${order.line_items && order.line_items.length > 0 ? `
                     <div>
-                        <h3 class="text-sm font-medium text-gray-400 mb-2">Товары</h3>
+                        <h3 class="text-sm font-medium text-gray-700 mb-2">Товары</h3>
                         <div class="space-y-2">
                             ${order.line_items.map(item => `
-                                <div class="bg-gray-700 p-3 rounded-lg">
-                                    <div class="grid grid-cols-2 gap-2 text-sm text-white">
+                                <div class="bg-white p-3 rounded-lg border border-gray-200">
+                                    <div class="grid grid-cols-2 gap-2 text-sm text-gray-900">
                                         <div class="col-span-2 font-medium">${item.offer.name}</div>
-                                        <div>SKU: <button onclick="copyToClipboard('${item.offer.external.id || '-'}', this)" class="font-mono text-blue-400 hover:text-blue-600 focus:outline-none">${item.offer.external.id || '-'}</button></div>
+                                        <div>SKU: <button onclick="copyToClipboard('${item.offer.external.id || '-'}', this)" class="font-mono text-blue-600 hover:text-blue-800 focus:outline-none">${item.offer.external.id || '-'}</button></div>
                                         <div>Offer ID: ${item.offer.id}</div>
                                         <div>Кол-во: ${item.quantity}</div>
                                         <div>Цена: ${formatPrice(item.price)}</div>
@@ -465,7 +470,9 @@ function displayOrders(orders) {
                 ` : ''}
 
                 <!-- Полная цена заказа -->
-                <span class="ml-auto text-white font-medium">Полная цена: ${formatPrice(order.summary.totalToPay)}</span>
+                <div class="mt-4 pt-3 border-t border-gray-200 text-right">
+                    <span class="text-lg font-semibold text-gray-900">Полная цена: ${formatPrice(order.summary.totalToPay)}</span>
+                </div>
             </div>
         `;
 

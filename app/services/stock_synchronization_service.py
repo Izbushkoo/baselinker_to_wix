@@ -21,6 +21,8 @@ from app.services.Allegro_Microservice.tokens_endpoint import AllegroTokenMicros
 from app.services.warehouse.manager import InventoryManager, get_manager
 from app.services.stock_validation_service import StockValidationService
 from app.services.stock_sync_notifications import get_notification_service
+from app.services.operations_service import get_operations_service
+from app.models.operations import OperationType as RegularOperationType
 from app.core.stock_sync_config import stock_sync_config
 from app.core.security import create_access_token
 from app.core.config import settings
@@ -642,11 +644,14 @@ class StockSynchronizationService:
         
         # Все позиции доступны - выполняем списание
         try:
+            products_data = []
+            
             for item in operation.line_items:
                 offer = item.get('offer', {})
                 external = offer.get('external', {})
                 sku = external.get('id')
                 quantity = item.get('quantity', 0)
+                offer_name = offer.get('name', '')
                 
                 if not sku or quantity <= 0:
                     continue
@@ -658,11 +663,48 @@ class StockSynchronizationService:
                     quantity
                 )
                 
+                # Собираем данные для создания операции продажи
+                products_data.append({
+                    'sku': sku,
+                    'quantity': quantity,
+                    'name': offer_name
+                })
+                
                 self._log_operation(
                     operation.id,
                     "stock_deducted",
                     f"Успешно списано {quantity} единиц товара {sku} со склада {operation.warehouse}"
                 )
+            
+            # Создаем операцию продажи по заказу через operations_service
+            if products_data:
+                try:
+                    operations_service = get_operations_service()
+                    sales_operation = operations_service.create_order_operation(
+                        warehouse_id=operation.warehouse,
+                        order_id=operation.order_id,
+                        products_data=products_data,
+                        comment=f"Списание по заказу Allegro {operation.order_id} (аккаунт: {account_name})",
+                        user_email="system@stock_sync",
+                        session=self.session
+                    )
+                    
+                    self._log_operation(
+                        operation.id,
+                        "sales_operation_created",
+                        f"Создана операция продажи ID: {sales_operation.id} для заказа {operation.order_id}"
+                    )
+                    
+                except Exception as e:
+                    # Логируем ошибку создания операции, но не прерываем процесс
+                    error_msg = f"Ошибка создания операции продажи: {str(e)}"
+                    self.logger.warning(f"Failed to create sales operation for order {operation.order_id}: {error_msg}")
+                    self._log_operation(
+                        operation.id,
+                        "sales_operation_failed",
+                        error_msg,
+                        status="warning"
+                    )
             
             return True
             

@@ -1,4 +1,5 @@
-<div class="flex items-start gap-6 bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-100 p-4 relative">
+<!-- Обновлено: единая цветовая схема -->
+<div class="flex items-start gap-6 bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 p-4 relative">
     <!-- Чекбокс -->
     <div class="pt-1">
         <label class="inline-flex items-center">
@@ -146,7 +147,7 @@
                         onclick="openTransferModal(this)"
                         data-product-sku="{{ product['sku'] }}"
                         data-product-name="{{ product['name'] }}"
-                        class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+                        class="bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-3 rounded-md transition-colors"
                     >
                         Переместить
                     </button>
@@ -177,7 +178,7 @@
                                 <button 
                                     type="button"
                                     onclick="removeFromStock(this)"
-                                    class="px-3 py-1 text-sm text-white bg-red-500 hover:bg-red-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                                    class="px-3 py-1 text-sm text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                     {% if quantity == 0 %}disabled{% endif %}
                                     data-warehouse="{{ warehouse }}"
                                     data-sku="{{ product['sku'] }}"
@@ -187,7 +188,7 @@
                                 <button 
                                     type="button"
                                     onclick="addToStock(this)"
-                                    class="px-3 py-1 text-sm text-white bg-green-500 hover:bg-green-600 rounded"
+                                    class="px-3 py-1 text-sm text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 rounded transition-colors"
                                     data-warehouse="{{ warehouse }}"
                                     data-sku="{{ product['sku'] }}"
                                 >
@@ -244,13 +245,13 @@
 <div id="errorModalWrapper"
      class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center z-50">
   <div id="errorModalContent"
-       class="bg-white rounded-lg shadow-lg max-w-sm w-full p-6 relative"
+       class="bg-white rounded-lg shadow-lg max-w-sm w-full p-6 relative border border-gray-200"
        onclick="event.stopPropagation()">
     <h3 class="text-lg font-semibold text-red-600 mb-4">Ошибка</h3>
     <p id="errorModalMessage" class="text-sm text-gray-700 mb-6"></p>
     <div class="text-right">
       <button id="errorModalCloseBtn"
-              class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded">
+              class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md transition-colors">
         Закрыть
       </button>
     </div>
