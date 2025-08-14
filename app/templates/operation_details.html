@@ -380,34 +380,63 @@
      data-warehouse="{{ operation.warehouse or 'Ирина' }}"
      data-status="{{ operation.status }}"
      data-has-order-data="{{ 'true' if operation.order_id and operation.token_id and operation.account_name else 'false' }}"
+     data-skus="{% if operation.line_items %}{% for item in operation.line_items %}{{ item.offer.external.id }}{% if not loop.last %},{% endif %}{% endfor %}{% endif %}"
      style="display: none;">
 </div>
 
-<!-- Quick Edit Slider Panel -->
-<div id="quickEditOverlay" class="fixed top-16 bottom-0 right-0 w-1/2 bg-white shadow-xl transform translate-x-full transition-transform duration-300 ease-in-out hidden z-50 border-l border-gray-200">
-    <!-- Header with close button -->
-    <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-4 flex justify-between items-center">
-        <h2 class="text-xl font-bold">🛍️ Товары операции</h2>
-        <button onclick="closeQuickEdit()" class="text-white hover:text-gray-200 transition-colors duration-200">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
-        </button>
-    </div>
+<!-- Quick Edit Slider Panel with Integrated Close Button -->
+<div id="quickEditOverlay" class="fixed top-16 bottom-0 right-0 transform translate-x-full transition-transform duration-300 ease-in-out hidden z-50" style="width: 50%;">
+    <!-- Close Button integrated into panel -->
+    <button id="quickEditCloseBtn" onclick="closeQuickEdit()" class="absolute bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800 w-10 h-full transition-all duration-300 flex items-center justify-center group" style="left: -40px; top: 0; border-radius: 8px 0 0 8px; box-shadow: -3px 0 10px rgba(0, 0, 0, 0.1), 0 3px 10px rgba(0, 0, 0, 0.05); z-index: 10;">
+        <svg class="w-4 h-4 transition-transform duration-200 group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+    </button>
     
-    <!-- Content -->
-    <div id="quickEditContent" class="h-full overflow-y-auto px-6 py-4">
-        <div class="flex items-center justify-center h-64">
-            <div class="text-gray-500">
-                <div class="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-                <p>Загрузка товаров...</p>
+    <!-- Panel Content -->
+    <div class="bg-white shadow-xl h-full border border-gray-200 rounded-l-lg">
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-4 rounded-tl-lg">
+            <h2 class="text-xl font-bold">🛍️ Товары операции</h2>
+        </div>
+        
+        <!-- Content -->
+        <div id="quickEditContent" class="h-full overflow-y-auto px-6 py-4" style="height: calc(100% - 80px);">
+            <div class="flex items-center justify-center h-32">
+                <div class="text-gray-500">
+                    <div class="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+                    <p>Загрузка товаров...</p>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Overlay for closing panel -->
-<div id="quickEditBackdrop" class="fixed inset-0 bg-black bg-opacity-50 hidden z-40" onclick="closeQuickEdit()"></div>
+
+<!-- Price Edit Modal -->
+<div id="priceEditModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-lg max-w-md w-full p-6 relative" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Редактировать цену</h3>
+        <form id="priceEditForm">
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">SKU товара:</label>
+                <input type="text" id="priceEditSku" class="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100" readonly>
+            </div>
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Минимальная цена (PLN):</label>
+                <input type="number" id="priceEditPrice" step="0.01" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button type="button" onclick="closePriceEditModal()" class="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300">
+                    Отмена
+                </button>
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                    Сохранить
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 
 <!-- Transfer Modal -->
 <div id="transferModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center z-50">
@@ -565,9 +594,74 @@
         // Закрытие модального окна по нажатию Escape
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
+                closePriceEditModal();
                 closeTransferModal();
             }
         });
+        
+        // Price Edit Modal handlers
+        const priceEditModal = document.getElementById('priceEditModal');
+        const priceEditForm = document.getElementById('priceEditForm');
+        
+        // Закрытие модального окна по клику на фон
+        if (priceEditModal) {
+            priceEditModal.addEventListener('click', function(e) {
+                if (e.target === priceEditModal) {
+                    closePriceEditModal();
+                }
+            });
+        }
+        
+        // Обработчик отправки формы редактирования цены
+        if (priceEditForm) {
+            priceEditForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const sku = document.getElementById('priceEditSku').value;
+                const price = document.getElementById('priceEditPrice').value;
+                console.log('Отправка запроса на обновление цены:', {sku, min_price: price});
+                
+                if (!price || parseFloat(price) < 0) {
+                    showNotification('Пожалуйста, введите корректную цену', 'error');
+                    return;
+                }
+                
+                // Отправляем запрос на обновление цены
+                fetch(`/api/prices/${sku}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        min_price: parseFloat(price)
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        console.error('Ошибка при обновлении цены:', response.status, response.statusText);
+                        throw new Error('Ошибка при обновлении цены');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Цена успешно обновлена:', data);
+                    closePriceEditModal();
+                    showNotification('Цена успешно обновлена', 'success');
+                    
+                    // Обновляем Quick Edit панель если она открыта
+                    const quickEditPanel = document.getElementById('quickEditOverlay');
+                    if (quickEditPanel && !quickEditPanel.classList.contains('hidden')) {
+                        const operationSkus = operationData.dataset.skus;
+                        setTimeout(() => {
+                            openQuickEdit(operationSkus);
+                        }, 500);
+                    }
+                })
+                .catch(error => {
+                    console.error('Ошибка при обновлении цены:', error);
+                    showNotification('Ошибка при обновлении цены: ' + error.message, 'error');
+                });
+            });
+        }
         
         // Обработчик отправки формы трансфера
         if (transferForm) {
@@ -762,6 +856,16 @@
                 // Обновляем статус в интерфейсе
                 updateStockStatus(orderId, true);
                 showNotification(data.message || 'Товары успешно списаны', 'success');
+                
+                // Обновляем товары в Quick Edit панели если она открыта
+                const quickEditPanel = document.getElementById('quickEditOverlay');
+                if (quickEditPanel && !quickEditPanel.classList.contains('hidden')) {
+                    console.log('Обновляем товары в Quick Edit панели после списания');
+                    const operationSkus = operationData.dataset.skus;
+                    setTimeout(() => {
+                        openQuickEdit(operationSkus);
+                    }, 500); // Небольшая задержка для завершения операции списания
+                }
             } else {
                 showNotification(data.message || 'Ошибка при списании товаров', 'error');
             }
@@ -828,17 +932,21 @@
     // Quick Edit Panel Functions
     function openQuickEdit(operationSkus) {
         const panel = document.getElementById('quickEditOverlay');
-        const backdrop = document.getElementById('quickEditBackdrop');
         const main = document.getElementById('mainContainer');
+        const closeBtn = document.getElementById('quickEditCloseBtn');
         
-        // Show panel and backdrop
+        // Show panel (без backdrop для затемнения)
         panel.classList.remove('hidden', 'translate-x-full');
         panel.classList.add('translate-x-0');
-        backdrop.classList.remove('hidden');
         
-        // Adjust main content
+        // Show close button
+        if (closeBtn) {
+            closeBtn.classList.remove('hidden');
+        }
+        
+        // Adjust main content - учитываем кнопку (40px) + панель (50%)
         if (main) {
-            main.style.marginRight = '50%';
+            main.style.marginRight = 'calc(50% + 40px)';
             main.style.transition = 'margin-right 0.3s ease-in-out';
         }
         
@@ -850,8 +958,12 @@
         .then(data => {
             // Используем готовый HTML от сервера
             if (data.products_html && data.products_html.length > 0) {
+                let html = data.products_html.join('');
+                // Убираем чекбоксы из HTML для операций
+                html = html.replace(/<input[^>]*type="checkbox"[^>]*>/g, '');
+                html = html.replace(/<label[^>]*for="select-[^"]*"[^>]*>.*?<\/label>/g, '');
                 document.getElementById('quickEditContent').innerHTML = 
-                    '<div class="space-y-4">' + data.products_html.join('') + '</div>';
+                    '<div class="space-y-4">' + html + '</div>';
             } else {
                 document.getElementById('quickEditContent').innerHTML = 
                     '<div class="text-center py-12 text-gray-500"><p>Товары не найдены</p></div>';
@@ -866,12 +978,16 @@
 
     function closeQuickEdit() {
         const panel = document.getElementById('quickEditOverlay');
-        const backdrop = document.getElementById('quickEditBackdrop');
         const main = document.getElementById('mainContainer');
+        const closeBtn = document.getElementById('quickEditCloseBtn');
         
-        // Hide panel and backdrop
+        // Hide panel
         panel.classList.add('translate-x-full');
-        backdrop.classList.add('hidden');
+        
+        // Hide close button
+        if (closeBtn) {
+            closeBtn.classList.add('hidden');
+        }
         
         // Reset main content
         if (main) {
@@ -1198,7 +1314,7 @@
                 const quickEditPanel = document.getElementById('quickEditOverlay');
                 if (quickEditPanel && !quickEditPanel.classList.contains('hidden')) {
                     // Если Quick Edit панель открыта, перезагружаем её контент
-                    const operationSkus = [{% for item in operation.line_items %}'{{ item.offer.external.id }}'{% if not loop.last %},{% endif %}{% endfor %}].join(',');
+                    const operationSkus = operationData.dataset.skus;
                     openQuickEdit(operationSkus);
                 } else {
                     // В противном случае просто показываем уведомление
@@ -1211,12 +1327,78 @@
             // В случае ошибки обновляем Quick Edit панель если она открыта
             const quickEditPanel = document.getElementById('quickEditOverlay');
             if (quickEditPanel && !quickEditPanel.classList.contains('hidden')) {
-                const operationSkus = [{% for item in operation.line_items %}'{{ item.offer.external.id }}'{% if not loop.last %},{% endif %}{% endfor %}].join(',');
+                const operationSkus = operationData.dataset.skus;
                 setTimeout(() => {
                     openQuickEdit(operationSkus);
                 }, 1000);
             }
         }
+    }
+    
+    // Функция для обновления цены товара
+    function updatePrice(button) {
+        const sku = button.dataset.productSku;
+        const input = button.parentElement.querySelector('input[type="number"]');
+        const newPrice = parseFloat(input.value);
+        
+        if (isNaN(newPrice) || newPrice <= 0) {
+            showNotification('Пожалуйста, введите корректную цену', 'error');
+            return;
+        }
+        
+        // Отключаем кнопку на время запроса
+        button.disabled = true;
+        
+        fetch(`/api/products/${sku}/price`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                price: newPrice
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Ошибка при обновлении цены');
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Обновляем отображение цены в карточке
+            const priceDisplay = button.parentElement.parentElement.querySelector('.text-2xl.font-bold');
+            if (priceDisplay) {
+                priceDisplay.textContent = `${newPrice.toFixed(2)} PLN`;
+            }
+            
+            // Сбрасываем значение input
+            input.value = '';
+            showNotification('Цена успешно обновлена', 'success');
+        })
+        .catch(error => {
+            showNotification('Ошибка при обновлении цены: ' + error.message, 'error');
+        })
+        .finally(() => {
+            button.disabled = false;
+        });
+    }
+    
+    // Функции для редактирования цены
+    function editPrice(sku, currentMinPrice) {
+        console.log('Открытие модального окна редактирования цены для SKU:', sku, 'min_price:', currentMinPrice);
+        const modal = document.getElementById('priceEditModal');
+        const skuInput = document.getElementById('priceEditSku');
+        const priceInput = document.getElementById('priceEditPrice');
+        
+        skuInput.value = sku;
+        priceInput.value = currentMinPrice || '';
+        
+        modal.classList.remove('hidden');
+    }
+    
+    function closePriceEditModal() {
+        const modal = document.getElementById('priceEditModal');
+        modal.classList.add('hidden');
     }
     
     // Функции для модального окна ошибок (из product_card.html)
@@ -1226,4 +1408,7 @@
     };
 
 </script>
+
+{% include "components/image_modal.html" %}
+
 {% endblock %}

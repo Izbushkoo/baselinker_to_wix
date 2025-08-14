@@ -1,0 +1,82 @@
+<!-- Image Modal Component -->
+<div id="imageModal"
+     class="fixed inset-0 bg-black bg-opacity-75 hidden flex items-center justify-center z-50">
+    <div class="relative max-w-[75vw] max-h-[75vh] bg-white rounded-lg shadow-xl overflow-hidden">
+        <!-- Close button -->
+        <button id="imageModalCloseBtn" 
+                class="absolute top-4 right-4 z-10 bg-black bg-opacity-50 hover:bg-opacity-70 text-white rounded-full p-2 transition-all duration-200"
+                onclick="closeImageModal()">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+        </button>
+        
+        <!-- Image container -->
+        <div class="w-full h-full flex items-center justify-center p-4">
+            <img id="imageModalImg" 
+                 src="" 
+                 alt="" 
+                 class="max-w-full max-h-full object-contain">
+        </div>
+        
+        <!-- Product info -->
+        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
+            <h3 id="imageModalTitle" class="text-white text-lg font-semibold"></h3>
+        </div>
+    </div>
+</div>
+
+<script>
+// Image Modal Functions - только если они еще не определены
+if (typeof openImageModal === 'undefined') {
+    function openImageModal(sku, productName) {
+        const modal = document.getElementById('imageModal');
+        const img = document.getElementById('imageModalImg');
+        const title = document.getElementById('imageModalTitle');
+        
+        // Set image source and title
+        img.src = `/api/products/${sku}/image/original`;
+        img.alt = productName;
+        title.textContent = productName;
+        
+        // Show modal
+        modal.classList.remove('hidden');
+        
+        // Prevent body scroll
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeImageModal() {
+        const modal = document.getElementById('imageModal');
+        const img = document.getElementById('imageModalImg');
+        
+        // Hide modal
+        modal.classList.add('hidden');
+        
+        // Clear image source to stop loading
+        img.src = '';
+        
+        // Restore body scroll
+        document.body.style.overflow = '';
+    }
+
+    // Close modal when clicking outside the image or pressing Escape
+    document.addEventListener('DOMContentLoaded', () => {
+        const imageModal = document.getElementById('imageModal');
+        if (imageModal) {
+            imageModal.addEventListener('click', (e) => {
+                if (e.target === imageModal) {
+                    closeImageModal();
+                }
+            });
+        }
+        
+        // Close modal on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeImageModal();
+            }
+        });
+    });
+}
+</script>
