@@ -1,0 +1,34 @@
+{% if validation_details and validation_details.invalid_items > 0 %}
+<div id="errorBlock" class="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+    <h3 class="text-lg font-semibold text-red-800 mb-4">Ошибка</h3>
+    <div id="errorItems" class="space-y-3">
+        {% for item in validation_details.items_details %}
+        {% if not item.valid %}
+        <div class="flex items-center space-x-4 bg-white border border-red-200 rounded-lg p-3">
+            <div class="w-12 h-12 bg-gray-200 rounded flex-shrink-0 flex items-center justify-center overflow-hidden">
+                <img src="/api/products/{{ item.sku }}/image/original" 
+                     alt="Товар {{ item.sku }}"
+                     class="w-full h-full object-cover"
+                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                <svg class="w-6 h-6 text-gray-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+            </div>
+            <div class="flex-1">
+                <button onclick="copyToClipboard('{{ item.sku }}')"
+                    class="font-mono font-semibold text-gray-800 hover:text-blue-600 cursor-pointer transition-colors">
+                    {{ item.sku }}
+                </button>
+                <div class="flex space-x-4 mt-2 text-sm">
+                    <span class="text-green-600">Доступно: {{ item.available_quantity }}</span>
+                    <span class="text-blue-600">Требуется: {{ item.required_quantity }}</span>
+                    <span class="text-red-600">Нехватка: {{ item.shortage_quantity }}</span>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}

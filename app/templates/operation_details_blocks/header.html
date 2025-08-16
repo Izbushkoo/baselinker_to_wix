@@ -1,0 +1,109 @@
+<div class="operation-details-container bg-gray-100 border border-gray-300 rounded-lg p-4 mb-6">
+    <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+            <button onclick="history.back()" class="text-gray-600 hover:text-gray-800 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                </svg>
+            </button>
+            <h1 class="text-lg font-semibold text-gray-800">Детали операции</h1>
+            <button id="toggleDetails" class="text-gray-500 hover:text-gray-700 transition-colors">
+                <svg class="w-4 h-4 transform transition-transform rotate-180" id="toggleIcon" style="transform: rotate(180deg);" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+            </button>
+        </div>
+        <div id="stockStatus" class="px-3 py-1 rounded-full text-sm font-medium bg-gray-200 text-gray-700">
+            Загрузка статуса...
+        </div>
+    </div>
+    <div id="operationDetails" class="collapsible-content expanded grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200">
+        <div class="space-y-2 border-r border-gray-200 pr-4">
+            <div class="flex justify-between">
+                <span class="text-gray-600">ID заказа:</span>
+                <button onclick="copyToClipboard('{{ operation.order_id }}')"
+                    class="text-gray-800 hover:text-blue-600 font-mono cursor-pointer transition-colors"
+                    data-order-id="{{ operation.order_id }}" title="{{ operation.order_id }}">
+                    {{ operation.order_id }}
+                </button>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-gray-600">Аккаунт:</span>
+                <span class="text-gray-800">{{ operation.account_name or 'Не указан' }}</span>
+            </div>
+            {% if full_order and full_order.buyer %}
+            <div class="flex justify-between">
+                <span class="text-gray-600">Покупатель:</span>
+                <span class="text-gray-800">{{ full_order.buyer.login or 'Не указан' }}</span>
+            </div>
+            {% endif %}
+        </div>
+        <div class="space-y-2 border-r border-gray-200 pr-4">
+            <div class="flex justify-between">
+                <span class="text-gray-600">Статус заказа:</span>
+                <span class="text-gray-800" id="orderStatus">
+                    {% if full_order %}
+                    {% if full_order.fulfillment and full_order.fulfillment.status == 'CANCELLED' %}
+                    Отменен продавцом
+                    {% elif full_order.fulfillment and full_order.fulfillment.status == 'SENT' %}
+                    Отправлен
+                    {% elif full_order.status == 'BOUGHT' %}
+                    Куплен
+                    {% elif full_order.status == 'FILLED_IN' %}
+                    Заполнен
+                    {% elif full_order.status == 'READY_FOR_PROCESSING' %}
+                    Готов к обработке
+                    {% else %}
+                    {{ full_order.status or 'Неизвестно' }}
+                    {% endif %}
+                    {% else %}
+                    Загрузка...
+                    {% endif %}
+                </span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-gray-600">Статус операции:</span>
+                <span
+                    class="px-2 py-1 rounded text-xs {% if operation.status == 'failed' %}bg-red-100 text-red-800{% elif operation.status == 'pending' %}bg-yellow-100 text-yellow-800{% elif operation.status == 'processing' %}bg-blue-100 text-blue-800{% elif operation.status == 'completed' %}bg-green-100 text-green-800{% else %}bg-gray-100 text-gray-800{% endif %}"
+                    id="operationStatus">
+                    {{ operation.status|upper }}
+                </span>
+            </div>
+            {% if full_order and full_order.purchasedAt %}
+            <div class="flex justify-between">
+                <span class="text-gray-600">Дата покупки:</span>
+                <span class="text-gray-800">{{ full_order.purchasedAt[:10] }}</span>
+            </div>
+            {% endif %}
+        </div>
+        <div class="space-y-2">
+            <div class="flex justify-between">
+                <span class="text-gray-600">Обновлено:</span>
+                <span class="text-gray-800">{{ operation.updated_at.strftime('%d.%m.%Y %H:%M') if operation.updated_at
+                    else 'Не указано' }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-gray-600">Следующая попытка:</span>
+                <span class="text-gray-800">{{ operation.next_retry_at.strftime('%d.%m.%Y %H:%M') if
+                    operation.next_retry_at else 'Не запланирована' }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-gray-600">Количество попыток:</span>
+                <span class="text-gray-800">{{ operation.retry_count }}</span>
+            </div>
+            {% if operation.stock_deducted_at %}
+            <div class="flex justify-between">
+                <span class="text-gray-600">Списано:</span>
+                <span class="text-gray-800">{{ operation.stock_deducted_at.strftime('%d.%m.%Y %H:%M') }}</span>
+            </div>
+            {% endif %}
+            {% if operation.cancelled_by %}
+            <div class="flex justify-between">
+                <span class="text-gray-600">Отменено:</span>
+                <span class="text-gray-800">{{ operation.cancelled_by }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+</div>

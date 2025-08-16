@@ -1,0 +1,105 @@
+<style>
+    .collapsible-content {
+        transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+        overflow: hidden;
+    }
+
+    .collapsible-content.collapsed {
+            display: none !important;
+            max-height: 0 !important;
+            opacity: 0 !important;
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+            margin-top: 0 !important;
+            margin-bottom: 0 !important;
+    }
+
+    .collapsible-content.expanded {
+            display: grid !important;
+            max-height: none !important;
+            opacity: 1 !important;
+    }
+
+    /* Альтернативный подход с display */
+    .collapsible-content.hidden-content {
+        display: none !important;
+    }
+
+    .collapsible-content.visible-content {
+        display: block !important;
+    }
+
+    .rotate-180 {
+        transform: rotate(180deg);
+    }
+
+    .transition-transform {
+        transition: transform 0.3s ease;
+    }
+
+    /* Дополнительные стили для анимации */
+    .cursor-pointer {
+        cursor: pointer;
+    }
+
+    /* Исправляем анимацию для иконок */
+    #toggleIcon {
+        transition: transform 0.3s ease;
+    }
+
+    #orderItemsIcon {
+        transition: transform 0.3s ease;
+    }
+
+    /* Стили для кнопок действий */
+    button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    button:disabled:hover {
+        background-color: inherit !important;
+    }
+
+    /* Стили для основного контейнера при открытии панели */
+    /* Переход управляется через JavaScript для лучшего контроля */
+
+    /* Стили для панели Quick Edit */
+    #quickEditOverlay {
+        transition: transform 0.3s ease-in-out;
+        box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Улучшенные стили для кнопки закрытия панели */
+    #quickEditCloseBtn {
+        transition: all 0.3s ease-in-out;
+    }
+
+    #quickEditCloseBtn:hover {
+        transform: translateX(-2px);
+        box-shadow: -5px 0 15px rgba(0, 0, 0, 0.15), 0 5px 15px rgba(0, 0, 0, 0.1);
+    }
+/* --- Наглядное разделение «Детали операции» */
+.operation-details-container {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    border-radius: 4px;
+}
+
+/* Блок ошибки: авто-ширина по содержимому и больше padding */
+#errorBlock {
+    display: inline-block;
+    width: auto;
+    padding: 1rem 1.5rem;
+}
+
+/* Блок товаров заказа: адаптивная высота */
+#orderItemsContent > div {
+    max-height: 400px;
+    height: auto !important;
+    overflow-y: auto;
+}
+
+</style>

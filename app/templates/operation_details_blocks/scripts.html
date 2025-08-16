@@ -1,0 +1,661 @@
+<script>
+    // Получаем данные операции из data-атрибутов
+    const operationData = document.getElementById('operation-data');
+    const operationOrderId = operationData.dataset.orderId;
+    const operationTokenId = operationData.dataset.tokenId;
+    const operationAccountName = operationData.dataset.accountName;
+    const operationWarehouse = operationData.dataset.warehouse;
+    const operationStatus = operationData.dataset.status;
+    const operationHasOrderData = operationData.dataset.hasOrderData === 'true';
+    const fullOrderElem = document.getElementById("full-order-data");
+    let fullOrder = null;
+    if (fullOrderElem) {
+        try {
+            fullOrder = JSON.parse(fullOrderElem.textContent);
+        } catch (error) {
+            console.error("Ошибка парсинга full-order-data:", error);
+        }
+    }
+    // Автоматическое обновление каждые 60 секунд для активных операций
+    if (operationStatus === 'pending' || operationStatus === 'processing') {
+        setInterval(() => {
+            location.reload();
+        }, 60000);
+    }
+
+    /**
+     * Форматирует ID заказа для отображения (первые 4 + ... + последние 4)
+     */
+    function formatOrderId(orderId) {
+        if (!orderId || orderId.length <= 12) {
+            return orderId;
+        }
+        return orderId.substring(0, 4) + '...' + orderId.substring(orderId.length - 4);
+    }
+
+    /**
+     * Определяет статус заказа согласно жизненному циклу и приоритетам
+     * Приоритеты: отмена продавцом > основные статусы > отмена покупателем
+     * Жизненный цикл: BOUGHT → FILLED_IN → READY_FOR_PROCESSING → SENT
+     * 
+     * @param {Object} order - Объект заказа с полями status и fulfillment
+     * @returns {string} - Локализованный статус заказа
+     */
+    function getOrderStatus(order) {
+        console.log(order)
+        if (!order) {
+            return 'Неизвестно';
+        }
+
+        // Приоритет 1: Отмена продавцом (fulfillment.status === 'CANCELLED')
+        if (order.fulfillment && order.fulfillment.status === 'CANCELLED') {
+            return 'Отменен продавцом';
+        }
+
+        // Приоритет 2: Основные статусы жизненного цикла
+        // Если заказ отправлен, показываем статус fulfillment
+        if (order.fulfillment && order.fulfillment.status === 'SENT') {
+            return 'Отправлен';
+        }
+
+        // Основные статусы заказа
+        const statusMap = {
+            'BOUGHT': 'Куплен',
+            'FILLED_IN': 'Заполнен',
+            'READY_FOR_PROCESSING': 'Готов к обработке'
+        };
+
+        if (order.status && statusMap[order.status]) {
+            return statusMap[order.status];
+        }
+
+        // Приоритет 3: Отмена покупателем (основной статус === 'CANCELLED')
+        if (order.status === 'CANCELLED') {
+            return 'Отменен покупателем';
+        }
+
+        // Если статус не распознан, возвращаем как есть
+        return order.status || 'Неизвестно';
+    }
+
+    /**
+     * Переключает отображение деталей операции
+     */
+    function toggleOperationDetails() {
+            console.log('toggleOperationDetails вызвана');
+            const details = document.getElementById('operationDetails');
+            const icon = document.getElementById('toggleIcon');
+
+        if (!details) {
+            console.error('Element operationDetails not found');
+            return;
+        }
+
+        // Используем простой подход с display
+        const isHidden = details.style.display === 'none' || window.getComputedStyle(details).display === 'none';
+        
+        if (isHidden) {
+            // Показываем
+            details.style.display = 'grid';
+            details.classList.remove('collapsed');
+            details.classList.add('expanded');
+            if (icon) {
+                icon.style.transform = 'rotate(180deg)';
+            }
+        } else {
+            // Скрываем
+            details.style.display = 'none';
+            details.classList.remove('expanded');
+            details.classList.add('collapsed');
+            if (icon) {
+                icon.style.transform = 'rotate(0deg)';
+            }
+        }
+    }
+
+    /**
+     * Переключает отображение товаров заказа
+     */
+    function toggleOrderItems() {
+        console.log('toggleOrderItems вызвана');
+        const content = document.getElementById('orderItemsContent');
+        const icon = document.getElementById('orderItemsIcon');
+
+        if (!content) {
+            console.error('Element orderItemsContent not found');
+            return;
+        }
+
+        
+        // Используем простой подход с display
+        const isHidden = content.style.display === 'none' || window.getComputedStyle(content).display === 'none';
+        
+        if (isHidden) {
+            // Показываем
+            content.style.display = 'block';
+            content.classList.remove('collapsed');
+            content.classList.add('expanded');
+            if (icon) {
+                icon.style.transform = 'rotate(180deg)';
+            }
+        } else {
+            // Скрываем
+            content.style.display = 'none';
+            content.classList.remove('expanded');
+            content.classList.add('collapsed');
+            if (icon) {
+                icon.style.transform = 'rotate(0deg)';
+            }
+        }
+    }
+
+    // Делаем функции доступными глобально
+    window.toggleOperationDetails = toggleOperationDetails;
+    window.toggleOrderItems = toggleOrderItems;
+    window.performStockDeduction = performStockDeduction;
+    window.cancelOperation = cancelOperation;
+    window.openProductsPanel = openProductsPanel;
+    window.saleFromOrder = saleFromOrder;
+    window.openQuickEdit = openQuickEdit;
+    window.closeQuickEdit = closeQuickEdit;
+
+    /**
+     * Переключает весь блок логов
+     */
+    function toggleLogsSection() {
+        console.log('toggleLogsSection вызвана');
+        const content = document.getElementById('logsContent');
+        const icon = document.getElementById('logsIcon');
+
+        if (!content) {
+            console.error('Element logsContent not found');
+            return;
+        }
+
+        
+        const isHidden = content.style.display === 'none' || window.getComputedStyle(content).display === 'none';
+        
+        if (isHidden) {
+            content.style.display = 'block';
+            if (icon) {
+                icon.style.transform = 'rotate(180deg)';
+            }
+        } else {
+            content.style.display = 'none';
+            if (icon) {
+                icon.style.transform = 'rotate(0deg)';
+            }
+        }
+    }
+
+    /**
+     * Переключает детали конкретного лога
+     */
+    function toggleLogDetails(element) {
+        console.log('toggleLogDetails вызвана');
+        const details = element.querySelector('.log-details');
+        
+        if (!details) {
+            console.error('Log details not found');
+            return;
+        }
+
+        console.log('Текущий display деталей лога:', window.getComputedStyle(details).display);
+        
+        const isHidden = details.style.display === 'none' || window.getComputedStyle(details).display === 'none';
+        console.log('isHidden:', isHidden);
+        
+        if (isHidden) {
+            details.style.display = 'block';
+            console.log('Детали лога показаны');
+        } else {
+            details.style.display = 'none';
+            console.log('Детали лога скрыты');
+        }
+    }
+
+    // Делаем функцию доступной глобально
+    window.toggleLogDetails = toggleLogDetails;
+
+    /**
+     * Выполняет операцию списания
+     */
+    function performStockDeduction() {
+        if (operationOrderId && operationTokenId) {
+            saleFromOrder(operationOrderId, operationTokenId);
+        } else {
+            alert('Недостаточно данных для выполнения операции списания');
+        }
+    }
+
+    /**
+     * Отменяет операцию (заглушка)
+     */
+    function cancelOperation() {
+        alert('Функционал отмены операции будет реализован позже');
+    }
+
+    /**
+     * Открывает панель товаров
+     */
+    function openProductsPanel() {
+        if (operationData.dataset.skus) {
+            openQuickEdit(operationData.dataset.skus);
+        } else {
+            alert('Товары не найдены');
+        }
+    }
+
+    /**
+     * Обновляет отображение статуса заказа на странице
+     * Использует данные заказа, переданные из бэкенда
+     */
+    function updateOrderStatusDisplay() {
+        const orderStatusElement = document.getElementById('orderStatus');
+        if (!orderStatusElement) {
+            console.warn('Элемент orderStatus не найден');
+            return;
+        }
+
+        try {
+            // Используем данные fullOrder, если они есть, иначе fallback на window.orderData
+            let order = null;
+            if (fullOrder) {
+                order = fullOrder;
+            } else if (typeof window.orderData !== 'undefined' && window.orderData) {
+                order = window.orderData;
+            }
+            if (order) {
+                const orderStatus = getOrderStatus(order);
+                orderStatusElement.textContent = orderStatus;
+            } else {
+                console.warn('Данные заказа не найдены');
+            }
+        } catch (error) {
+            console.error('Ошибка при обновлении статуса заказа:', error);
+        }
+    }
+
+    /**
+     * Загружает статус списания асинхронно
+     */
+    async function loadStockStatus() {
+        if (!operationOrderId || !operationTokenId) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/stock-status/${operationOrderId}/${operationTokenId}`);
+            const data = await response.json();
+            updateStockStatus(data.is_stock_updated);
+        } catch (error) {
+            console.error('Ошибка при загрузке статуса списания:', error);
+            updateStockStatus(null);
+        }
+    }
+
+    /**
+     * Обновляет отображение статуса списания
+     */
+    function updateStockStatus(isStockUpdated) {
+        const statusElement = document.getElementById('stockStatus');
+        if (!statusElement) return;
+
+        if (isStockUpdated === null) {
+            statusElement.textContent = 'Ошибка загрузки';
+            statusElement.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-200 text-red-700';
+        } else if (isStockUpdated) {
+            statusElement.textContent = 'Списано';
+            statusElement.className = 'px-3 py-1 rounded-full text-sm font-medium bg-green-200 text-green-700';
+        } else {
+            statusElement.textContent = 'Не списано';
+            statusElement.className = 'px-3 py-1 rounded-full text-sm font-medium bg-yellow-200 text-yellow-700';
+        }
+    }
+
+    /**
+     * Загружает данные заказа для отображения итогов
+     */
+    async function loadOrderSummary() {
+        if (!operationOrderId || !operationTokenId) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/order-summary/${operationOrderId}/${operationTokenId}`);
+            const data = await response.json();
+
+            const deliveryCostElement = document.getElementById('deliveryCost');
+            const totalAmountElement = document.getElementById('totalAmount');
+
+            if (deliveryCostElement && data.delivery_cost !== undefined) {
+                deliveryCostElement.textContent = `${data.delivery_cost} ${data.currency || 'PLN'}`;
+            }
+
+            if (totalAmountElement && data.total_amount !== undefined) {
+                totalAmountElement.textContent = `${data.total_amount} ${data.currency || 'PLN'}`;
+            }
+        } catch (error) {
+            console.error('Ошибка при загрузке итогов заказа:', error);
+            const deliveryCostElement = document.getElementById('deliveryCost');
+            const totalAmountElement = document.getElementById('totalAmount');
+
+            if (deliveryCostElement) deliveryCostElement.textContent = 'Ошибка загрузки';
+            if (totalAmountElement) totalAmountElement.textContent = 'Ошибка загрузки';
+        }
+    }
+
+    /**
+     * Копирует текст в буфер обмена
+     */
+    function copyToClipboard(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(() => {
+                showNotification('Скопировано в буфер обмена', 'success');
+            }).catch(() => {
+                fallbackCopy(text);
+            });
+        } else {
+            fallbackCopy(text);
+        }
+    }
+
+    function fallbackCopy(text) {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        try {
+            document.execCommand('copy');
+            showNotification('Скопировано в буфер обмена', 'success');
+        } catch (err) {
+            console.error('Failed to copy text: ', err);
+            showNotification('Ошибка копирования', 'error');
+        }
+
+        document.body.removeChild(textArea);
+    }
+
+    // Функция показа уведомлений
+    function showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.textContent = message;
+        notification.className = `fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 transition-opacity duration-300 ${type === 'success' ? 'bg-green-600 text-white' :
+            type === 'error' ? 'bg-red-600 text-white' :
+                type === 'warning' ? 'bg-yellow-600 text-white' :
+                    'bg-blue-600 text-white'
+            }`;
+
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 3000);
+    }
+
+    /**
+     * Выполняет списание товаров из заказа
+     * Адаптированная версия функции из allegro_orders.html
+     */
+    async function saleFromOrder(orderId, tokenId) {
+        try {
+            console.log('Выполнение списания для заказа:', orderId, 'токен:', tokenId);
+
+            // Показываем индикатор загрузки
+            let button = null;
+            let originalText = '';
+            if (typeof event !== 'undefined' && event.target) {
+                button = event.target;
+                originalText = button.textContent;
+                button.disabled = true;
+                button.textContent = 'Выполняется...';
+            }
+
+            // Получаем данные операции для списания
+            const lineItems = [];
+            if (typeof window.operationLineItems !== 'undefined' && window.operationLineItems) {
+                lineItems.push(...window.operationLineItems);
+            }
+
+            // Отправляем запрос на списание
+            const response = await fetch('/api/warehouse/sale-from-order/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    order_id: orderId,
+                    token_id: tokenId,
+                    line_items: lineItems,
+                    warehouse: operationWarehouse || 'Ирина'
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showNotification(data.message || 'Операция списания выполнена успешно', 'success');
+                // Обновляем статус списания на странице
+                updateStockStatus(true);
+                // Перезагружаем страницу через 2 секунды для обновления данных
+                setTimeout(() => {
+                    location.reload();
+                }, 2000);
+            } else {
+                showNotification(data.message || 'Ошибка при выполнении операции списания', 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка при списании товаров:', error);
+            showNotification('Ошибка при выполнении операции списания: ' + error.message, 'error');
+        } finally {
+            // Восстанавливаем кнопку
+            if (button) {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        }
+    }
+
+    /**
+     * Помечает заказ как списанный (сохраняем для совместимости)
+     */
+    async function markOrderStockUpdated(orderId, tokenId) {
+        try {
+            const response = await fetch(`/api/allegro_sync/orders/${tokenId}/${orderId}/mark_stock_updated`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+            });
+
+            if (response.ok) {
+                showNotification('Заказ помечен как списанный', 'success');
+                updateStockStatus(true);
+            } else {
+                const data = await response.json();
+                showNotification(data.message || 'Ошибка при пометке заказа', 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка при пометке заказа:', error);
+            showNotification('Ошибка при пометке заказа: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * Открывает панель Quick Edit для товаров операции
+     * Адаптированная версия функции из inventory.js
+     */
+    function openQuickEdit(operationSkus) {
+        console.log('Открытие Quick Edit для SKU:', operationSkus);
+
+        const panel = document.getElementById('quickEditOverlay');
+        const mainContainer = document.getElementById('mainContainer');
+
+        if (!panel) {
+            console.error('Панель Quick Edit не найдена');
+            return;
+        }
+
+        // Показываем панель
+        panel.classList.remove('hidden');
+        panel.classList.remove('translate-x-full');
+        panel.classList.add('translate-x-0');
+
+        // Сдвигаем основной контент влево - учитываем кнопку (40px) + панель (50%)
+        if (mainContainer) {
+            mainContainer.style.marginRight = 'calc(50% + 40px)';
+            mainContainer.style.transition = 'margin-right 0.3s ease-in-out';
+        }
+
+        // Загружаем содержимое панели - используем тот же подход что и в старом коде
+        fetch(`/products/quick_edit?operation_skus=${encodeURIComponent(operationSkus)}`, {
+            headers: { 'Accept': 'application/json' }
+        })
+            .then(r => r.json())
+            .then(data => {
+                // Используем готовый HTML от сервера
+                if (data.products_html && data.products_html.length > 0) {
+                    let html = data.products_html.join('');
+                    // Убираем чекбоксы из HTML для операций
+                    html = html.replace(/<input[^>]*type="checkbox"[^>]*>/g, '');
+                    html = html.replace(/<label[^>]*for="select-[^"]*"[^>]*>.*?<\/label>/g, '');
+                    document.getElementById('quickEditContent').innerHTML = '<div class="space-y-4">' + html + '</div>';
+                } else {
+                    document.getElementById('quickEditContent').innerHTML = '<div class="text-center py-12 text-gray-500"><p>Товары не найдены</p></div>';
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка при загрузке Quick Edit:', error);
+                showNotification('Ошибка при загрузке панели товаров: ' + error.message, 'error');
+                document.getElementById('quickEditContent').innerHTML = '<div class="text-center py-12 text-red-500"><p>Ошибка загрузки товаров</p></div>';
+            });
+    }
+
+    /**
+     * Закрывает панель Quick Edit
+     */
+    function closeQuickEdit() {
+        console.log('Закрытие Quick Edit панели');
+
+        const panel = document.getElementById('quickEditOverlay');
+        const mainContainer = document.getElementById('mainContainer');
+
+        if (panel) {
+            panel.classList.remove('translate-x-0');
+            panel.classList.add('translate-x-full');
+
+            // Возвращаем основной контент в исходное положение
+            if (mainContainer) {
+                mainContainer.style.marginRight = '';
+            }
+
+            // Скрываем панель после завершения анимации
+            setTimeout(() => {
+                panel.classList.add('hidden');
+            }, 300);
+        }
+    }
+
+    // Делаем функции доступными глобально
+    window.copyToClipboard = copyToClipboard;
+    window.markOrderStockUpdated = markOrderStockUpdated;
+    window.formatOrderId = formatOrderId;
+
+    // Обработчик клавиши Escape для закрытия панели
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+            const panel = document.getElementById('quickEditOverlay');
+            if (panel && !panel.classList.contains('hidden')) {
+                closeQuickEdit();
+            }
+        }
+    });
+
+    // Инициализация при загрузке страницы
+    document.addEventListener('DOMContentLoaded', function () {
+
+        updateOrderStatusDisplay();
+        
+        if (fullOrder && fullOrder.technical_flags && typeof fullOrder.technical_flags.is_stock_updated !== "undefined") {
+            updateStockStatus(fullOrder.technical_flags.is_stock_updated);
+        } else {
+            loadStockStatus();
+        }
+        loadOrderSummary();
+
+        // Инициализируем обработчики кликов
+        initializeClickHandlers();
+
+        // Форматируем ID заказов на странице
+        formatOrderIdsOnPage();
+    });
+
+    /**
+     * Инициализирует обработчики кликов для элементов интерфейса
+     */
+    function initializeClickHandlers() {
+        // Обработчик для кнопки сворачивания деталей операции
+        const toggleDetailsBtn = document.getElementById('toggleDetails');
+        if (toggleDetailsBtn) {
+            toggleDetailsBtn.addEventListener('click', toggleOperationDetails);
+            console.log('Обработчик для toggleDetails добавлен');
+        } else {
+            console.warn('Элемент toggleDetails не найден');
+        }
+
+        // Обработчик для кнопки сворачивания товаров заказа
+        const orderItemsHeader = document.querySelector('[data-toggle="orderItems"]');
+        if (orderItemsHeader) {
+            orderItemsHeader.addEventListener('click', toggleOrderItems);
+            console.log('Обработчик для orderItems добавлен');
+        } else {
+            console.warn('Элемент с data-toggle="orderItems" не найден');
+        }
+
+        // Обработчик для кнопки сворачивания блока логов
+        const logsHeader = document.querySelector('[data-toggle="logsSection"]');
+        if (logsHeader) {
+            logsHeader.addEventListener('click', toggleLogsSection);
+            console.log('Обработчик для logsSection добавлен');
+        } else {
+            console.warn('Элемент с data-toggle="logsSection" не найден');
+        }
+
+        // Обработчики для отдельных логов
+        const logItems = document.querySelectorAll('[data-toggle="logDetails"]');
+        console.log(`Найдено ${logItems.length} элементов логов`);
+        logItems.forEach(logItem => {
+            logItem.addEventListener('click', function () {
+                toggleLogDetails(this);
+            });
+        });
+    }
+
+    /**
+     * Форматирует все ID заказов на странице
+     */
+    function formatOrderIdsOnPage() {
+        const orderIdElements = document.querySelectorAll('[data-order-id]');
+        console.log(`Найдено ${orderIdElements.length} элементов с data-order-id`);
+
+        orderIdElements.forEach(element => {
+            const orderId = element.dataset.orderId;
+            const currentText = element.textContent.trim();
+
+            if (orderId && currentText === orderId) {
+                const formattedId = formatOrderId(orderId);
+                element.textContent = formattedId;
+                element.title = orderId; // Показываем полный ID в tooltip
+                console.log(`Форматирован ID: ${orderId} -> ${formattedId}`);
+            }
+        });
+    }
+</script>

@@ -48,6 +48,11 @@ class TelegramManager:
         if target is None:
             raise RuntimeError("chat_id is not specified")
 
+        # Sanitize text for HTML parse mode to avoid Telegram parse errors
+        if parse_mode and parse_mode.upper() == "HTML":
+            import html as _html
+            text = _html.escape(text)
+
         payload = {
             "chat_id": target,
             "text": text,

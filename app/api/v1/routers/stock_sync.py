@@ -797,6 +797,7 @@ async def get_operation_details(
         )
 
 
+
 @router.get("/operations/pending", summary="Список провальных операций")
 async def get_failed_operations(
     limit: int = Query(50, ge=1, le=500, description="Количество операций"),
@@ -974,17 +975,15 @@ async def operation_details_page(
     session: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user_optional)
 ):
-
     """
     HTML страница с детальной информацией об операции.
     Используется для ссылок из Telegram уведомлений.
     """
-
     if not current_user:
         return RedirectResponse(url=f"/login?next=/stock-sync/monitor/operation/{operation_id}", status_code=302)
 
     try:
-        # Получаем детали операции (аналогично API endpoint)
+        # Получаем детали операции
         operation = session.get(PendingStockOperation, operation_id)
         if not operation:
             return HTMLResponse(
@@ -1004,6 +1003,28 @@ async def operation_details_page(
                 status_code=404
             )
         
+        # Получаем полную информацию о заказе от микросервиса
+        full_order = None
+        if operation.order_id and operation.token_id:
+            try:
+                jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
+                orders_client = OrdersClient(
+                    jwt_token=jwt_token,
+                    base_url=settings.MICRO_SERVICE_URL
+                )
+                
+                order_response = orders_client.get_order_by_id(
+                    token_id=UUID(operation.token_id),
+                    order_id=operation.order_id
+                )
+                
+                if order_response.orders:
+                    full_order = order_response.orders[0]
+                    logger.info(f"Получен полный заказ для операции {operation_id}")
+                
+            except Exception as order_error:
+                logger.warning(f"Не удалось получить полный заказ для операции {operation_id}: {order_error}")
+        
         # Получаем логи операции
         logs = session.exec(
             select(StockSynchronizationLog).where(
@@ -1022,17 +1043,18 @@ async def operation_details_page(
                 logger.error(f"Ошибка обработки лога валидации {log.id}: {log_error}")
                 continue
         
-        # Проверяем существование товаров в базе, если есть line_items
-        if operation.line_items:
+        # Проверяем существование товаров в базе
+        items_to_check = operation.line_items or []
+        if full_order and 'lineItems' in full_order:
+            items_to_check = full_order['lineItems']
+        
+        if items_to_check:
             from app.models.warehouse import Product
             
-            for item in operation.line_items:
-                # line_items содержит словари, обращаемся к ним как к словарям
+            for item in items_to_check:
                 if isinstance(item, dict) and 'offer' in item and 'external' in item['offer'] and 'id' in item['offer']['external']:
                     sku = item['offer']['external']['id']
-                    # Проверяем существование товара в базе
                     product = session.get(Product, sku)
-                    # Добавляем флаг существования товара к item (словарю)
                     item['product_exists'] = product is not None
         
         return templates.TemplateResponse("operation_details.html", {
@@ -1040,6 +1062,7 @@ async def operation_details_page(
             "user": current_user,
             "current_user": current_user,
             "operation": operation,
+            "full_order": full_order,  # Передаем полную информацию о заказе
             "logs": logs,
             "validation_details": validation_details,
             "logs_count": len(logs)
@@ -1077,7 +1100,6 @@ async def operation_details_by_order_page(
     HTML страница с детальной информацией об операции по ID заказа.
     Используется для перехода с страницы заказов Allegro.
     """
-
     if not current_user:
         return RedirectResponse(url=f"/login?next=/stock-sync/monitor/operation-by-order/{order_id}", status_code=302)
 
@@ -1111,6 +1133,28 @@ async def operation_details_by_order_page(
         # Берем самую последнюю операцию для этого заказа
         operation = operations[0]
         
+        # Получаем полную информацию о заказе от микросервиса
+        full_order = None
+        if operation.token_id:
+            try:
+                jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
+                orders_client = OrdersClient(
+                    jwt_token=jwt_token,
+                    base_url=settings.MICRO_SERVICE_URL
+                )
+                
+                order_response = orders_client.get_order_by_id(
+                    token_id=UUID(operation.token_id),
+                    order_id=order_id
+                )
+                
+                if order_response.orders:
+                    full_order = order_response.orders[0]
+                    logger.info(f"Получен полный заказ {order_id} для операции {operation.id}")
+                
+            except Exception as order_error:
+                logger.warning(f"Не удалось получить полный заказ {order_id}: {order_error}")
+        
         # Получаем логи операции
         logs = session.exec(
             select(StockSynchronizationLog).where(
@@ -1129,17 +1173,18 @@ async def operation_details_by_order_page(
                 logger.error(f"Ошибка обработки лога валидации {log.id}: {log_error}")
                 continue
         
-        # Проверяем существование товаров в базе, если есть line_items
-        if operation.line_items:
+        # Проверяем существование товаров в базе
+        items_to_check = operation.line_items or []
+        if full_order and 'lineItems' in full_order:
+            items_to_check = full_order['lineItems']
+        
+        if items_to_check:
             from app.models.warehouse import Product
             
-            for item in operation.line_items:
-                # line_items содержит словари, обращаемся к ним как к словарям
+            for item in items_to_check:
                 if isinstance(item, dict) and 'offer' in item and 'external' in item['offer'] and 'id' in item['offer']['external']:
                     sku = item['offer']['external']['id']
-                    # Проверяем существование товара в базе
                     product = session.get(Product, sku)
-                    # Добавляем флаг существования товара к item (словарю)
                     item['product_exists'] = product is not None
         
         return templates.TemplateResponse("operation_details.html", {
@@ -1147,6 +1192,7 @@ async def operation_details_by_order_page(
             "user": current_user,
             "current_user": current_user,
             "operation": operation,
+            "full_order": full_order,  # Передаем полную информацию о заказе
             "logs": logs,
             "validation_details": validation_details,
             "logs_count": len(logs)

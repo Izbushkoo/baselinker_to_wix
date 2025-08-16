@@ -16,11 +16,12 @@ class OperationType(str, Enum):
 
 class OperationStatus(str, Enum):
     """Статусы операций синхронизации."""
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
+    PENDING = "pending"           # Создана, ожидает загрузки line_items
+    PROCESSING = "processing"     # Line_items загружены, готова к списанию
+    STOCK_DEDUCTED = "stock_deducted"  # Остатки списаны, ожидает синхронизации
+    COMPLETED = "completed"       # Полностью завершена
+    FAILED = "failed"            # Превышен лимит попыток
+    CANCELLED = "cancelled"       # Отменена пользователем
 
 
 class NotificationStatus(str, Enum):
@@ -29,6 +30,49 @@ class NotificationStatus(str, Enum):
     SENT = "sent"
     FAILED = "failed"
     SUPPRESSED = "suppressed"  # Подавлено из-за частых повторов
+
+
+class LogAction(str, Enum):
+    """Стандартизированные действия для логирования."""
+    # Создание и инициализация
+    OPERATION_CREATED = "operation_created"
+    ACCOUNT_NAME_UPDATED = "account_name_updated"
+    
+    # Загрузка данных
+    LINE_ITEMS_LOADING = "line_items_loading"
+    LINE_ITEMS_LOADED = "line_items_loaded"
+    LINE_ITEMS_LOAD_FAILED = "line_items_load_failed"
+    
+    # Валидация остатков
+    STOCK_VALIDATION_STARTED = "stock_validation_started"
+    STOCK_VALIDATION_PASSED = "stock_validation_passed"
+    STOCK_VALIDATION_FAILED = "stock_validation_failed"
+    
+    # Списание остатков
+    STOCK_DEDUCTION_STARTED = "stock_deduction_started"
+    STOCK_DEDUCTION_COMPLETED = "stock_deduction_completed"
+    STOCK_DEDUCTION_FAILED = "stock_deduction_failed"
+    
+    # Синхронизация с микросервисом
+    MICROSERVICE_SYNC_STARTED = "microservice_sync_started"
+    MICROSERVICE_SYNC_SUCCESS = "microservice_sync_success"
+    MICROSERVICE_SYNC_FAILED = "microservice_sync_failed"
+    
+    # Переходы статусов
+    STATUS_TRANSITION = "status_transition"
+    
+    # Отмена операций
+    CANCELLATION_REQUESTED = "cancellation_requested"
+    STOCK_ROLLBACK_STARTED = "stock_rollback_started"
+    STOCK_ROLLBACK_COMPLETED = "stock_rollback_completed"
+    MICROSERVICE_ROLLBACK_STARTED = "microservice_rollback_started"
+    MICROSERVICE_ROLLBACK_COMPLETED = "microservice_rollback_completed"
+    CANCELLATION_COMPLETED = "cancellation_completed"
+    
+    # Обработка ошибок
+    RETRY_SCHEDULED = "retry_scheduled"
+    MAX_RETRIES_REACHED = "max_retries_reached"
+    OPERATION_FAILED = "operation_failed"
 
 
 class PendingStockOperation(SQLModel, table=True):
@@ -70,11 +114,21 @@ class PendingStockOperation(SQLModel, table=True):
     # Дополнительные поля
     allegro_order_id: Optional[str] = Field(default=None, index=True, description="ID заказа Allegro (без связи, таблица в микросервисе)")
     line_items: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON), description="Позиции заказа (lineItems) от микросервиса")
+    
+    # Новые поля для отслеживания этапов обработки
+    line_items_loaded_at: Optional[datetime] = Field(default=None, description="Время загрузки line_items")
+    stock_deducted_at: Optional[datetime] = Field(default=None, description="Время списания остатков")
+    microservice_synced_at: Optional[datetime] = Field(default=None, description="Время синхронизации с микросервисом")
+    
+    # Поля для отмены операций
+    cancelled_by: Optional[str] = Field(default=None, description="Кто отменил операцию")
+    cancellation_reason: Optional[str] = Field(default=None, description="Причина отмены")
+    rollback_operations: Optional[List[UUID]] = Field(default=None, sa_column=Column(JSON), description="ID операций отката")
 
     def is_ready_for_retry(self, max_retries: int = 5) -> bool:
         """Проверяет, готова ли операция для повторной попытки."""
         return (
-            self.status == OperationStatus.PENDING and
+            self.status in [OperationStatus.PENDING, OperationStatus.PROCESSING, OperationStatus.STOCK_DEDUCTED] and
             self.retry_count < max_retries and
             (self.next_retry_at is None or self.next_retry_at <= datetime.utcnow())
         )

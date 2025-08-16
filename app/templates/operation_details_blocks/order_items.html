@@ -1,0 +1,94 @@
+<div class="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
+    <div class="flex items-center justify-between cursor-pointer" data-toggle="orderItems">
+        <h3 class="text-lg font-semibold text-gray-800">Товары заказа</h3>
+        <svg class="w-5 h-5 text-gray-500 rotate-180 transition-transform" id="orderItemsIcon" fill="none"
+            stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+        </svg>
+    </div>
+
+    <div id="orderItemsContent" class="collapsible-content mt-4 expanded">
+        {% set items_source = full_order.lineItems if full_order and full_order.lineItems else operation.line_items %}
+        {% if items_source and items_source|length > 0 %}
+        <div class="overflow-y-auto border border-gray-300 rounded" style="max-height: 400px;">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-100 sticky top-0">
+                    <tr>
+                        <th class="px-3 py-2 text-left">SKU</th>
+                        <th class="px-3 py-2 text-left">Название</th>
+                        <th class="px-3 py-2 text-right">Цена за ед.</th>
+                        <th class="px-3 py-2 text-right">Кол-во</th>
+                        <th class="px-3 py-2 text-right">Цена</th>
+                    </tr>
+                </thead>
+                <tbody id="orderItemsTable">
+                    {% for item in items_source %}
+                    <tr class="border-b border-gray-200 hover:bg-gray-50">
+                        <td class="px-3 py-2">
+                            <button onclick="copyToClipboard('{{ item.offer.external.id }}')"
+                                class="font-mono text-gray-800 hover:text-blue-600 cursor-pointer transition-colors">
+                                {{ item.offer.external.id }}
+                            </button>
+                        </td>
+                        <td class="px-3 py-2 text-gray-700">{{ item.offer.name or 'Не указано' }}</td>
+                        <td class="px-3 py-2 text-right text-gray-700">
+                            {% if item.price and item.price.amount %}
+                            {{ "%.2f"|format(item.price.amount|float) }} {{ item.price.currency or 'PLN' }}
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td class="px-3 py-2 text-right text-gray-700">{{ item.quantity }}</td>
+                        <td class="px-3 py-2 text-right text-gray-700">
+                            {% if item.price and item.price.amount %}
+                            {{ "%.2f"|format((item.price.amount|float) * (item.quantity|int)) }} {{ item.price.currency or 'PLN' }}
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Итоги заказа -->
+        <div class="mt-4 text-right space-y-1" id="orderSummary">
+            {% if full_order and full_order.summary %}
+            <div class="text-sm text-gray-600">
+                Стоимость доставки: 
+                <span id="deliveryCost">
+                    {% if full_order.summary.totalToPay and full_order.summary.totalToPay.delivery %}
+                    {{ "%.2f"|format(full_order.summary.totalToPay.delivery.amount|float) }} {{ full_order.summary.totalToPay.delivery.currency or 'PLN' }}
+                    {% else %}
+                    0.00 PLN
+                    {% endif %}
+                </span>
+            </div>
+            <div class="text-lg font-semibold">
+                Итого: 
+                <span id="totalAmount">
+                    {% if full_order.summary.totalToPay and full_order.summary.totalToPay.amount %}
+                    {{ "%.2f"|format(full_order.summary.totalToPay.amount|float) }} {{ full_order.summary.totalToPay.currency or 'PLN' }}
+                    {% else %}
+                    Не указано
+                    {% endif %}
+                </span>
+            </div>
+            {% else %}
+            <div class="text-sm text-gray-600">
+                Стоимость доставки: <span id="deliveryCost">Данные недоступны</span>
+            </div>
+            <div class="text-lg font-semibold">
+                Итого: <span id="totalAmount">Данные недоступны</span>
+            </div>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="text-center py-8 text-gray-500">
+            <div class="text-4xl mb-2">📦</div>
+            <div>Товары не найдены</div>
+        </div>
+        {% endif %}
+    </div>
+</div>

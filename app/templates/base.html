@@ -34,9 +34,8 @@
     </script>
 </head>
 <body class="h-full">
-    <div id="mainContainer" class="min-h-full">
-        <!-- Навигация -->
-        <nav class="fixed top-0 left-0 right-0 bg-gray-900 z-50">
+    <!-- Навигация -->
+    <nav class="fixed top-0 left-0 right-0 bg-gray-900 z-50">
             <div class="mx-auto max-w-7xl px-2 sm:px-4 lg:px-8">
                 <div class="flex h-16 items-center justify-between">
                     <!-- Бургер-меню только на мобильных -->
@@ -115,9 +114,10 @@
                     {% endif %}
                 </div>
             </div>
-        </nav>
+    </nav>
 
-        <!-- Основной контент -->
+    <!-- Основной контент -->
+    <div id="mainContainer" class="min-h-full mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <main class="pt-16">
             {% if messages %}
             <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 mt-4">
