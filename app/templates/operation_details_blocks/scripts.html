@@ -318,21 +318,22 @@
     }
 
     /**
-     * Загружает статус списания асинхронно
+     * Загружает статус списания из данных заказа
      */
-    async function loadStockStatus() {
+    function loadStockStatus() {
         if (!operationOrderId || !operationTokenId) {
             return;
         }
 
-        try {
-            const response = await fetch(`/api/stock-status/${operationOrderId}/${operationTokenId}`);
-            const data = await response.json();
-            updateStockStatus(data.is_stock_updated);
-        } catch (error) {
-            console.error('Ошибка при загрузке статуса списания:', error);
-            updateStockStatus(null);
+        // Используем данные из fullOrder, если они доступны
+        if (fullOrder && fullOrder.technical_flags && typeof fullOrder.technical_flags.is_stock_updated !== "undefined") {
+            updateStockStatus(fullOrder.technical_flags.is_stock_updated);
+            return;
         }
+
+        // Fallback: если данных нет, показываем "Не списано"
+        console.warn('Данные о статусе списания не найдены в fullOrder');
+        updateStockStatus(false);
     }
 
     /**
@@ -964,7 +965,7 @@
             updateOrderDisplay(fullOrder);
         }
         
-        // Загружаем статус списания
+        // Загружаем статус списания (теперь использует данные из fullOrder)
         loadStockStatus();
 
         // Инициализируем обработчики кликов
