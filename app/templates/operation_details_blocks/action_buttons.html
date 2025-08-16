@@ -1,17 +1,20 @@
-<div class="flex flex-wrap gap-3 mb-6">
+<div class="flex flex-wrap gap-3 mb-6 justify-end">
     <button onclick="performStockDeduction()"
         class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
         Провести операцию списания
     </button>
 
     <button onclick="cancelOperation()"
-        class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium transition-colors" disabled
+        class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium transition-colors" 
         title="Функционал будет реализован позже">
         Отменить операцию списания
     </button>
 
-    <button onclick="openProductsPanel()"
-        class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
-        Товары
+    <button id="productsToggleBtn" onclick="toggleProductsPanel()"
+        class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2">
+        <span>Товары</span>
+        <svg id="productsToggleIcon" class="w-4 h-4 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="transform: rotate(180deg);">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+        </svg>
     </button>
 </div>

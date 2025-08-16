@@ -1,11 +1,12 @@
 <!-- Скрытый элемент с данными для JavaScript -->
-<div id="operation-data" data-order-id="{{ operation.order_id or '' }}" data-token-id="{{ operation.token_id or '' }}"
-     data-account-name="{{ operation.account_name or '' }}" data-warehouse="{{ operation.warehouse or 'Ирина' }}"
-     data-status="{{ operation.status }}"
-     data-has-order-data="{{ 'true' if operation.order_id and operation.token_id and operation.account_name else 'false' }}"
-     data-has-full-order="{{ 'true' if full_order else 'false' }}"
-     data-skus="{% set items_source = full_order.lineItems if full_order and full_order.lineItems else operation.line_items %}{% if items_source %}{% for item in items_source %}{{ item.offer.external.id }}{% if not loop.last %},{% endif %}{% endfor %}{% endif %}"
-     style="display: none;">
+<div id="operation-data" data-operation-id="{{ operation.id }}" data-order-id="{{ operation.order_id or '' }}" data-token-id="{{ operation.token_id or '' }}"
+       data-account-name="{{ operation.account_name or '' }}" data-warehouse="{{ operation.warehouse or 'Ирина' }}"
+       data-status="{{ operation.status }}"
+       data-has-order-data="{{ 'true' if operation.order_id and operation.token_id and operation.account_name else 'false' }}"
+       data-has-full-order="{{ 'true' if full_order else 'false' }}"
+       data-invalid-items="{{ validation_details.invalid_items if validation_details else 0 }}"
+       data-skus="{% set items_source = full_order.lineItems if full_order and full_order.lineItems else operation.line_items %}{% if items_source %}{% for item in items_source %}{{ item.offer.external.id }}{% if not loop.last %},{% endif %}{% endfor %}{% endif %}"
+       style="display: none;">
 </div>
 
 {% if full_order %}

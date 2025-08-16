@@ -20,10 +20,10 @@
                     class="font-mono font-semibold text-gray-800 hover:text-blue-600 cursor-pointer transition-colors">
                     {{ item.sku }}
                 </button>
-                <div class="flex space-x-4 mt-2 text-sm">
-                    <span class="text-green-600">Доступно: {{ item.available_quantity }}</span>
-                    <span class="text-blue-600">Требуется: {{ item.required_quantity }}</span>
-                    <span class="text-red-600">Нехватка: {{ item.shortage_quantity }}</span>
+                <div class="flex space-x-4 mt-2">
+                    <span class="text-green-600 text-lg">Доступно: {{ item.available_quantity }}</span>
+                    <span class="text-blue-600 text-lg">Требуется: {{ item.required_quantity }}</span>
+                    <span class="text-red-600 text-lg">Нехватка: {{ item.shortage_quantity }}</span>
                 </div>
             </div>
         </div>

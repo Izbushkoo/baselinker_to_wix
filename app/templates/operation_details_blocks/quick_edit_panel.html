@@ -1,24 +1,14 @@
-<!-- Quick Edit Slider Panel with Integrated Close Button -->
+<!-- Quick Edit Slider Panel -->
 <div id="quickEditOverlay"
      class="fixed top-16 bottom-0 right-0 transform translate-x-full transition-transform duration-300 ease-in-out hidden z-50"
      style="width: 50%;">
-    <!-- Close Button integrated into panel -->
-    <button id="quickEditCloseBtn" onclick="closeQuickEdit()"
-            class="absolute bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800 w-10 h-full transition-all duration-300 flex items-center justify-center group"
-            style="left: -40px; top: 0; border-radius: 8px 0 0 8px; box-shadow: -3px 0 10px rgba(0, 0, 0, 0.1), 0 3px 10px rgba(0, 0, 0, 0.05); z-index: 10;">
-        <svg class="w-4 h-4 transition-transform duration-200 group-hover:rotate-90" fill="none" stroke="currentColor"
-             viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-        </svg>
-    </button>
-
     <!-- Panel Content -->
     <div class="bg-white shadow-xl h-full border border-gray-200 rounded-l-lg">
         <!-- Header -->
         <div class="bg-gray-700 text-white px-6 py-4 rounded-tl-lg flex items-center justify-between">
-            <h2 class="text-xl font-bold">🛍️ Товары операции</h2>
-            <!-- Mobile close button -->
-            <button onclick="closeQuickEdit()" class="lg:hidden text-white hover:text-gray-300 transition-colors">
+            <h2 class="text-xl font-bold">🛍️ Товары на складе</h2>
+            <!-- Close button for all devices -->
+            <button onclick="closeQuickEdit()" class="text-white hover:text-gray-300 transition-colors">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                 </svg>

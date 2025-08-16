@@ -8,7 +8,7 @@
             </button>
             <h1 class="text-lg font-semibold text-gray-800">Детали операции</h1>
             <button id="toggleDetails" class="text-gray-500 hover:text-gray-700 transition-colors">
-                <svg class="w-4 h-4 transform transition-transform rotate-180" id="toggleIcon" style="transform: rotate(180deg);" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="w-4 h-4 transform transition-transform" id="toggleIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                 </svg>
             </button>
@@ -17,7 +17,9 @@
             Загрузка статуса...
         </div>
     </div>
-    <div id="operationDetails" class="collapsible-content expanded grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200">
+    
+    <!-- Основной блок с информацией - всегда видим -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200">
         <div class="space-y-2 border-r border-gray-200 pr-4">
             <div class="flex justify-between">
                 <span class="text-gray-600">ID заказа:</span>
@@ -41,23 +43,25 @@
         <div class="space-y-2 border-r border-gray-200 pr-4">
             <div class="flex justify-between">
                 <span class="text-gray-600">Статус заказа:</span>
-                <span class="text-gray-800" id="orderStatus">
+                <span id="orderStatus">
                     {% if full_order %}
                     {% if full_order.fulfillment and full_order.fulfillment.status == 'CANCELLED' %}
-                    Отменен продавцом
+                    <span class="px-2 py-1 rounded text-xs bg-red-100 text-red-800">Отменен продавцом</span>
                     {% elif full_order.fulfillment and full_order.fulfillment.status == 'SENT' %}
-                    Отправлен
+                    <span class="px-2 py-1 rounded text-xs bg-green-100 text-green-800">Отправлен</span>
                     {% elif full_order.status == 'BOUGHT' %}
-                    Куплен
+                    <span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">Куплен</span>
                     {% elif full_order.status == 'FILLED_IN' %}
-                    Заполнен
+                    <span class="px-2 py-1 rounded text-xs bg-yellow-100 text-yellow-800">Заполнен</span>
                     {% elif full_order.status == 'READY_FOR_PROCESSING' %}
-                    Готов к обработке
+                    <span class="px-2 py-1 rounded text-xs bg-blue-100 text-blue-800">Готов к отправке</span>
+                    {% elif full_order.status == 'CANCELLED' %}
+                    <span class="px-2 py-1 rounded text-xs bg-red-100 text-red-800">Отменен покупателем</span>
                     {% else %}
-                    {{ full_order.status or 'Неизвестно' }}
+                    <span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">{{ full_order.status or 'Неизвестно' }}</span>
                     {% endif %}
                     {% else %}
-                    Загрузка...
+                    <span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">Загрузка...</span>
                     {% endif %}
                 </span>
             </div>
@@ -105,5 +109,105 @@
             {% endif %}
         </div>
     </div>
-</div>
+    
+    <!-- Сворачиваемый блок с дополнительной информацией -->
+    {% if full_order %}
+    <div id="operationDetails" class="collapsible-content grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 pt-6 border-t border-gray-300" style="display: none;">
+        <div class="space-y-3">
+            <h3 class="text-md font-semibold text-gray-800 mb-3">Информация о покупателе</h3>
+            {% if full_order.buyer %}
+            <div class="space-y-2">
+                {% if full_order.buyer.firstName or full_order.buyer.lastName %}
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Имя:</span>
+                    <span class="text-gray-800">
+                        {% if full_order.buyer.firstName %}{{ full_order.buyer.firstName }}{% endif %}
+                        {% if full_order.buyer.lastName %} {{ full_order.buyer.lastName }}{% endif %}
+                    </span>
+                </div>
+                {% endif %}
+                {% if full_order.buyer.email %}
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Email:</span>
+                    <span class="text-gray-800">{{ full_order.buyer.email }}</span>
+                </div>
+                {% endif %}
+                {% if full_order.buyer.phoneNumber %}
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Телефон:</span>
+                    <span class="text-gray-800">{{ full_order.buyer.phoneNumber }}</span>
+                </div>
+                {% endif %}
+                {% if full_order.buyer.login %}
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Логин:</span>
+                    <span class="text-gray-800">{{ full_order.buyer.login }}</span>
+                </div>
+                {% endif %}
+                {% if full_order.buyer.companyName %}
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Компания:</span>
+                    <span class="text-gray-800">{{ full_order.buyer.companyName }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% else %}
+            <span class="text-gray-500">Информация о покупателе недоступна</span>
+            {% endif %}
+        </div>
+        
+        <!-- Информация об адресе доставки -->
+        <div class="space-y-3">
+            <h3 class="text-md font-semibold text-gray-800 mb-3">Адрес доставки</h3>
+            {% if full_order.delivery and full_order.delivery.address %}
+            <div class="space-y-2">
+                {% if full_order.delivery.address.street %}
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Улица:</span>
+                    <span class="text-gray-800">{{ full_order.delivery.address.street }}</span>
+                </div>
+                {% endif %}
+                {% if full_order.delivery.address.city %}
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Город:</span>
+                    <span class="text-gray-800">{{ full_order.delivery.address.city }}</span>
+                </div>
+                {% endif %}
+                {% if full_order.delivery.address.zipCode %}
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Индекс:</span>
+                    <span class="text-gray-800">{{ full_order.delivery.address.zipCode }}</span>
+                </div>
+                {% endif %}
+                {% if full_order.delivery.address.countryCode %}
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Страна:</span>
+                    <span class="text-gray-800">{{ full_order.delivery.address.countryCode }}</span>
+                </div>
+                {% endif %}
+                {% if full_order.delivery.method and full_order.delivery.method.name %}
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Способ доставки:</span>
+                    <span class="text-gray-800">{{ full_order.delivery.method.name }}</span>
+                </div>
+                {% endif %}
+                {% if full_order.delivery.pickupPoint %}
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Pickup Point:</span>
+                    <span class="text-gray-800">{{ full_order.delivery.pickupPoint }}</span>
+                </div>
+                {% endif %}
+                {% if full_order.lineItems and full_order.lineItems[0] and full_order.lineItems[0].boughtAt %}
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Дата покупки:</span>
+                    <span class="text-gray-800">{{ full_order.lineItems[0].boughtAt[:10] }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% else %}
+            <span class="text-gray-500">Информация об адресе доставки недоступна</span>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 </div>

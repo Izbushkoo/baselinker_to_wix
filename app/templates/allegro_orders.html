@@ -301,18 +301,33 @@ function formatAddress(buyer) {
 }
 
 function getOrderStatus(order) {
+    // Проверяем статус fulfillment (отмена продавцом)
+    if (order.fulfillment && order.fulfillment.status === 'CANCELLED') {
+        return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            Отменен продавцом
+        </span>`;
+    }
+
+    // Проверяем статус отправки
+    if (order.fulfillment && order.fulfillment.status === 'SENT') {
+        return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            Отправлен
+        </span>`;
+    }
+
+    // Основные статусы заказа
     const statusColors = {
-        'BOUGHT': 'bg-purple-100 text-purple-800',
+        'BOUGHT': 'bg-gray-100 text-gray-800',
         'FILLED_IN': 'bg-yellow-100 text-yellow-800',
         'READY_FOR_PROCESSING': 'bg-blue-100 text-blue-800',
         'CANCELLED': 'bg-red-100 text-red-800'
     };
 
     const statusLabels = {
-        'BOUGHT': 'Заказан',
+        'BOUGHT': 'Куплен',
         'FILLED_IN': 'Заполнен',
-        'READY_FOR_PROCESSING': 'Оплачен. Готов к отправке',
-        'CANCELLED': 'Отменен'
+        'READY_FOR_PROCESSING': 'Готов к отправке',
+        'CANCELLED': 'Отменен покупателем'
     };
 
     const status = order.status || 'BOUGHT';

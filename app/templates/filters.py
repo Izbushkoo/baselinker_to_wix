@@ -48,6 +48,30 @@ def localize_action(action: str) -> str:
     }
     return action_labels.get(action, action)
 
+def order_status_label(status: str) -> str:
+    """Преобразует статус заказа в читаемый формат на русском языке."""
+    status_labels = {
+        'BOUGHT': 'Куплен',
+        'FILLED_IN': 'Заполнен',
+        'READY_FOR_PROCESSING': 'Готов к отправке',
+        'SENT': 'Отправлен',
+        'CANCELLED': 'Отменен покупателем',
+        'CANCELLED_BY_SELLER': 'Отменен продавцом'
+    }
+    return status_labels.get(status, status)
+
+def order_status_color(status: str) -> str:
+    """Возвращает CSS классы для цветного отображения статуса заказа."""
+    status_colors = {
+        'BOUGHT': 'bg-gray-100 text-gray-800',
+        'FILLED_IN': 'bg-yellow-100 text-yellow-800',
+        'READY_FOR_PROCESSING': 'bg-blue-100 text-blue-800',
+        'SENT': 'bg-green-100 text-green-800',
+        'CANCELLED': 'bg-red-100 text-red-800',
+        'CANCELLED_BY_SELLER': 'bg-red-100 text-red-800'
+    }
+    return status_colors.get(status, 'bg-gray-100 text-gray-800')
+
 def localize_log_message(action: str, message: str, details: dict = None) -> str:
     """Локализация сообщений в логах операций синхронизации."""
     # Для ручного завершения добавляем особое форматирование
