@@ -33,6 +33,7 @@ from app.schemas.stock_synchronization import (
     ReconciliationResult,
     StockValidationResult
 )
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -496,7 +497,15 @@ async def rollback_operation(
             detail="Authentication required"
         )
     try:
-        result = sync_service.rollback_operation(operation_id)
+        # Используем новый интерфейс с указанием пользователя и причины отмены
+        cancelled_by = getattr(current_user, 'email', 'unknown_user')
+        cancellation_reason = f"Manual rollback via API by {cancelled_by}"
+        
+        result = sync_service.rollback_operation(
+            operation_id=operation_id,
+            cancelled_by=cancelled_by,
+            cancellation_reason=cancellation_reason
+        )
         
         return {
             "status": "success" if result.success else "error",
@@ -513,6 +522,60 @@ async def rollback_operation(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка отката операции: {str(e)}"
+        )
+
+
+class CancelOperationRequest(BaseModel):
+    """Модель запроса для отмены операции."""
+    cancellation_reason: str = "Manual cancellation via API"
+
+
+@router.post("/operations/{operation_id}/cancel", summary="Отмена операции с указанием причины")
+async def cancel_operation(
+    operation_id: UUID,
+    request: CancelOperationRequest,
+    sync_service: StockSynchronizationService = Depends(get_sync_service),
+    current_user: User = Depends(get_current_user_optional)
+):
+    """
+    Отмена конкретной операции синхронизации с указанием причины.
+    
+    Args:
+        operation_id: ID операции для отмены
+        request: Данные запроса с причиной отмены
+        
+    Returns:
+        SyncResult: Результат отмены
+    """
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required"
+        )
+    try:
+        cancelled_by = getattr(current_user, 'email', 'unknown_user')
+        
+        result = sync_service.cancel_operation(
+            operation_id=operation_id,
+            cancelled_by=cancelled_by,
+            cancellation_reason=request.cancellation_reason
+        )
+        
+        return {
+            "status": "success" if result.success else "error",
+            "result": {
+                "operation_id": str(result.operation_id) if result.operation_id else None,
+                "success": result.success,
+                "error": result.error,
+                "details": result.details
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка отмены операции {operation_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка отмены операции: {str(e)}"
         )
 
 
@@ -932,9 +995,14 @@ async def monitoring_page(
             )
         ).all()
         
+        # Незавершенные операции: все кроме CANCELLED и COMPLETED
+        # Включает: PENDING, PROCESSING, STOCK_DEDUCTED, FAILED
         pending_ops = len(session.exec(
             select(PendingStockOperation).where(
-                PendingStockOperation.status == OperationStatus.PENDING
+                PendingStockOperation.status.not_in([
+                    OperationStatus.CANCELLED,
+                    OperationStatus.COMPLETED
+                ])
             )
         ).all())
         

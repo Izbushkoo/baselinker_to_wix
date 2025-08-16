@@ -24,6 +24,7 @@ from app.services.stock_validation_service import StockValidationService
 from app.services.stock_sync_notifications import get_notification_service
 from app.services.operations_service import get_operations_service
 from app.services.standardized_logger import get_standardized_logger, ValidationResult
+from app.services.operation_cancellation_service import get_operation_cancellation_service, OperationCancellationService
 from app.models.operations import OperationType as RegularOperationType
 from app.core.stock_sync_config import stock_sync_config
 from app.core.security import create_access_token
@@ -44,7 +45,8 @@ class StockSynchronizationService:
         session: Session,
         orders_client: Optional[OrdersClient] = None,
         tokens_client: Optional[AllegroTokenMicroserviceClient] = None,
-        inventory_manager: Optional[InventoryManager] = None
+        inventory_manager: Optional[InventoryManager] = None,
+        cancellation_service: Optional[OperationCancellationService] = None
     ):
         self.session = session
         self.orders_client = orders_client or OrdersClient(jwt_token=jwt_token)
@@ -52,6 +54,7 @@ class StockSynchronizationService:
         self.inventory_manager = inventory_manager or get_manager()
         self.validation_service = StockValidationService(session, self.inventory_manager)
         self.notification_service = get_notification_service(session)
+        self.cancellation_service = cancellation_service or get_operation_cancellation_service(session)
         self.logger = logging.getLogger("stock.sync")
         self.config = stock_sync_config
         self.standardized_logger = get_standardized_logger(session)
@@ -1377,57 +1380,130 @@ class StockSynchronizationService:
         
         return auto_fixed
     
-    def rollback_operation(self, operation_id: UUID) -> SyncResult:
+    def rollback_operation(
+        self, 
+        operation_id: UUID, 
+        cancelled_by: str = "system", 
+        cancellation_reason: str = "Manual rollback requested"
+    ) -> SyncResult:
         """
-        Откат операции синхронизации.
+        Откат операции синхронизации с использованием OperationCancellationService.
         
         Args:
             operation_id: ID операции для отката
+            cancelled_by: Кто отменил операцию (по умолчанию "system")
+            cancellation_reason: Причина отмены
             
         Returns:
             SyncResult с результатом отката
         """
         try:
-            operation = self.session.get(PendingStockOperation, operation_id)
-            if not operation:
-                return SyncResult(
-                    success=False, 
-                    error="Operation not found",
-                    operation_id=operation_id
+            # Логируем начало процесса отката
+            self.standardized_logger.log_action_with_timing(
+                operation_id=operation_id,
+                action=LogAction.CANCELLATION_REQUESTED,
+                details=f"Запрошен откат операции через StockSynchronizationService",
+                additional_context={
+                    "cancelled_by": cancelled_by,
+                    "cancellation_reason": cancellation_reason,
+                    "method": "rollback_operation"
+                }
+            )
+            
+            # Используем OperationCancellationService для выполнения отката
+            result = self.cancellation_service.cancel_operation(
+                operation_id=operation_id,
+                cancelled_by=cancelled_by,
+                cancellation_reason=cancellation_reason
+            )
+            
+            if result.success:
+                # Логируем успешный откат
+                self.standardized_logger.log_action_with_timing(
+                    operation_id=operation_id,
+                    action=LogAction.CANCELLATION_COMPLETED,
+                    details=f"Откат операции завершен успешно через OperationCancellationService",
+                    additional_context={
+                        "cancelled_by": cancelled_by,
+                        "rollback_details": result.details
+                    }
+                )
+                
+                # Добавляем информацию об аккаунте для совместимости
+                if result.details and "account_name" not in result.details:
+                    try:
+                        operation = self.session.get(PendingStockOperation, operation_id)
+                        if operation:
+                            account_name = self._get_account_name_by_token_id(operation.token_id)
+                            result.details["account_name"] = account_name
+                    except Exception as e:
+                        self.logger.warning(f"Failed to add account_name to rollback result: {e}")
+            else:
+                # Логируем ошибку отката
+                self.standardized_logger.log_error_with_context(
+                    operation_id=operation_id,
+                    error=Exception(result.error),
+                    context={
+                        "method": "rollback_operation",
+                        "cancelled_by": cancelled_by,
+                        "cancellation_reason": cancellation_reason,
+                        "cancellation_service_error": result.error
+                    }
                 )
             
-            # Отменяем операцию
-            old_status = operation.status
-            operation.status = OperationStatus.CANCELLED
-            operation.updated_at = datetime.utcnow()
-            self.session.commit()
-            
-            self.standardized_logger.log_status_transition(
-                operation_id=operation_id,
-                from_status=old_status,
-                to_status=OperationStatus.CANCELLED,
-                reason="Операция отменена вручную"
-            )
-            
-            # TODO: Здесь можно добавить логику для отката изменений в микросервисе
-            # if operation.status == OperationStatus.COMPLETED:
-            #     # Откат в микросервисе через update_stock_status(is_stock_updated=False)
-            #     pass
-            
-            account_name = self._get_account_name_by_token_id(operation.token_id)
-            return SyncResult(
-                success=True,
-                operation_id=operation_id,
-                details={"account_name": account_name, "rolled_back": True}
-            )
+            return result
             
         except Exception as e:
-            self.logger.error(f"Error rolling back operation {operation_id}: {e}")
+            # Логируем критическую ошибку
+            self.standardized_logger.log_error_with_context(
+                operation_id=operation_id,
+                error=e,
+                context={
+                    "method": "rollback_operation",
+                    "cancelled_by": cancelled_by,
+                    "cancellation_reason": cancellation_reason,
+                    "error_type": "critical_rollback_failure"
+                }
+            )
+            
+            self.logger.error(f"Critical error during operation rollback {operation_id}: {e}")
+            
             return SyncResult(
                 success=False,
                 operation_id=operation_id,
-                error=str(e)
+                error=f"Critical rollback failure: {str(e)}",
+                details={
+                    "cancelled_by": cancelled_by,
+                    "cancellation_reason": cancellation_reason,
+                    "error_type": "critical_rollback_failure"
+                }
             )
+    
+    def cancel_operation(
+        self,
+        operation_id: UUID,
+        cancelled_by: str,
+        cancellation_reason: str
+    ) -> SyncResult:
+        """
+        Отмена операции синхронизации с указанием пользователя и причины.
+        
+        Этот метод предоставляет более явный интерфейс для отмены операций
+        с обязательным указанием пользователя и причины отмены.
+        
+        Args:
+            operation_id: ID операции для отмены
+            cancelled_by: Кто отменил операцию (обязательно)
+            cancellation_reason: Причина отмены (обязательно)
+            
+        Returns:
+            SyncResult с результатом отмены
+        """
+        return self.rollback_operation(
+            operation_id=operation_id,
+            cancelled_by=cancelled_by,
+            cancellation_reason=cancellation_reason
+        )
     
     def get_sync_statistics(self) -> Dict[str, Any]:
         """
@@ -1441,9 +1517,14 @@ class StockSynchronizationService:
             yesterday = now - timedelta(days=1)
             
             # Общая статистика операций
+            # Незавершенные операции: все кроме CANCELLED и COMPLETED
+            # Включает: PENDING, PROCESSING, STOCK_DEDUCTED, FAILED
             total_pending = self.session.exec(
                 select(PendingStockOperation)
-                .where(PendingStockOperation.status == OperationStatus.PENDING)
+                .where(PendingStockOperation.status.not_in([
+                    OperationStatus.CANCELLED,
+                    OperationStatus.COMPLETED
+                ]))
             ).all()
             
             total_failed = self.session.exec(
@@ -1469,7 +1550,7 @@ class StockSynchronizationService:
             ).all()
             
             return {
-                "pending_operations": len(total_pending),
+                "pending_operations": len(total_pending),  # Количество незавершенных операций
                 "failed_operations": len(total_failed),
                 "completed_today": len(completed_today),
                 "stale_operations": len(stale_operations),
