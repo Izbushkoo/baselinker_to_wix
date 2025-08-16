@@ -161,182 +161,41 @@ function updatePaginationForSingle(count) {
     document.getElementById('next-page').disabled = true;
 }
 
-function formatPrice(price) {
-    if (!price) return '0.00 PLN';
-    
-    // Если price это строка с JSON объектом, пробуем его распарсить
-    if (typeof price === 'string' && price.includes('{')) {
-        try {
-            const priceObj = JSON.parse(price);
-            if (priceObj && priceObj.amount) {
-                return new Intl.NumberFormat('pl-PL', {
-                    style: 'currency',
-                    currency: priceObj.currency || 'PLN',
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2
-                }).format(parseFloat(priceObj.amount));
-            }
-        } catch (e) {
-            console.error('Ошибка парсинга цены:', e);
-        }
-    }
-    
-    // Если price это объект
-    if (typeof price === 'object' && price !== null) {
-        if (price.amount) {
-            return new Intl.NumberFormat('pl-PL', {
-                style: 'currency',
-                currency: price.currency || 'PLN',
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-            }).format(parseFloat(price.amount));
-        }
-    }
-    
-    // Если price это просто число
-    if (!isNaN(parseFloat(price))) {
-        return new Intl.NumberFormat('pl-PL', {
-            style: 'currency',
-            currency: 'PLN',
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-        }).format(parseFloat(price));
-    }
-    
-    return '0.00 PLN';
-}
-
-function getShipmentStatus(order) {
-    if (!order.fulfillment) return '';
-    
-    try {
-        const fulfillment = typeof order.fulfillment === 'string' 
-            ? JSON.parse(order.fulfillment) 
-            : order.fulfillment;
-            
-        if (!fulfillment || !fulfillment.shipmentSummary) {
-            return '';
-        }
-
-        const statusColors = {
-            'SENT': 'bg-green-100 text-green-800',
-            'CANCELLED': 'bg-red-100 text-red-800',
-            'RETURNED': 'bg-gray-100 text-gray-800'
-        };
-
-        const statusLabels = {
-            'SENT': 'Отправлен',
-            'CANCELLED': 'Отменен продавцом',
-            'RETURNED': 'Возвращен'
-        };
-
-        const status = fulfillment.status || fulfillment.shipmentSummary.status;
-        
-        // Показываем только определенные статусы
-        if (status && ['SENT', 'CANCELLED', 'RETURNED'].includes(status)) {
-            const colorClass = statusColors[status];
-            const label = statusLabels[status];
-
-            return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorClass}">
-                ${label}
-            </span>`;
-        }
-        
-        return '';
-    } catch (e) {
-        console.error('Ошибка парсинга статуса отправки:', e);
-        return '';
-    }
-}
-
-function formatAddress(buyer) {
-    if (!buyer) return '';
-    
-    try {
-        // Парсим адрес, если он в виде строки
-        const address = typeof buyer.address === 'string' 
-            ? JSON.parse(buyer.address) 
-            : buyer.address;
-            
-        const addressParts = [];
-        
-        // Добавляем имя и фамилию
-        if (buyer.first_name || buyer.last_name) {
-            addressParts.push(`${buyer.first_name || ''} ${buyer.last_name || ''}`.trim());
-        }
-        
-        // Добавляем название компании
-        if (buyer.company_name) {
-            addressParts.push(buyer.company_name);
-        }
-        
-        // Форматируем адрес из JSON структуры
-        if (address) {
-            const streetPart = address.street || '';
-            const cityPart = address.city || '';
-            const postCodePart = address.postCode || '';
-            const countryCodePart = address.countryCode || '';
-            
-            if (streetPart) addressParts.push(streetPart);
-            if (cityPart || postCodePart) {
-                const cityLine = [postCodePart, cityPart].filter(Boolean).join(' ');
-                if (cityLine) addressParts.push(cityLine);
-            }
-            if (countryCodePart) addressParts.push(countryCodePart);
-        }
-        
-        // Добавляем контактную информацию
-        if (buyer.phone_number) {
-            addressParts.push(`Тел: ${buyer.phone_number}`);
-        }
-        if (buyer.email) {
-            addressParts.push(`Email: ${buyer.email}`);
-        }
-        
-        return addressParts.join('<br>');
-    } catch (e) {
-        console.error('Ошибка парсинга адреса:', e);
-        return buyer.address || '';
-    }
-}
-
+// Функция получения статуса заказа с приоритетом как в scripts.html
 function getOrderStatus(order) {
-    // Проверяем статус fulfillment (отмена продавцом)
-    if (order.fulfillment && order.fulfillment.status === 'CANCELLED') {
-        return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-            Отменен продавцом
-        </span>`;
+    if (!order) {
+        return '<span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">Неизвестно</span>';
     }
 
-    // Проверяем статус отправки
+    // Приоритет 1: Отмена продавцом (fulfillment.status === 'CANCELLED')
+    if (order.fulfillment && order.fulfillment.status === 'CANCELLED') {
+        return '<span class="px-2 py-1 rounded text-xs bg-red-100 text-red-800">Отменен продавцом</span>';
+    }
+
+    // Приоритет 2: Основные статусы жизненного цикла
+    // Если заказ отправлен, показываем статус fulfillment
     if (order.fulfillment && order.fulfillment.status === 'SENT') {
-        return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-            Отправлен
-        </span>`;
+        return '<span class="px-2 py-1 rounded text-xs bg-green-100 text-green-800">Отправлен</span>';
     }
 
     // Основные статусы заказа
-    const statusColors = {
-        'BOUGHT': 'bg-gray-100 text-gray-800',
-        'FILLED_IN': 'bg-yellow-100 text-yellow-800',
-        'READY_FOR_PROCESSING': 'bg-blue-100 text-blue-800',
-        'CANCELLED': 'bg-red-100 text-red-800'
+    const statusMap = {
+        'BOUGHT': '<span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">Куплен</span>',
+        'FILLED_IN': '<span class="px-2 py-1 rounded text-xs bg-yellow-100 text-yellow-800">Заполнен</span>',
+        'READY_FOR_PROCESSING': '<span class="px-2 py-1 rounded text-xs bg-blue-100 text-blue-800">Готов к отправке</span>'
     };
 
-    const statusLabels = {
-        'BOUGHT': 'Куплен',
-        'FILLED_IN': 'Заполнен',
-        'READY_FOR_PROCESSING': 'Готов к отправке',
-        'CANCELLED': 'Отменен покупателем'
-    };
+    if (order.status && statusMap[order.status]) {
+        return statusMap[order.status];
+    }
 
-    const status = order.status || 'BOUGHT';
-    const colorClass = statusColors[status] || 'bg-gray-100 text-gray-800';
-    const label = statusLabels[status] || status;
+    // Приоритет 3: Отмена покупателем (основной статус === 'CANCELLED')
+    if (order.status === 'CANCELLED') {
+        return '<span class="px-2 py-1 rounded text-xs bg-red-100 text-red-800">Отменен покупателем</span>';
+    }
 
-    return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorClass}">
-        ${label}
-    </span>`;
+    // Если статус не распознан, возвращаем как есть
+    return `<span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">${order.status || 'Неизвестно'}</span>`;
 }
 
 function displayOrders(orders) {
@@ -361,167 +220,71 @@ function displayOrders(orders) {
     orders.forEach((order, index) => {
         console.log(`Processing order ${index}:`, order);
         const orderElement = document.createElement('div');
-        orderElement.className = 'bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow overflow-hidden relative border border-gray-200';
-        console.log('Order details:', order)
-        // Получаем статусы
+        orderElement.className = 'bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow overflow-hidden relative border border-gray-200 cursor-pointer';
+        
+        // Получаем статус заказа
         const orderStatus = getOrderStatus(order);
-        const shipmentStatus = getShipmentStatus(order);
         
-        // ЗАКОММЕНТИРОВАНО: определение переменной canShowWriteOff (больше не используется)
-        /*
-        // Определяем, можно ли показывать кнопку списания
-        const canShowWriteOff = order.status !== 'CANCELLED' &&
-                               !shipmentStatus.includes('Отменен продавцом') &&
-                               (shipmentStatus.includes('Отправлен') || order.status === 'READY_FOR_PROCESSING');
-        */
-        
-        // Кнопки действий
-        let actionButtons = '';
+        // Кнопка "Пометить списанным" - только если заказ еще не списан
+        let writeOffButton = '';
         if (!order.is_stock_updated) {
-            // ЗАКОММЕНТИРОВАНО: кнопка "Списать" — только если заказ не отменён и не отменён продавцом
-            /*
-            const shipmentStatusText = getShipmentStatus(order);
-            const isCancelled = order.status === 'CANCELLED' || shipmentStatusText.includes('Отменен продавцом');
-            if (!isCancelled) {
-                actionButtons += `<button onclick="event.stopPropagation(); saleFromOrder('${order.id}', '{{ token_id }}')"
-                    class="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">Списать</button>`;
-            }
-            */
-            // Кнопка "Пометить списанным" — всегда, если не списан
-            actionButtons += `<button onclick="event.stopPropagation(); markOrderStockUpdated('${order.id}')"
+            writeOffButton = `<button onclick="event.stopPropagation(); markOrderStockUpdated('${order.id}')"
                 class="px-3 py-1 bg-amber-50 text-amber-700 text-sm rounded-md hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-200 border border-amber-200 transition-all duration-200">Пометить списанным</button>`;
         }
         
-        // Статус списания
+        // Статус списания - показываем только "Списано", если заказ списан
         let stockStatus = '';
-        if (order.status !== 'CANCELLED') {
-            stockStatus = order.is_stock_updated ?
-                `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">Списано</span>` :
-                `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">Не списано</span>`;
+        if (order.status !== 'CANCELLED' && order.is_stock_updated) {
+            stockStatus = `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">Списано</span>`;
         }
-        // Верхняя строка: ID (слева, кликабельно), статусы (справа)
-        const mainInfo = `
-            <div class="flex flex-col gap-2 p-4 cursor-pointer" onclick="toggleOrderDetails('${order.id}')">
-                <div class="flex items-center w-full">
-                    <span class="text-sm text-gray-400">${new Date(order.updated_at).toLocaleString()}</span>
-                    <div class="flex-1 flex justify-center">
-                        <button onclick="event.stopPropagation(); copyToClipboard('${order.id}', this)" class="font-mono text-base text-blue-400 hover:text-blue-600 focus:outline-none bg-transparent relative group">
-                            ID: ${order.id}
-                            <span class="tooltip-text hidden group-hover:block absolute left-1/2 -translate-x-1/2 top-full mt-1 px-2 py-1 rounded bg-gray-800 text-xs text-white z-10 whitespace-nowrap">Скопировать ID</span>
-                        </button>
-                    </div>
-                    <div class="flex items-center gap-2 flex-wrap">
-                        ${(function() {
-                            const shipmentStatusText = getShipmentStatus(order);
-                            if (
-                                shipmentStatusText.includes('Отправлен') ||
-                                shipmentStatusText.includes('Отменен продавцом') ||
-                                shipmentStatusText.includes('Возвращен')
-                            ) {
-                                return shipmentStatusText;
-                            }
-                            return '';
-                        })()}
-                        ${getOrderStatus(order)}
-
-                    </div>
+        
+        // Первая строка: дата/время (слева), ID заказа (по центру), кнопка "Детали заказа" (справа)
+        const firstRow = `
+            <div class="flex items-center justify-between p-4 border-b border-gray-100">
+                <div class="text-sm text-gray-600">
+                    ${new Date(order.updated_at).toLocaleString('ru-RU')}
                 </div>
-                <div class="flex items-center justify-end w-full mt-2 gap-2">
-                    ${actionButtons}
+                <div class="flex-1 flex justify-center">
+                    <button onclick="event.stopPropagation(); copyToClipboard('${order.id}', this)" class="font-mono text-base text-blue-600 hover:text-blue-800 focus:outline-none bg-transparent relative group">
+                        ID: ${order.id}
+                        <span class="tooltip-text hidden group-hover:block absolute left-1/2 -translate-x-1/2 top-full mt-1 px-2 py-1 rounded bg-gray-800 text-xs text-white z-10 whitespace-nowrap">Скопировать ID</span>
+                    </button>
+                </div>
+                <div>
+                    <button onclick="event.stopPropagation(); goToOrderDetails('${order.id}')" class="px-3 py-1 bg-purple-50 text-purple-700 text-sm rounded-md hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-purple-200 border border-purple-200 transition-all duration-200">
+                        Детали заказа
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // Вторая строка: статус заказа (слева), кнопка "Пометить списанным" и статус списания (справа)
+        const secondRow = `
+            <div class="flex items-center justify-between p-4">
+                <div class="flex items-center gap-2">
+                    ${orderStatus}
+                </div>
+                <div class="flex items-center gap-2">
+                    ${writeOffButton}
                     ${stockStatus}
-                    ${(order.status === 'READY_FOR_PROCESSING' && order.has_pending_operation) ? `
-                        <button onclick="event.stopPropagation(); goToOperationDetails('${order.id}')" class="px-3 py-1 bg-purple-50 text-purple-700 text-sm rounded-md hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-purple-200 border border-purple-200 transition-all duration-200">
-                            Детали операции
-                        </button>
-                    ` : ''}
                 </div>
             </div>
         `;
 
-        const details = `
-            <div id="details-${order.id}" class="hidden border-t border-gray-200 p-4 bg-gray-50">
-                ${order.buyer ? `
-                    <div class="mb-4">
-                        <h3 class="text-sm font-medium text-gray-700 mb-2">Информация о покупателе</h3>
-                        <div class="text-sm text-gray-900 bg-white p-3 rounded-lg border border-gray-200">
-                            ${formatAddress(order.buyer)}
-                        </div>
-                    </div>
-                ` : ''}
-                ${order.delivery ? `
-                    <div class="mb-4">
-                        <h3 class="text-sm font-medium text-gray-700 mb-2">Адрес доставки</h3>
-                        <div class="text-sm text-gray-900 bg-white p-3 rounded-lg border border-gray-200">
-                            <div class="grid grid-cols-2 gap-2">
-                                ${order.delivery.address ? `
-                                    <div class="col-span-2">
-                                        ${order.delivery.address.street || ''} ${order.delivery.address.city || ''}<br>
-                                        ${order.delivery.address.zipCode || ''} ${order.delivery.address.countryCode || ''}
-                                    </div>
-                                ` : ''}
-                            </div>
-                        </div>
-                    </div>
-                ` : ''}
-
-                ${order.line_items && order.line_items.length > 0 ? `
-                    <div>
-                        <h3 class="text-sm font-medium text-gray-700 mb-2">Товары</h3>
-                        <div class="space-y-2">
-                            ${order.line_items.map(item => `
-                                <div class="bg-white p-3 rounded-lg border border-gray-200">
-                                    <div class="grid grid-cols-2 gap-2 text-sm text-gray-900">
-                                        <div class="col-span-2 font-medium">${item.offer.name}</div>
-                                        <div>SKU: <button onclick="copyToClipboard('${item.offer.external.id || '-'}', this)" class="font-mono text-blue-600 hover:text-blue-800 focus:outline-none">${item.offer.external.id || '-'}</button></div>
-                                        <div>Offer ID: ${item.offer.id}</div>
-                                        <div>Кол-во: ${item.quantity}</div>
-                                        <div>Цена: ${formatPrice(item.price)}</div>
-                                        <div>Оригинальная цена: ${formatPrice(item.originalPrice)}</div>
-                                    </div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                ` : ''}
-
-                <!-- Полная цена заказа -->
-                <div class="mt-4 pt-3 border-t border-gray-200 text-right">
-                    <span class="text-lg font-semibold text-gray-900">Полная цена: ${formatPrice(order.summary.totalToPay)}</span>
-                </div>
-            </div>
-        `;
-
-        orderElement.innerHTML = mainInfo + details;
+        orderElement.innerHTML = firstRow + secondRow;
+        
+        // Добавляем обработчик клика по всей карточке для перехода к деталям
+        orderElement.addEventListener('click', () => {
+            goToOrderDetails(order.id);
+        });
+        
         container.appendChild(orderElement);
     });
 }
 
-function goToOperationDetails(orderId) {
+function goToOrderDetails(orderId) {
     // Переходим на страницу деталей операции по order_id
     window.location.href = `/stock-sync/monitor/operation-by-order/${orderId}`;
-}
-
-function toggleOrderDetails(orderId) {
-    const details = document.getElementById(`details-${orderId}`);
-    
-    if (details) {
-        if (details.classList.contains('hidden')) {
-            details.classList.remove('hidden');
-        } else {
-            details.classList.add('hidden');
-        }
-    }
-}
-
-function getStatusColor(status) {
-    const colors = {
-        'NEW': 'bg-blue-100 text-blue-800',
-        'READY_FOR_PROCESSING': 'bg-yellow-100 text-yellow-800',
-        'PROCESSING': 'bg-purple-100 text-purple-800',
-        'COMPLETED': 'bg-green-100 text-green-800',
-        'CANCELLED': 'bg-red-100 text-red-800'
-    };
-    return colors[status] || 'bg-gray-100 text-gray-800';
 }
 
 function showNotification(message, type = 'info') {
@@ -542,44 +305,7 @@ function showNotification(message, type = 'info') {
     }, 3000);
 }
 
-async function saleFromOrder(orderId, tokenId) {
-    try {
-        // Находим заказ в массиве allOrders
-        const order = allOrders.find(o => o.id === orderId);
-        if (!order || !order.line_items) {
-            throw new Error('Заказ не найден или не содержит товаров');
-        }
-
-        // Отправляем запрос на списание
-        const response = await fetch('/api/warehouse/sale-from-order/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                order_id: orderId,
-                token_id: tokenId,
-                line_items: order.line_items,
-                warehouse: 'Ирина' // Используем склад по умолчанию
-            })
-        });
-
-        const data = await response.json();
-        
-        if (response.ok) {
-            // Обновляем статус заказа в интерфейсе
-            order.is_stock_updated = true;
-            displayOrders(allOrders);
-            showNotification(data.message, 'success');
-        } else {
-            showNotification(data.message || 'Ошибка при списании товаров', 'error');
-        }
-    } catch (error) {
-        showNotification('Ошибка при списании товаров: ' + error.message, 'error');
-    }
-}
-
-// Добавить функцию markOrderStockUpdated
+// Функция пометки заказа как списанного
 async function markOrderStockUpdated(orderId) {
     try {
         const response = await fetch(`/api/allegro_sync/orders/{{ token_id }}/${orderId}/mark_stock_updated`, {
@@ -603,12 +329,12 @@ function copyToClipboard(text, button) {
         // Показываем уведомление об успешном копировании
         const originalText = button.innerHTML;
         button.innerHTML = 'Скопировано!';
-        button.classList.add('text-green-400');
+        button.classList.add('text-green-600');
         
         // Возвращаем исходный текст через 2 секунды
         setTimeout(() => {
             button.innerHTML = originalText;
-            button.classList.remove('text-green-400');
+            button.classList.remove('text-green-600');
         }, 2000);
     }).catch(err => {
         console.error('Ошибка при копировании:', err);

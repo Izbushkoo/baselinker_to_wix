@@ -24,6 +24,25 @@
         }, 60000);
     }
 
+    // Проверяем и инициализируем функции для избежания ошибок ReferenceError
+    function ensureFunctionsExist() {
+        const requiredFunctions = ['editPrice', 'closePriceEditModal', 'openTransferModal', 'closeTransferModal', 'addToStock', 'removeFromStock'];
+        const missingFunctions = requiredFunctions.filter(func => typeof window[func] !== 'function');
+        
+        if (missingFunctions.length > 0) {
+            console.warn('Следующие функции не определены:', missingFunctions);
+            // Создаем заглушки для отсутствующих функций
+            missingFunctions.forEach(funcName => {
+                window[funcName] = function(...args) {
+                    console.warn(`Функция ${funcName} еще не загружена, попробуйте позже`);
+                };
+            });
+        }
+    }
+
+    // Вызываем проверку при загрузке
+    ensureFunctionsExist();
+
     /**
      * Форматирует ID заказа для отображения (первые 4 + ... + последние 4)
      */
@@ -870,6 +889,7 @@
                     // Инициализируем количество товаров после загрузки HTML
                     setTimeout(() => {
                         initializeWarehouseQuantities();
+                        ensureFunctionsExist(); // Проверяем функции после загрузки контента
                     }, 100);
                 } else {
                     document.getElementById('quickEditContent').innerHTML = '<div class="text-center py-12 text-gray-500"><p>Товары не найдены</p></div>';
@@ -1546,11 +1566,19 @@
                 // Убираем чекбоксы из HTML для операций
                 html = html.replace(/<input[^>]*type="checkbox"[^>]*>/g, '');
                 html = html.replace(/<label[^>]*for="select-[^"]*"[^>]*>.*?<\/label>/g, '');
+                
+                // Добавляем проверки существования функций для избежания ошибок ReferenceError
+                html = html.replace(
+                    /onclick="([^"]*?)"/g, 
+                    'onclick="try { $1 } catch(e) { console.warn(\'Ошибка при вызове функции: $1\', e); }"'
+                );
+                
                 quickEditContent.innerHTML = '<div class="space-y-4">' + html + '</div>';
                 
                 // Инициализируем количество товаров после загрузки HTML
                 setTimeout(() => {
                     initializeWarehouseQuantities();
+                    ensureFunctionsExist(); // Проверяем функции после загрузки контента
                 }, 100);
             } else {
                 quickEditContent.innerHTML = '<div class="text-center py-12 text-gray-500"><p>Товары не найдены</p></div>';
