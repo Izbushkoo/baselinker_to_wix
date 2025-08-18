@@ -219,11 +219,11 @@ DEFAULT_BEAT_SCHEDULE = {
     #     'schedule': 900,  # 15 минут
     #     'kwargs': {'limit': 100}
     # },
-    'reconcile-stock-states': {
-        'task': 'app.services.stock_sync_tasks.reconcile_stock_states',
-        'schedule': 3600,  # 1 час
-        'kwargs': {'limit': 200}
-    },
+    # 'reconcile-stock-states': {
+    #     'task': 'app.services.stock_sync_tasks.reconcile_stock_states',
+    #     'schedule': 3600,  # 1 час
+    #     'kwargs': {'limit': 200}
+    # },
     'monitor-sync-system-health': {
         'task': 'app.services.stock_sync_tasks.monitor_sync_system_health',
         'schedule': 600  # 10 минут

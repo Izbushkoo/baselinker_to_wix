@@ -166,6 +166,7 @@ function getOrderStatus(order) {
     if (!order) {
         return '<span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">Неизвестно</span>';
     }
+    console.log(order)
 
     // Приоритет 1: Отмена продавцом (fulfillment.status === 'CANCELLED')
     if (order.fulfillment && order.fulfillment.status === 'CANCELLED') {

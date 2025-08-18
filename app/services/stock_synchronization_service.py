@@ -1307,7 +1307,7 @@ class StockSynchronizationService:
             
             for order_data in orders_response.orders:
                 order_id = order_data.get('id')
-                remote_stock_updated = order_data.get('is_stock_updated', False)
+                remote_stock_updated = order_data.get("technical_flags", {}).get('is_stock_updated', False)
                 
                 # Проверяем локальное состояние
                 local_operation = self.session.exec(
