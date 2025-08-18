@@ -38,6 +38,7 @@ class StockValidationResult(BaseModel):
     warehouse: str = ""
     sku: str = ""
     required_quantity: int = 0
+    product_exists: bool = True  # Существует ли товар в базе данных
     
     @property
     def shortage_quantity(self) -> int:

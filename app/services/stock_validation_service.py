@@ -46,11 +46,28 @@ class StockValidationService:
             StockValidationResult с результатом валидации
         """
         try:
+            # Сначала проверяем существование товара в таблице Product
+            from app.models.warehouse import Product
+            product = self.session.get(Product, sku)
+            product_exists = product is not None
+            
             # Получаем остатки товара на складе
             stock_data = self.inventory_manager.get_stock_by_sku(sku)
             available_quantity = stock_data.get(warehouse, 0)
             
-            # Базовая проверка наличия товара
+            # Если товар не существует в базе, возвращаем ошибку
+            if not product_exists:
+                return StockValidationResult(
+                    valid=False,
+                    sku=sku,
+                    warehouse=warehouse,
+                    available_quantity=0,
+                    required_quantity=required_quantity,
+                    error_message=f"Товар с SKU '{sku}' не найден в базе данных",
+                    product_exists=False
+                )
+            
+            # Базовая проверка наличия товара на складах
             if not stock_data:
                 return StockValidationResult(
                     valid=False,
@@ -58,7 +75,8 @@ class StockValidationService:
                     warehouse=warehouse,
                     available_quantity=0,
                     required_quantity=required_quantity,
-                    error_message=f"Товар с SKU '{sku}' не найден в системе"
+                    error_message=f"Товар с SKU '{sku}' отсутствует на всех складах",
+                    product_exists=True
                 )
             
             # Проверка наличия на конкретном складе
@@ -69,7 +87,8 @@ class StockValidationService:
                     warehouse=warehouse,
                     available_quantity=0,
                     required_quantity=required_quantity,
-                    error_message=f"Товар '{sku}' отсутствует на складе '{warehouse}'"
+                    error_message=f"Товар '{sku}' отсутствует на складе '{warehouse}'",
+                    product_exists=True
                 )
             
             # Проверка количества
@@ -80,7 +99,8 @@ class StockValidationService:
                     warehouse=warehouse,
                     available_quantity=available_quantity,
                     required_quantity=required_quantity,
-                    error_message=f"Недостаточно товара на складе '{warehouse}'. Доступно: {available_quantity}, требуется: {required_quantity}"
+                    error_message=f"Недостаточно товара на складе '{warehouse}'. Доступно: {available_quantity}, требуется: {required_quantity}",
+                    product_exists=True
                 )
             
             # Проверка критических остатков (warning)
@@ -95,7 +115,8 @@ class StockValidationService:
                 warehouse=warehouse,
                 available_quantity=available_quantity,
                 required_quantity=required_quantity,
-                error_message=""
+                error_message="",
+                product_exists=True
             )
             
         except Exception as e:
@@ -106,7 +127,8 @@ class StockValidationService:
                 warehouse=warehouse,
                 available_quantity=0,
                 required_quantity=required_quantity,
-                error_message=f"Системная ошибка валидации: {str(e)}"
+                error_message=f"Системная ошибка валидации: {str(e)}",
+                product_exists=False  # В случае ошибки не можем точно определить
             )
     
     def validate_order_stock_availability(

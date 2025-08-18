@@ -206,7 +206,8 @@ class StandardizedLogger:
                             "shortage_quantity": getattr(item_validation, 'shortage_quantity', None),
                             "shortage_percentage": getattr(item_validation, 'shortage_percentage', None),
                             "error_message": getattr(item_validation, 'error_message', None),
-                            "valid": getattr(item_validation, 'valid', False)
+                            "valid": getattr(item_validation, 'valid', False),
+                            "product_exists": getattr(item_validation, 'product_exists', True)
                         }
                         validation_details["items_details"].append(item_detail)
             

@@ -4,7 +4,7 @@
     <div id="errorItems" class="space-y-3">
         {% for item in validation_details.items_details %}
         {% if not item.valid %}
-        <div class="flex items-center space-x-4 bg-white border border-red-200 rounded-lg p-3">
+        <div class="flex items-center space-x-4 bg-white border border-red-200 rounded-lg p-3" data-sku="{{ item.sku }}">
             <div class="w-12 h-12 bg-gray-200 rounded flex-shrink-0 flex items-center justify-center overflow-hidden">
                 <img src="/api/products/{{ item.sku }}/image/original" 
                      alt="Товар {{ item.sku }}"
@@ -26,9 +26,107 @@
                     <span class="text-red-600 text-lg">Нехватка: {{ item.shortage_quantity }}</span>
                 </div>
             </div>
+            <div class="flex-shrink-0">
+                <div class="product-exists-check" data-sku="{{ item.sku }}">
+                    <!-- Индикатор загрузки -->
+                    <div class="loading-indicator text-sm text-gray-500 hidden">
+                        <svg class="inline w-4 h-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Проверка товара...
+                    </div>
+                    <!-- Кнопка будет показана/скрыта после проверки существования товара -->
+                    <a href="/products/add?sku={{ item.sku }}&name={{ item.name|default('')|urlencode }}&quantity={{ item.required_quantity }}"
+                       class="inline-flex items-center px-3 py-2 border border-blue-500 text-sm font-medium rounded-md text-blue-600 bg-blue-50 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors create-product-btn hidden">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                        Создать товар
+                    </a>
+
+                    <!-- Сообщение об ошибке -->
+                    <div class="error-message text-sm text-red-600 hidden">
+                        Ошибка проверки товара
+                    </div>
+                </div>
+            </div>
         </div>
         {% endif %}
         {% endfor %}
     </div>
 </div>
+
+<script>
+// Функция для проверки существования товара через API
+async function checkProductExists(sku) {
+    try {
+        const response = await fetch(`/api/products/${sku}/exists`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            return data.exists; // Возвращаем boolean значение существования товара
+        } else {
+            // В случае ошибки HTTP считаем что товар не существует для безопасности
+            console.warn(`Ошибка при проверке товара ${sku}: ${response.status}`);
+            return false;
+        }
+    } catch (error) {
+        console.error(`Ошибка при проверке существования товара ${sku}:`, error);
+        return false; // В случае ошибки считаем что товар не существует
+    }
+}
+
+// Функция для обновления отображения кнопки создания товара
+async function updateProductCreationButton(sku) {
+    const container = document.querySelector(`[data-sku="${sku}"] .product-exists-check`);
+    if (!container) return;
+    
+    const createBtn = container.querySelector('.create-product-btn');
+    const loadingIndicator = container.querySelector('.loading-indicator');
+    const errorMessage = container.querySelector('.error-message');
+    
+    if (!createBtn || !loadingIndicator || !errorMessage) return;
+    
+    try {
+        loadingIndicator.classList.remove('hidden');
+        createBtn.classList.add('hidden');
+        errorMessage.classList.add('hidden');
+
+        const productExists = await checkProductExists(sku);
+        
+        if (productExists) {
+            // Товар существует - скрываем кнопку
+            createBtn.classList.add('hidden');
+        } else {
+            // Товар не существует - показываем кнопку
+            createBtn.classList.remove('hidden');
+        }
+    } catch (error) {
+        console.error(`Ошибка при обновлении кнопки для товара ${sku}:`, error);
+        // В случае ошибки показываем кнопку (для безопасности)
+        createBtn.classList.remove('hidden');
+        errorMessage.classList.remove('hidden');
+    } finally {
+        loadingIndicator.classList.add('hidden');
+    }
+}
+
+// Проверяем все товары при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    const skuElements = document.querySelectorAll('[data-sku]');
+    skuElements.forEach(element => {
+        const sku = element.getAttribute('data-sku');
+        if (sku) {
+            updateProductCreationButton(sku);
+        }
+    });
+});
+</script>
 {% endif %}

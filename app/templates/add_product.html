@@ -123,17 +123,38 @@ document.addEventListener('DOMContentLoaded', function() {
         return urlParams.get(name);
     }
     
-    // Функция для получения URL для возврата
+    // Упрощенная и надежная функция для получения URL для возврата
     function getReturnUrl() {
+        // Приоритет 1: параметр next из URL (если явно указан)
         const nextUrl = getUrlParameter('next');
         if (nextUrl) {
-            return decodeURIComponent(nextUrl);
+            try {
+                const decodedUrl = decodeURIComponent(nextUrl);
+                // Проверяем, что URL безопасен (начинается с /)
+                if (decodedUrl.startsWith('/')) {
+                    console.log('Возврат по параметру next:', decodedUrl);
+                    return decodedUrl;
+                }
+            } catch (e) {
+                console.warn('Ошибка декодирования параметра next:', e);
+            }
         }
-        // Если нет параметра next, проверяем referrer
-        if (document.referrer && !document.referrer.includes('/products/add')) {
-            return document.referrer;
+        
+        // Приоритет 2: возврат на страницу, с которой пришел пользователь (document.referrer)
+        if (document.referrer) {
+            const referrerUrl = new URL(document.referrer);
+            const currentUrl = new URL(window.location.href);
+            
+            // Проверяем, что referrer не является текущей страницей и с того же домена
+            if (referrerUrl.pathname !== currentUrl.pathname && referrerUrl.hostname === currentUrl.hostname) {
+                const returnUrl = referrerUrl.pathname + referrerUrl.search;
+                console.log('Возврат на страницу, с которой пришел пользователь:', returnUrl);
+                return returnUrl;
+            }
         }
-        // По умолчанию возвращаемся в каталог
+        
+        // Приоритет 3: по умолчанию возвращаемся в каталог
+        console.log('Возврат в каталог (по умолчанию)');
         return '/catalog';
     }
     
@@ -168,7 +189,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span>Поля предзаполнены данными из операции</span>
+                <span>Поля предзаполнены данными из операции.</span>
             </div>
         `;
         document.body.appendChild(notification);
@@ -201,7 +222,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Обработчик кнопки "Отмена"
     document.getElementById('cancelBtn').addEventListener('click', function() {
-        window.location.href = getReturnUrl();
+        const returnUrl = getReturnUrl();
+        console.log('Отмена - переход на:', returnUrl);
+        window.location.href = returnUrl;
     });
     
     form.addEventListener('submit', async function(e) {
@@ -222,14 +245,63 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const result = await response.json();
             if (result.success) {
-                // Используем функцию для определения URL возврата
-                window.location.href = getReturnUrl();
+                // Показываем уведомление об успехе
+                showSuccessNotification();
+                
+                // Небольшая задержка перед переходом для показа уведомления
+                setTimeout(() => {
+                    const returnUrl = getReturnUrl();
+                    console.log('Успешное создание товара - переход на:', returnUrl);
+                    window.location.href = returnUrl;
+                }, 1000);
             }
         } catch (error) {
             console.error('Ошибка:', error);
-            alert(error.message || 'Произошла ошибка при добавлении товара. Пожалуйста, попробуйте еще раз.');
+            showErrorNotification(error.message || 'Произошла ошибка при добавлении товара. Пожалуйста, попробуйте еще раз.');
         }
     });
+    
+    // Функция показа уведомления об успехе
+    function showSuccessNotification() {
+        const notification = document.createElement('div');
+        notification.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+        notification.innerHTML = `
+            <div class="flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                <span>Товар успешно создан! Переход на предыдущую страницу...</span>
+            </div>
+        `;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 3000);
+    }
+    
+    // Функция показа уведомления об ошибке
+    function showErrorNotification(message) {
+        const notification = document.createElement('div');
+        notification.className = 'fixed top-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+        notification.innerHTML = `
+            <div class="flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <span>${message}</span>
+            </div>
+        `;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 5000);
+    }
 });
 </script>
 {% endblock %} 
