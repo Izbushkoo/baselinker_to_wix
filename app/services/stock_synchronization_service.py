@@ -25,6 +25,8 @@ from app.services.stock_sync_notifications import get_notification_service
 from app.services.operations_service import get_operations_service
 from app.services.standardized_logger import get_standardized_logger, ValidationResult
 from app.services.operation_cancellation_service import get_operation_cancellation_service, OperationCancellationService
+from app.services.low_price_sale_checker import LowPriceSaleChecker
+from app.services.prices_service import PricesService
 from app.models.operations import OperationType as RegularOperationType
 from app.core.stock_sync_config import stock_sync_config
 from app.core.security import create_access_token
@@ -58,6 +60,8 @@ class StockSynchronizationService:
         self.logger = logging.getLogger("stock.sync")
         self.config = stock_sync_config
         self.standardized_logger = get_standardized_logger(session)
+        self.prices_service = PricesService()
+        self.low_price_checker = LowPriceSaleChecker(self.prices_service, self.standardized_logger)
     
     def _get_account_name_by_token_id(self, token_id: str) -> str:
         """Получение имени аккаунта по token_id из микросервиса."""
@@ -595,6 +599,11 @@ class StockSynchronizationService:
         Returns:
             bool: True если все списания выполнены успешно, False при ошибке
         """
+        self.logger.info(f"Starting _validate_and_deduct_stock for operation {operation.id}")
+        self.logger.info(f"Operation has line_items: {operation.line_items is not None}")
+        if operation.line_items:
+            self.logger.info(f"Line_items count: {len(operation.line_items)}")
+        
         if not operation.line_items:
             operation.error_message = "No line items available for stock deduction"
             return False
@@ -651,6 +660,67 @@ class StockSynchronizationService:
             operation_id=operation.id,
             items_count=validation_result.total_items
         )
+        
+        self.logger.info(f"Stock validation passed, proceeding to price checking")
+        
+        # Проверяем цены продаж на соответствие минимальным ценам
+        if self.config.price_checking_enabled:
+            self.logger.info(f"Price checking enabled, starting price check for operation {operation.id}")
+            try:
+                violations = self.low_price_checker.check_order_prices(
+                    operation={"id": str(operation.id), "order_id": operation.order_id},
+                    line_items=operation.line_items
+                )
+                
+                self.logger.info(f"Price check completed, violations found: {len(violations)}")
+                
+                # Если обнаружены нарушения минимальных цен, отправляем уведомление
+                if violations:
+                    self.logger.info(f"Processing {len(violations)} violations")
+                    # Создаем сводку нарушений
+                    violation_summary = self.low_price_checker.create_violation_summary(
+                        violations=violations,
+                        account_name=account_name,
+                        order_id=operation.order_id,
+                        operation_id=str(operation.id)
+                    )
+                    
+                    if violation_summary:
+                        self.logger.info(f"Sending notification for violations")
+                        # Отправляем уведомление о нарушениях минимальных цен
+                        self.notification_service.notify_low_price_sales(
+                            violations=[violation.model_dump() for violation in violations],
+                            account_name=account_name,
+                            order_id=operation.order_id,
+                            operation_id=str(operation.id)
+                        )
+                        
+                        # Логируем обнаружение нарушений
+                        self.logger.warning(
+                            f"Low price violations detected for order {operation.order_id}: "
+                            f"{len(violations)} violations, total amount: {violation_summary.total_violation_amount:.2f} PLN"
+                        )
+                
+            except Exception as e:
+                self.logger.info(f"Price checking failed with error: {e}")
+                # Логируем ошибку проверки цен, но не прерываем основной процесс
+                self.logger.warning(
+                    f"Price checking failed for order {operation.order_id}: {e}. "
+                    "Continuing with stock deduction."
+                )
+                self.standardized_logger.log_error_with_context(
+                    operation_id=operation.id,
+                    error=e,
+                    context={
+                        "method": "_validate_and_deduct_stock",
+                        "action": "price_checking",
+                        "order_id": operation.order_id
+                    }
+                )
+        else:
+            self.logger.info(f"Price checking disabled in config")
+        
+        self.logger.info(f"Price checking completed, proceeding to stock deduction")
         
         self.standardized_logger.log_stock_deduction_started(
             operation_id=operation.id,
@@ -741,6 +811,9 @@ class StockSynchronizationService:
                 error_message=error_msg
             )
             return False
+        
+        finally:
+            self.logger.info(f"_validate_and_deduct_stock completed for operation {operation.id}")
 
     def process_pending_operations(self, limit: int = 50) -> ProcessingResult:
         """
@@ -750,8 +823,10 @@ class StockSynchronizationService:
             limit: Максимальное количество операций для обработки
             
         Returns:
-            ProcessingResult с статистикой обработки
+            ProcessingResult с результатами обработки
         """
+        self.logger.info(f"Starting process_pending_operations with limit {limit}")
+        
         result = ProcessingResult()
         
         # Получаем операции готовые для retry
@@ -770,6 +845,7 @@ class StockSynchronizationService:
         )
         
         operations = self.session.exec(statement).all()
+        self.logger.info(f"Found {len(operations)} operations to process")
         
         for operation in operations:
             result.processed += 1

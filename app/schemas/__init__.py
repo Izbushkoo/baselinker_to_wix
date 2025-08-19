@@ -9,6 +9,7 @@ from .product import (
     ProductUpdateRequest,
     ProductEditOperation
 )
+from .low_price_violations import LowPriceViolation, LowPriceViolationSummary
 
 __all__ = [
     "User",
@@ -22,5 +23,7 @@ __all__ = [
     "ProductResponse",
     "ProductEditForm",
     "ProductUpdateRequest",
-    "ProductEditOperation"
+    "ProductEditOperation",
+    "LowPriceViolation",
+    "LowPriceViolationSummary"
 ]

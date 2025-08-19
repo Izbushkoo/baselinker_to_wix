@@ -58,6 +58,13 @@ class LogAction(str, Enum):
     MICROSERVICE_SYNC_SUCCESS = "microservice_sync_success"
     MICROSERVICE_SYNC_FAILED = "microservice_sync_failed"
     
+    # Проверка цен продаж
+    PRICE_CHECK_STARTED = "price_check_started"
+    PRICE_CHECK_COMPLETED = "price_check_completed"
+    PRICE_VIOLATION_DETECTED = "price_violation_detected"
+    PRICE_CHECK_FAILED = "price_check_failed"
+    PRICE_SERVICE_UNAVAILABLE = "price_service_unavailable"
+    
     # Переходы статусов
     STATUS_TRANSITION = "status_transition"
     

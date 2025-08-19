@@ -47,6 +47,12 @@ class StockSyncConfig(BaseSettings):
     processing_timeout_seconds: int = 30
     processing_concurrent_workers: int = 3
     
+    # Настройки проверки цен продаж
+    price_checking_enabled: bool = True
+    price_check_timeout_seconds: int = 30
+    price_violation_threshold_percent: float = 0.0  # Любое нарушение
+    price_check_batch_size: int = 100  # Размер батча для получения цен
+    
     # Настройки очистки данных
     cleanup_completed_operations_days: int = 30
     cleanup_failed_operations_days: int = 90

@@ -73,7 +73,11 @@ class PricesService:
     
     def is_available(self) -> bool:
         """Проверка доступности БД цен"""
-        return self.engine is not None or self.async_engine is not None
+        available = self.engine is not None or self.async_engine is not None
+        logger.info(f"PricesService.is_available() called, result: {available}")
+        logger.info(f"self.engine: {self.engine is not None}")
+        logger.info(f"self.async_engine: {self.async_engine is not None}")
+        return available
     
     def get_price_by_sku(self, sku: str) -> Optional[PriceDataResponse]:
         try:
@@ -90,19 +94,27 @@ class PricesService:
     
     def get_prices_by_skus(self, skus: List[str]) -> Dict[str, PriceDataResponse]:
         """Получение цен по списку SKU"""
+        logger.info(f"get_prices_by_skus called with SKUs: {skus}")
         try:
             if not self.session_local:
+                logger.info("No session_local available")
                 raise RuntimeError("Prices database connection is not configured")
             
             with self.session_local() as session:
                 statement = select(PriceData).where(PriceData.sku.in_(skus))
                 results = session.exec(statement).all()
                 
-                return {
+                logger.info(f"Found {len(results)} price records in database")
+                
+                prices_dict = {
                     result.sku: PriceDataResponse.model_validate(result) 
                     for result in results
                 }
+                
+                logger.info(f"Returning prices: {list(prices_dict.keys())}")
+                return prices_dict
         except Exception as e:
+            logger.info(f"Error in get_prices_by_skus: {e}")
             logger.error(f'Error getting prices for SKUs: {e}')
             return {}
     

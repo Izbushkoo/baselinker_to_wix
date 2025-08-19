@@ -31,6 +31,14 @@ from app.services.enhanced_report_service import EnhancedReportService
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from app.core.config import settings
 import secrets
+from app.models.stock_synchronization import LogAction
+from uuid import UUID
+from app.services.low_price_sale_checker import LowPriceSaleChecker
+from app.services.prices_service import PricesService
+from app.services.stock_sync_notifications import get_notification_service
+from app.services.standardized_logger import get_standardized_logger
+from app.services.Allegro_Microservice.tokens_endpoint import AllegroTokenMicroserviceClient
+
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -767,6 +775,10 @@ async def sale_from_order(
 ):
     '''Списывает товары из заказа как продажу только если все товары есть в наличии.'''
     try:
+        logging.info(f"Starting sale-from-order for order {sale_data.order_id}")
+        logging.info(f"Sale data: {sale_data}")
+        logging.info(f"Line items count: {len(sale_data.line_items)}")
+        
         # Сначала проверяем наличие всех товаров
         logging.info(f"line items {sale_data.line_items}")
         for item in sale_data.line_items:
@@ -821,6 +833,8 @@ async def sale_from_order(
             comment=f"Списание товара выполнено через кнопку 'списать'\n",
             products_data=products
         )
+        
+        logging.info(f"Order operation created successfully for order {sale_data.order_id}")
 
         orders_client = OrdersClient(
             jwt_token=create_access_token(
@@ -828,6 +842,8 @@ async def sale_from_order(
             ),
             base_url=settings.MICRO_SERVICE_URL
         )
+        
+        logging.info(f"Orders client created, updating stock status")
 
         orders_client.update_stock_status(
             token_id=sale_data.token_id,
@@ -835,8 +851,11 @@ async def sale_from_order(
             is_stock_updated=True
         )
         
+        logging.info(f"Stock status updated in microservice for order {sale_data.order_id}")
+        
         # Завершаем соответствующую операцию синхронизации
         try:
+            logging.info(f"Starting operation synchronization completion for order {sale_data.order_id}")
             from app.models.stock_synchronization import PendingStockOperation, OperationStatus
             from app.services.stock_synchronization_service import StockSynchronizationService
             from sqlmodel import select
@@ -849,12 +868,17 @@ async def sale_from_order(
                 PendingStockOperation.status.in_([OperationStatus.PENDING, OperationStatus.PROCESSING, OperationStatus.FAILED])
             ).order_by(PendingStockOperation.created_at.desc())
             
+            logging.info(f"Operation statement created, searching for operation")
+            
             # Используем синхронную сессию для работы с операциями
             from app.database import SessionLocal
             with SessionLocal() as sync_session:
+                logging.info(f"SessionLocal created, executing operation search")
                 operation = sync_session.exec(operation_stmt).first()
+                logging.info(f"Operation search result: {operation}")
                 
                 if operation:
+                    logging.info(f"Found operation {operation.id}, updating status")
                     # Создаем сервис синхронизации для логирования
                     sync_service = StockSynchronizationService(sync_session)
                     
@@ -863,12 +887,14 @@ async def sale_from_order(
                     operation.completed_at = datetime.utcnow()
                     operation.updated_at = datetime.utcnow()
                     
+                    logging.info(f"Operation status updated, logging completion")
+                    
                     # Логируем ручное завершение
-                    sync_service._log_operation(
-                        operation.id,
-                        "manual_completion",
-                        f"Операция завершена вручную через кнопку 'Списать' пользователем {current_user.email}",
-                        detailed_info={
+                    sync_service.standardized_logger.log_action_with_timing(
+                        operation_id=operation.id,
+                        action=LogAction.STATUS_TRANSITION,
+                        details=f"Операция завершена вручную через кнопку 'Списать' пользователем {current_user.email}",
+                        additional_context={
                             "completed_by": current_user.email,
                             "completion_method": "manual_button",
                             "order_id": sale_data.order_id,
@@ -877,19 +903,96 @@ async def sale_from_order(
                         }
                     )
                     
+                    logging.info(f"Logging completed, committing changes")
                     sync_session.commit()
-                    logging.info(f"Операция синхронизации {operation.id} завершена вручную для заказа {sale_data.order_id}")
+                    logging.info(f"Operation synchronization {operation.id} completed manually for order {sale_data.order_id}")
+                else:
+                    logging.info(f"No operation found for order {sale_data.order_id}")
+                
+                # Проверяем цены продаж на соответствие минимальным ценам
+                try:
+                    logging.info(f"Starting price check for order {sale_data.order_id}")
+                    
+                    # Получаем имя аккаунта от микросервиса по токену
+                    account_name = "Unknown"
+                    try:
+                        logging.info(f"Attempting to get account name for token {sale_data.token_id}")
+                        tokens_client = AllegroTokenMicroserviceClient(
+                            jwt_token=create_access_token(user_id=settings.PROJECT_NAME)
+                        )
+                        logging.info(f"Tokens client created, calling get_token")
+                        token_response = tokens_client.get_token(UUID(sale_data.token_id))
+                        logging.info(f"Token response received: {token_response}")
+                        if token_response and hasattr(token_response, 'account_name'):
+                            account_name = token_response.account_name
+                            logging.info(f"Retrieved account name: {account_name} for token {sale_data.token_id}")
+                        else:
+                            logging.warning(f"Token response doesn't contain account_name for token {sale_data.token_id}")
+                            logging.warning(f"Token response attributes: {dir(token_response) if token_response else 'None'}")
+                    except Exception as e:
+                        logging.warning(f"Failed to get account name for token {sale_data.token_id}: {e}")
+                        logging.exception("Full traceback for account name retrieval:")
+                        account_name = f"Unknown({sale_data.token_id})"
+                    
+                    logging.info(f"Using account name: {account_name} for price checking")
+                    
+                    prices_service = PricesService()
+                    notification_service = get_notification_service(sync_session)
+                    standardized_logger = get_standardized_logger(sync_session)
+                    low_price_checker = LowPriceSaleChecker(prices_service, standardized_logger)
+                    
+                    logging.info(f"Price checking services initialized")
+                    
+                    # Проверяем цены всех позиций заказа
+                    violations = low_price_checker.check_order_prices(
+                        operation={"id": str(operation.id) if operation else "manual", "order_id": sale_data.order_id},
+                        line_items=sale_data.line_items
+                    )
+                    
+                    logging.info(f"Price check completed, violations found: {len(violations)}")
+                    
+                    # Если обнаружены нарушения минимальных цен, отправляем уведомление
+                    if violations:
+                        logging.warning(f"Low price violations detected for order {sale_data.order_id}: {len(violations)} violations")
+                        
+                        # Создаем сводку нарушений
+                        violation_summary = low_price_checker.create_violation_summary(
+                            violations=violations,
+                            account_name=account_name,
+                            order_id=sale_data.order_id,
+                            operation_id=str(operation.id) if operation else None
+                        )
+                        
+                        if violation_summary:
+                            logging.info(f"Violation summary created, sending notification")
+                            # Отправляем уведомление о нарушениях минимальных цен
+                            notification_service.notify_low_price_sales(
+                                violations=[violation.model_dump() for violation in violations],
+                                account_name=account_name,
+                                order_id=sale_data.order_id,
+                                operation_id=str(operation.id) if operation else None
+                            )
+                            
+                            logging.warning(
+                                f"Low price violations detected for order {sale_data.order_id}: "
+                                f"{len(violations)} violations, total amount: {violation_summary.total_violation_amount:.2f} PLN"
+                            )
+                    
+                except Exception as e:
+                    # Логируем ошибку проверки цен, но не прерываем основной процесс
+                    logging.warning(f"Price checking failed for order {sale_data.order_id}: {e}. Continuing with order completion.")
+                    logging.exception("Full traceback for price checking error:")
+                
+                logging.info(f"Price checking block completed for order {sale_data.order_id}")
                     
         except Exception as e:
             # Логируем ошибку, но не прерываем основной процесс
-            logging.warning(f"Не удалось завершить операцию синхронизации для заказа {sale_data.order_id}: {str(e)}")
-
-        # update_stmt = update(AllegroOrder).where(
-        #     AllegroOrder.id == sale_data.order_id
-        # ).values(is_stock_updated=True)
+            logging.error(f"Failed to complete operation synchronization for order {sale_data.order_id}: {str(e)}")
+            logging.exception("Full traceback for operation synchronization:")
         
-        # await db.exec(update_stmt)
-        # await db.commit()
+        logging.info(f"Operation synchronization block completed for order {sale_data.order_id}")
+        
+        logging.info(f"Sale-from-order completed successfully for order {sale_data.order_id}")
         
         return JSONResponse({
             'status': 'success',
@@ -897,6 +1000,8 @@ async def sale_from_order(
         })
         
     except Exception as e:
+        logging.error(f"Critical error in sale-from-order for order {sale_data.order_id}: {str(e)}")
+        logging.exception("Full traceback for sale-from-order:")
         await db.rollback()
         return JSONResponse(
             status_code=500,

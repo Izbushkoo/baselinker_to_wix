@@ -8,6 +8,7 @@ from collections import deque
 import threading
 import time
 from pydantic import BaseModel, Field
+from decimal import Decimal
 
 from app.services.tg_client import TelegramManager
 from app.core.stock_sync_config import stock_sync_config
@@ -512,6 +513,108 @@ class StockSyncNotificationService:
             self._record_order_notification(
                 order_id, account_name, 'validation_failure', suppress_for_hours=6
             )
+    
+    def notify_low_price_sales(
+        self,
+        violations: List[Dict[str, Any]],
+        account_name: str,
+        order_id: str,
+        operation_id: Optional[str] = None
+    ):
+        """
+        Отправляет уведомление о продажах по цене ниже минимальной.
+        
+        Args:
+            violations: Список нарушений минимальных цен
+            account_name: Название аккаунта
+            order_id: ID заказа
+            operation_id: ID операции (опционально)
+        """
+        if not violations:
+            return
+        
+        # Формируем основное сообщение
+        message = (
+            f"🚨 <b>Продажа по цене ниже минимальной</b>\n\n"
+            f"Аккаунт: <code>{account_name}</code>\n"
+            f"Заказ: <code>{order_id}</code>\n"
+        )
+        
+        if operation_id:
+            message += f"Операция: <code>{operation_id}</code>\n"
+        
+        message += f"\n📦 <b>Нарушения:</b>\n"
+        
+        # Добавляем детали каждого нарушения
+        total_violation_amount = 0
+        for i, violation in enumerate(violations, 1):
+            sku = violation.get("sku", "Unknown")
+            product_name = violation.get("product_name", "Неизвестный товар")
+            sale_price = violation.get("sale_price", "0")
+            minimum_price = violation.get("minimum_price", "0")
+            violation_amount = violation.get("violation_amount", "0")
+            violation_percentage = violation.get("violation_percentage", 0)
+            
+            # Форматируем цены
+            try:
+                sale_price_decimal = Decimal(str(sale_price))
+                minimum_price_decimal = Decimal(str(minimum_price))
+                violation_amount_decimal = Decimal(str(violation_amount))
+                total_violation_amount += violation_amount_decimal
+                
+                # Форматируем с двумя знаками после запятой
+                sale_price_str = f"{sale_price_decimal:.2f}"
+                minimum_price_str = f"{minimum_price_decimal:.2f}"
+                violation_amount_str = f"{violation_amount_decimal:.2f}"
+                
+            except (ValueError, TypeError):
+                sale_price_str = str(sale_price)
+                minimum_price_str = str(minimum_price)
+                violation_amount_str = str(violation_amount)
+            
+            message += (
+                f"• <code>{sku}</code> \"{product_name}\"\n"
+                f"  Продано: {sale_price_str} PLN\n"
+                f"  Минимум: {minimum_price_str} PLN\n"
+                f"  Убыток: -{violation_amount_str} PLN"
+            )
+            
+            if violation_percentage > 0:
+                message += f" (-{violation_percentage:.1f}%)"
+            
+            message += "\n"
+        
+        # Добавляем общую сумму нарушений
+        if total_violation_amount > 0:
+            message += f"\n💰 <b>Общий убыток: -{total_violation_amount:.2f} PLN</b>\n"
+        
+        # Добавляем рекомендации
+        message += (
+            f"\n💡 <b>Рекомендации:</b>\n"
+            f"• Проверьте настройки цен для аккаунта {account_name}\n"
+            f"• Убедитесь, что минимальные цены актуальны\n"
+            f"• Рассмотрите возможность корректировки ценовой политики"
+        )
+        
+        # Определяем приоритет по критичности нарушений
+        if len(violations) > 3 or total_violation_amount > 100:  # Много нарушений или большой убыток
+            priority = 'critical'
+            chat_type = 'critical'
+        elif len(violations) > 1 or total_violation_amount > 50:  # Несколько нарушений или средний убыток
+            priority = 'high'
+            chat_type = 'main'
+        else:
+            priority = 'normal'
+            chat_type = 'main'
+        
+        # Отправляем уведомление
+        self._send_message(message, chat_type, priority, account_name)
+        
+        # Логируем отправку уведомления
+        self.logger.info(
+            f"Low price violation notification sent for order {order_id}: "
+            f"{len(violations)} violations, total amount: {total_violation_amount:.2f} PLN"
+        )
     
     def notify_reconciliation_discrepancies(
         self, 
