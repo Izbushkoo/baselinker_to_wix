@@ -429,6 +429,7 @@ async def edit_product_form(
     product_data = {
         "sku": product.sku,
         "name": product.name,
+        "name_eng": product.name_eng or "",
         "brand": product.brand or "",
         "ean": ", ".join(product.eans) if product.eans else "",
         "current_image": base64.b64encode(product.image).decode('utf-8') if product.image else None
@@ -529,6 +530,8 @@ async def get_product_card(
 async def create_product(
     request: Request,
     name: str = Form(...),
+    name_eng: Optional[str] = Form(None),
+    brand: Optional[str] = Form(None),
     sku: str = Form(...),
     ean: Optional[str] = Form(None),
     warehouse: str = Form(...),
@@ -544,6 +547,8 @@ async def create_product(
     logger.info(f"=== НАЧАЛО СОЗДАНИЯ ТОВАРА ===")
     logger.info(f"SKU: {sku}")
     logger.info(f"Name: {name}")
+    logger.info(f"Name ENG: {name_eng}")
+    logger.info(f"Brand: {brand}")
     logger.info(f"EAN: {ean}")
     logger.info(f"Warehouse: {warehouse}")
     logger.info(f"Quantity: {quantity}")
@@ -624,6 +629,8 @@ async def create_product(
         new_product = Product(
             sku=sku,
             name=name,
+            name_eng=name_eng,
+            brand=brand,
             eans=eans,
             image=compressed_image,
             original_image=original_image,
@@ -757,6 +764,7 @@ async def update_product(
     sku: str,
     request: Request,
     name: Optional[str] = Form(None),
+    name_eng: Optional[str] = Form(None),
     new_sku: Optional[str] = Form(None),
     brand: Optional[str] = Form(None),
     ean: Optional[str] = Form(None),
@@ -790,6 +798,7 @@ async def update_product(
         old_values = {
             "sku": product.sku,
             "name": product.name,
+            "name_eng": product.name_eng,
             "brand": product.brand,
             "eans": product.eans.copy() if product.eans else []
         }
@@ -807,6 +816,9 @@ async def update_product(
         # Обновляем поля товара
         if name is not None:
             product.name = name
+        
+        if name_eng is not None:
+            product.name_eng = name_eng if name_eng.strip() else None
         
         if new_sku is not None:
             product.sku = new_sku
@@ -868,6 +880,7 @@ async def update_product(
         new_values = {
             "sku": product.sku,
             "name": product.name,
+            "name_eng": product.name_eng,
             "brand": product.brand,
             "eans": product.eans.copy() if product.eans else []
         }

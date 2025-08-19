@@ -25,6 +25,26 @@
                     </div>
 
                     <div>
+                        <label for="name_eng" class="block text-sm font-medium text-gray-700">Название товара (англ.)</label>
+                        <input type="text" 
+                               name="name_eng" 
+                               id="name_eng" 
+                               value="{{ product.name_eng }}"
+                               placeholder="Введите английское название товара (необязательно)"
+                               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+
+                    <div>
+                        <label for="brand" class="block text-sm font-medium text-gray-700">Бренд</label>
+                        <input type="text" 
+                               name="brand" 
+                               id="brand" 
+                               value="{{ product.brand }}"
+                               placeholder="Введите название бренда (необязательно)"
+                               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+
+                    <div>
                         <label for="sku" class="block text-sm font-medium text-gray-700">SKU</label>
                         <input type="text" 
                                name="new_sku" 
@@ -34,16 +54,6 @@
                                placeholder="Введите уникальный идентификатор товара"
                                class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
                         <p class="mt-1 text-sm text-gray-500">Текущий SKU: <span class="font-mono">{{ product.sku }}</span></p>
-                    </div>
-
-                    <div>
-                        <label for="brand" class="block text-sm font-medium text-gray-700">Бренд</label>
-                        <input type="text" 
-                               name="brand" 
-                               id="brand" 
-                               value="{{ product.brand }}"
-                               placeholder="Введите название бренда"
-                               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
                     </div>
 
                     <div>
@@ -127,6 +137,12 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
         
         const formData = new FormData(form);
+        
+        // Добавляем поле name_eng в formData
+        const nameEng = document.getElementById('name_eng').value;
+        if (nameEng) {
+            formData.append('name_eng', nameEng);
+        }
         
         try {
             const response = await fetch('/api/products/{{ product.sku }}', {

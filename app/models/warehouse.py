@@ -17,7 +17,7 @@ class Product(SQLModel, table=True):
     image_url: Optional[str] = Field(default=None, description="URL для доступа к оригинальному изображению")
     brand: Optional[str] = Field(default=None, description="Бренд товара")
     first_publication_date: Optional[datetime] = Field(default=None, description="Дата первой публикации офферты на Allegro", index=True)
-    
+    name_eng: Optional[str] = Field(default=None, description="Английское название товара")
     # Связи с другими таблицами
     stocks: List["Stock"] = Relationship(
         back_populates="product",
