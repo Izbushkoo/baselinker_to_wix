@@ -27,6 +27,12 @@ help:
 	@echo "  db-history    - Показать историю миграций"
 	@echo "  clean         - Очистить Docker образы и volumes"
 	@echo "  fix-permissions - Исправить права доступа к файлам"
+	@echo ""
+	@echo "Управление складами:"
+	@echo "  warehouse-list    - Список всех складов в системе"
+	@echo "  warehouse-info    - Информация о конкретном складе"
+	@echo "  warehouse-rename  - Переименовать склад"
+	@echo "  warehouse-rename-dry-run - Предварительный просмотр переименования"
 
 # Docker команды
 build:
@@ -115,3 +121,38 @@ fix-permissions:
 	@chmod 644 ./celerybeat-schedule 2>/dev/null || true
 	@touch ./app/logs/.gitkeep
 	@echo "Права доступа исправлены"
+
+# Команды для управления складами
+warehouse-list:
+	@echo "Список всех складов в системе:"
+	docker compose exec app poetry run python scripts/warehouse_manager.py list
+
+warehouse-info:
+	@if [ -z "$(WAREHOUSE)" ]; then \
+		echo "Ошибка: необходимо указать название склада"; \
+		echo "Использование: make warehouse-info WAREHOUSE=название_склада"; \
+		echo "Пример: make warehouse-info WAREHOUSE=Основной"; \
+		exit 1; \
+	fi
+	@echo "Информация о складе '$(WAREHOUSE)':"
+	docker compose exec app poetry run python scripts/warehouse_manager.py info "$(WAREHOUSE)"
+
+warehouse-rename:
+	@if [ -z "$(OLD_NAME)" ] || [ -z "$(NEW_NAME)" ]; then \
+		echo "Ошибка: необходимо указать старое и новое название склада"; \
+		echo "Использование: make warehouse-rename OLD_NAME=старое_название NEW_NAME=новое_название"; \
+		echo "Пример: make warehouse-rename OLD_NAME=Основной NEW_NAME=Новый"; \
+		exit 1; \
+	fi
+	@echo "Переименование склада '$(OLD_NAME)' в '$(NEW_NAME)':"
+	docker compose exec app poetry run python scripts/warehouse_manager.py rename "$(OLD_NAME)" "$(NEW_NAME)"
+
+warehouse-rename-dry-run:
+	@if [ -z "$(OLD_NAME)" ] || [ -z "$(NEW_NAME)" ]; then \
+		echo "Ошибка: необходимо указать старое и новое название склада"; \
+		echo "Использование: make warehouse-rename-dry-run OLD_NAME=старое_название NEW_NAME=новое_название"; \
+		echo "Пример: make warehouse-rename-dry-run OLD_NAME=Основной NEW_NAME=Новый"; \
+		exit 1; \
+	fi
+	@echo "Предварительный просмотр переименования склада '$(OLD_NAME)' в '$(NEW_NAME)':"
+	docker compose exec app poetry run python scripts/warehouse_manager.py rename "$(OLD_NAME)" "$(NEW_NAME)" --dry-run
