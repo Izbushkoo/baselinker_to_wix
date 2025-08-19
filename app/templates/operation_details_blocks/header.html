@@ -67,10 +67,22 @@
             </div>
             <div class="flex justify-between">
                 <span class="text-gray-600">Статус операции:</span>
-                <span
-                    class="px-2 py-1 rounded text-xs {% if operation.status == 'failed' %}bg-red-100 text-red-800{% elif operation.status == 'pending' %}bg-yellow-100 text-yellow-800{% elif operation.status == 'processing' %}bg-blue-100 text-blue-800{% elif operation.status == 'completed' %}bg-green-100 text-green-800{% else %}bg-gray-100 text-gray-800{% endif %}"
-                    id="operationStatus">
-                    {{ operation.status|upper }}
+                <span id="operationStatus" class="px-2 py-1 rounded text-xs 
+                    {% if operation_status_str == 'failed' %}bg-red-100 text-red-800
+                    {% elif operation_status_str == 'pending' %}bg-yellow-100 text-yellow-800
+                    {% elif operation_status_str == 'processing' %}bg-blue-100 text-blue-800
+                    {% elif operation_status_str == 'stock_deducted' %}bg-blue-100 text-blue-800
+                    {% elif operation_status_str == 'completed' %}bg-green-100 text-green-800
+                    {% elif operation_status_str == 'cancelled' %}bg-red-100 text-red-800
+                    {% else %}bg-gray-100 text-gray-800{% endif %}">
+                    {% if operation_status_str == 'pending' %}Ожидает
+                    {% elif operation_status_str == 'processing' %}Обрабатывается
+                    {% elif operation_status_str == 'stock_deducted' %}Списано
+                    {% elif operation_status_str == 'completed' %}Завершена
+                    {% elif operation_status_str == 'failed' %}Ошибка
+                    {% elif operation_status_str == 'cancelled' %}Отменена
+                    {% else %}Неизвестно
+                    {% endif %}
                 </span>
             </div>
             {% if full_order and full_order.purchasedAt %}

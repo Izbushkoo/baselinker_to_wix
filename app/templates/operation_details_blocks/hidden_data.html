@@ -1,7 +1,7 @@
 <!-- Скрытый элемент с данными для JavaScript -->
 <div id="operation-data" data-operation-id="{{ operation.id }}" data-order-id="{{ operation.order_id or '' }}" data-token-id="{{ operation.token_id or '' }}"
        data-account-name="{{ operation.account_name or '' }}" data-warehouse="{{ operation.warehouse or 'Ирина' }}"
-       data-status="{{ operation.status }}"
+       data-status="{{ operation_status_str }}"
        data-has-order-data="{{ 'true' if operation.order_id and operation.token_id and operation.account_name else 'false' }}"
        data-has-full-order="{{ 'true' if full_order else 'false' }}"
        data-invalid-items="{{ validation_details.invalid_items if validation_details else 0 }}"

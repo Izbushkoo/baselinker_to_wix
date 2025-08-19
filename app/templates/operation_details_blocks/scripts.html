@@ -82,7 +82,11 @@
         const statusMap = {
             'BOUGHT': '<span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">Куплен</span>',
             'FILLED_IN': '<span class="px-2 py-1 rounded text-xs bg-yellow-100 text-yellow-800">Заполнен</span>',
-            'READY_FOR_PROCESSING': '<span class="px-2 py-1 rounded text-xs bg-blue-100 text-blue-800">Готов к отправке</span>'
+            'READY_FOR_PROCESSING': '<span class="px-2 py-1 rounded text-xs bg-blue-100 text-blue-800">Готов к отправке</span>',
+            'stock_deducted': '<span class="px-2 py-1 rounded text-xs bg-blue-100 text-blue-800">Списано</span>',
+            'completed': '<span class="px-2 py-1 rounded text-xs bg-green-100 text-green-800">Завершена</span>',
+            'failed': '<span class="px-2 py-1 rounded text-xs bg-red-100 text-red-800">Ошибка</span>',
+            'cancelled': '<span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">Отменена</span>'
         };
 
         if (order.status && statusMap[order.status]) {
@@ -379,8 +383,6 @@
                 // Обновляем глобальные переменные
                 if (data.operation) {
                     window.operationData = data.operation;
-                    // Обновляем статус операции
-                    updateOperationStatus(data.operation.status);
                 }
                 
                 // Обновляем отображение
@@ -510,15 +512,45 @@
         const statusElement = document.getElementById('operationStatus');
         if (!statusElement) return;
 
+        // Проверяем, изменился ли статус, чтобы избежать ненужных обновлений
+        const currentStatusText = statusElement.textContent.trim();
         const statusMap = {
+            'pending': 'Ожидает',
+            'processing': 'Обрабатывается',
+            'stock_deducted': 'Списано',
+            'completed': 'Завершена',
+            'failed': 'Ошибка',
+            'cancelled': 'Отменена'
+        };
+        
+        const normalizedStatus = status ? status.toLowerCase() : '';
+        const newStatusText = statusMap[normalizedStatus] || (status || 'Неизвестно');
+        
+        // Если статус не изменился, не обновляем
+        if (currentStatusText === newStatusText) {
+            console.log(`Статус операции не изменился: ${status}`);
+            return;
+        }
+
+        const statusHtmlMap = {
             'pending': '<span class="px-2 py-1 rounded text-xs bg-yellow-100 text-yellow-800">Ожидает</span>',
             'processing': '<span class="px-2 py-1 rounded text-xs bg-blue-100 text-blue-800">Обрабатывается</span>',
+            'stock_deducted': '<span class="px-2 py-1 rounded text-xs bg-blue-100 text-blue-800">Списано</span>',
             'completed': '<span class="px-2 py-1 rounded text-xs bg-green-100 text-green-800">Завершена</span>',
             'failed': '<span class="px-2 py-1 rounded text-xs bg-red-100 text-red-800">Ошибка</span>',
             'cancelled': '<span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">Отменена</span>'
         };
-
-        statusElement.innerHTML = statusMap[status] || `<span class="px-3 py-1 rounded text-xs bg-gray-100 text-gray-800">${status}</span>`;
+        
+        // Получаем HTML для нового статуса
+        const newStatusHtml = statusHtmlMap[normalizedStatus] || `<span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">${status || 'Неизвестно'}</span>`;
+        
+        // Очищаем все CSS классы перед применением новых стилей
+        statusElement.className = '';
+        
+        // Полностью заменяем содержимое элемента, чтобы избежать наложения стилей
+        statusElement.innerHTML = newStatusHtml;
+        
+        console.log(`Статус операции обновлен: ${status} -> ${normalizedStatus}`);
     }
 
     /**
@@ -752,6 +784,15 @@
                 showNotification(data.message || 'Операция списания выполнена успешно', 'success');
                 // Обновляем статус списания на странице
                 updateStockStatus(true);
+                
+                // Обновляем статус операции на "завершена"
+                updateOperationStatus('completed');
+                
+                // Сразу обновляем панель быстрого редактирования для быстрого отклика
+                if (operationData?.dataset?.skus) {
+                    updateQuickEditPanelAfterStockChange();
+                }
+                
                 // Обновляем данные операции и заказа без перезагрузки страницы
                 try {
                     await refreshAllData();
@@ -955,6 +996,11 @@
 
         updateOrderStatusDisplay();
         
+        // Инициализируем статус операции
+        if (operationData && operationData.dataset && operationData.dataset.status) {
+            updateOperationStatus(operationData.dataset.status);
+        }
+        
         if (fullOrder && fullOrder.technical_flags && typeof fullOrder.technical_flags.is_stock_updated !== "undefined") {
             updateStockStatus(fullOrder.technical_flags.is_stock_updated);
         }
@@ -1106,18 +1152,8 @@
             // Триггерим событие обновления остатков для автообновления оферт
             document.dispatchEvent(new CustomEvent('stockUpdated'));
             
-            // Автоматически перезагружаем блок с товарами через 3 секунды
-            setTimeout(async () => {
-                try {
-                    const operationSkus = operationData?.dataset?.skus;
-                    if (operationSkus) {
-                        console.log('Автоматическая перезагрузка блока с товарами после пополнения');
-                        await reloadQuickEditContent(operationSkus);
-                    }
-                } catch (error) {
-                    console.error('Ошибка при автоматической перезагрузке товаров после пополнения:', error);
-                }
-            }, 3000);
+            // Сразу обновляем панель быстрого редактирования
+            updateQuickEditPanelAfterStockChange();
         })
         .catch(error => {
             showNotification('Ошибка при пополнении товара: ' + error.message, 'error');
@@ -1197,21 +1233,12 @@
             input.value = 1;
             
             showNotification('Товар успешно списан', 'success');
+            
             // Триггерим событие обновления остатков для автообновления оферт
             document.dispatchEvent(new CustomEvent('stockUpdated'));
             
-            // Автоматически перезагружаем блок с товарами через 3 секунды
-            setTimeout(async () => {
-                try {
-                    const operationSkus = operationData?.dataset?.skus;
-                    if (operationSkus) {
-                        console.log('Автоматическая перезагрузка блока с товарами после списания');
-                        await reloadQuickEditContent(operationSkus);
-                    }
-                } catch (error) {
-                    console.error('Ошибка при автоматической перезагрузке товаров после списания:', error);
-                }
-            }, 3000);
+            // Сразу обновляем панель быстрого редактирования
+            updateQuickEditPanelAfterStockChange();
         })
         .catch(error => {
             showNotification('Ошибка при списании товара: ' + error.message, 'error');
@@ -1269,6 +1296,179 @@
                 }
             }
         });
+    }
+
+    /**
+     * Обновляет панель быстрого редактирования после изменения остатков на складе
+     */
+    async function updateQuickEditPanelAfterStockChange() {
+        try {
+            console.log('Обновление панели быстрого редактирования после изменения остатков');
+            
+            // Получаем SKU товаров из текущей операции
+            const operationSkus = operationData?.dataset?.skus;
+            if (!operationSkus) {
+                console.warn('SKU товаров операции не найдены');
+                return;
+            }
+            
+            // Получаем обновленные данные товаров
+            const response = await fetch(`/products/quick_edit?operation_skus=${encodeURIComponent(operationSkus)}`, {
+                headers: { 'Accept': 'application/json' }
+            });
+            
+            if (!response.ok) {
+                throw new Error('Ошибка при получении обновленных данных товаров');
+            }
+            
+            const data = await response.json();
+            
+            // Обновляем панель быстрого редактирования если она открыта
+            const quickEditContent = document.getElementById('quickEditContent');
+            if (quickEditContent && data.products_html && data.products_html.length > 0) {
+                let html = data.products_html.join('');
+                // Убираем чекбоксы из HTML для операций
+                html = html.replace(/<input[^>]*type="checkbox"[^>]*>/g, '');
+                html = html.replace(/<label[^>]*for="select-[^"]*"[^>]*>.*?<\/label>/g, '');
+                
+                // Добавляем проверки существования функций для избежания ошибок ReferenceError
+                html = html.replace(
+                    /onclick="([^"]*?)"/g, 
+                    'onclick="try { $1 } catch(e) { console.warn(\'Ошибка при вызове функции: $1\', e); }"'
+                );
+                
+                quickEditContent.innerHTML = '<div class="space-y-4">' + html + '</div>';
+                
+                // Инициализируем количество товаров после загрузки HTML
+                setTimeout(() => {
+                    initializeWarehouseQuantities();
+                    ensureFunctionsExist(); // Проверяем функции после загрузки контента
+                }, 100);
+                
+                console.log('Панель быстрого редактирования обновлена');
+            }
+            
+            console.log('Панель быстрого редактирования успешно обновлена');
+        } catch (error) {
+            console.error('Ошибка при обновлении панели быстрого редактирования:', error);
+            showNotification('Ошибка при обновлении данных товаров', 'error');
+        }
+    }
+
+    /**
+     * Обновляет таблицу товаров заказа из карточек товаров
+     */
+    function updateOrderItemsFromProductCards(productRows) {
+        try {
+            const orderItemsTable = document.getElementById('orderItemsTable');
+            if (!orderItemsTable) {
+                console.warn('Таблица товаров заказа не найдена');
+                return;
+            }
+
+            // Очищаем текущие товары
+            orderItemsTable.innerHTML = '';
+
+            if (productRows && productRows.length > 0) {
+                // Добавляем новые товары
+                productRows.forEach(row => {
+                    const sku = row.dataset.sku;
+                    const name = row.querySelector('[data-product-name]')?.textContent || 'Не указано';
+                    const priceElement = row.querySelector('[data-product-price]');
+                    const quantityElement = row.querySelector('[data-product-quantity]');
+                    
+                    // Создаем новую строку для таблицы
+                    const newRow = document.createElement('tr');
+                    newRow.className = 'border-b border-gray-200 hover:bg-gray-50';
+                    
+                    // SKU
+                    const skuCell = document.createElement('td');
+                    skuCell.className = 'px-3 py-2';
+                    skuCell.innerHTML = `
+                        <button onclick="copyToClipboard('${sku}')"
+                            class="font-mono text-gray-800 hover:text-blue-600 cursor-pointer transition-colors">
+                            ${sku}
+                        </button>
+                    `;
+                    
+                    // Название
+                    const nameCell = document.createElement('td');
+                    nameCell.className = 'px-3 py-2 text-gray-700';
+                    nameCell.textContent = name;
+                    
+                    // Цена за ед.
+                    const priceCell = document.createElement('td');
+                    priceCell.className = 'px-3 py-2 text-right text-gray-700';
+                    if (priceElement) {
+                        priceCell.textContent = priceElement.textContent;
+                    } else {
+                        priceCell.textContent = '-';
+                    }
+                    
+                    // Количество
+                    const quantityCell = document.createElement('td');
+                    quantityCell.className = 'px-3 py-2 text-right text-gray-700';
+                    if (quantityElement) {
+                        quantityCell.textContent = quantityElement.textContent;
+                    } else {
+                        quantityCell.textContent = '-';
+                    }
+                    
+                    // Общая цена
+                    const totalPriceCell = document.createElement('td');
+                    totalPriceCell.className = 'px-3 py-2 text-right text-gray-700';
+                    if (priceElement && quantityElement) {
+                        // Пытаемся извлечь цену и количество для расчета общей суммы
+                        const priceText = priceElement.textContent;
+                        const quantityText = quantityElement.textContent;
+                        
+                        // Извлекаем числовые значения
+                        const priceMatch = priceText.match(/[\d.,]+/);
+                        const quantityMatch = quantityText.match(/\d+/);
+                        
+                        if (priceMatch && quantityMatch) {
+                            const price = parseFloat(priceMatch[0].replace(',', '.'));
+                            const quantity = parseInt(quantityMatch[0]);
+                            const totalPrice = price * quantity;
+                            
+                            // Определяем валюту из текста цены
+                            const currencyMatch = priceText.match(/[A-Z]{3}/);
+                            const currency = currencyMatch ? currencyMatch[0] : 'PLN';
+                            
+                            totalPriceCell.textContent = `${totalPrice.toFixed(2)} ${currency}`;
+                        } else {
+                            totalPriceCell.textContent = '-';
+                        }
+                    } else {
+                        totalPriceCell.textContent = '-';
+                    }
+                    
+                    // Добавляем ячейки в строку
+                    newRow.appendChild(skuCell);
+                    newRow.appendChild(nameCell);
+                    newRow.appendChild(priceCell);
+                    newRow.appendChild(quantityCell);
+                    newRow.appendChild(totalPriceCell);
+                    
+                    // Добавляем строку в таблицу
+                    orderItemsTable.appendChild(newRow);
+                });
+                
+                console.log(`Обновлено ${productRows.length} товаров в таблице заказа`);
+            } else {
+                // Если товары не найдены
+                const noItemsRow = document.createElement('tr');
+                noItemsRow.innerHTML = `
+                    <td colspan="5" class="px-3 py-8 text-center text-gray-500">
+                        <div class="text-4xl mb-2">📦</div>
+                        <div>Товары не найдены</div>
+                    </td>
+                `;
+                orderItemsTable.appendChild(noItemsRow);
+            }
+        } catch (error) {
+            console.error('Ошибка при обновлении таблицы товаров заказа:', error);
+        }
     }
 
     /**
@@ -1375,6 +1575,7 @@
     window.addToStock = addToStock;
     window.removeFromStock = removeFromStock;
     window.updateTotalStock = updateTotalStock;
+    window.updateQuickEditPanelAfterStockChange = updateQuickEditPanelAfterStockChange;
     window.showNotification = showNotification;
     window.initializeWarehouseQuantities = initializeWarehouseQuantities;
     window.openTransferModal = openTransferModal;
@@ -1385,6 +1586,7 @@
     window.editProduct = editProduct;
     window.updateProductCard = updateProductCard;
     window.reloadQuickEditContent = reloadQuickEditContent;
+    window.updateOrderItemsFromProductCards = updateOrderItemsFromProductCards;
 
     /**
      * Открывает модальное окно для перемещения товара между складами

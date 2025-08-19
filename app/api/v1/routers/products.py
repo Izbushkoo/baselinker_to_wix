@@ -55,14 +55,12 @@ async def catalog(
         return RedirectResponse(url=f"/login?next=/catalog", status_code=302)
 
     # Логирование параметров запроса
-    logger.info(f"Catalog request parameters: search={search}, stock_filter={stock_filter}, min_stock_filter={min_stock_filter}, brand_filter={brand_filter}, sort_order={sort_order}, operation_skus={operation_skus}")
+    logger.info(f"Catalog request: search={search}, stock_filter={stock_filter}, min_stock_filter={min_stock_filter}, brand_filter={brand_filter}")
 
     # Валидация и автоматическая коррекция фильтров
     if (stock_filter is not None and min_stock_filter is not None and 
         stock_filter < min_stock_filter):
-        logger.warning(f"Некорректные значения фильтров: stock_filter={stock_filter} < min_stock_filter={min_stock_filter}. Меняю местами.")
         stock_filter, min_stock_filter = min_stock_filter, stock_filter
-        logger.info(f"Исправленные параметры: stock_filter={stock_filter}, min_stock_filter={min_stock_filter}")
 
     # Базовый запрос для товаров с подсчетом остатков
     base_query = (
@@ -90,7 +88,6 @@ async def catalog(
         sku_list = [sku.strip() for sku in operation_skus.split(',') if sku.strip()]
         if sku_list:
             base_query = base_query.where(Product.sku.in_(sku_list))
-            logger.info(f"Применен фильтр по SKU операции: {sku_list}")
 
     # Собираем условия фильтров по количеству
     having_conditions = []
@@ -176,32 +173,24 @@ async def catalog(
         products_with_stocks.append(product_data)
 
     # Обогащаем данные о товарах ценами из удаленной БД
-    logger.info(f"[CATALOG] prices_service.is_available(): {prices_service.is_available()}")
-    logger.info(f"[CATALOG] products_with_stocks count: {len(products_with_stocks)}")
-    
     if prices_service.is_available() and products_with_stocks:
         try:
             # Получаем все SKU товаров
             skus = [product["sku"] for product in products_with_stocks]
-            logger.info(f"[CATALOG] SKUs для получения цен: {skus}")
             
             # Получаем цены для всех SKU одним запросом
             prices_data = prices_service.get_prices_by_skus(skus)
-            logger.info(f"[CATALOG] Полученные цены от сервиса: {prices_data}")
             
             # Добавляем цены к данным товаров
             for product_data in products_with_stocks:
                 sku = product_data["sku"]
                 price_info = prices_data.get(sku)
-                logger.info(f"[CATALOG] SKU {sku}: price_info={price_info}")
                 if price_info:
                     product_data["min_price"] = price_info.min_price
-                    logger.info(f"[CATALOG] SKU {sku}: установлена min_price={price_info.min_price}")
                 else:
                     product_data["min_price"] = None
-                    logger.info(f"[CATALOG] SKU {sku}: min_price установлена в None")
         except Exception as e:
-            logger.error(f"[CATALOG] Error getting prices: {str(e)}")
+            logger.error(f"Error getting prices: {str(e)}")
             # Если не удалось получить цены, добавляем пустые значения
             for product_data in products_with_stocks:
                 product_data["min_price"] = None
@@ -215,7 +204,6 @@ async def catalog(
         # Для AJAX-запросов генерируем HTML для каждой карточки
         products_response = []
         for product_data in products_with_stocks:
-            logger.info(f"[CATALOG] AJAX: product_data для SKU {product_data.get('sku')}: min_price={product_data.get('min_price')}")
             html = templates.get_template("components/product_card.html").render(
                 product=product_data,
                 selected_products=[],
@@ -236,10 +224,6 @@ async def catalog(
 
     # Для обычных запросов возвращаем HTML-страницу
     warehouses = [w.value for w in Warehouses]
-    
-    # Логируем данные товаров перед отправкой в шаблон
-    for product_data in products_with_stocks:
-        logger.info(f"[CATALOG] HTML: product_data для SKU {product_data.get('sku')}: min_price={product_data.get('min_price')}")
     
     return templates.TemplateResponse(
         "catalog.html",
@@ -543,27 +527,14 @@ async def create_product(
     manager: InventoryManager = Depends(get_manager)
 ):
     """Создает новый товар в базе данных."""
-    # Логируем входные данные
-    logger.info(f"=== НАЧАЛО СОЗДАНИЯ ТОВАРА ===")
-    logger.info(f"SKU: {sku}")
-    logger.info(f"Name: {name}")
-    logger.info(f"Name ENG: {name_eng}")
-    logger.info(f"Brand: {brand}")
-    logger.info(f"EAN: {ean}")
-    logger.info(f"Warehouse: {warehouse}")
-    logger.info(f"Quantity: {quantity}")
-    logger.info(f"Image: {image.filename if image else 'None'}")
-    logger.info(f"User: {current_user.email if current_user else 'None'}")
-    logger.info(f"=== КОНЕЦ ВХОДНЫХ ДАННЫХ ===")
+    logger.info(f"Creating product: SKU={sku}, name={name}")
     
     try:
         # Проверяем, что выбран допустимый склад
         valid_warehouses = [w.value for w in Warehouses]
-        logger.info(f"Допустимые склады: {valid_warehouses}")
-        logger.info(f"Выбранный склад: {warehouse}")
         
         if warehouse not in valid_warehouses:
-            error_msg = f"Выбран недопустимый склад: {warehouse}. Допустимые: {valid_warehouses}"
+            error_msg = f"Выбран недопустимый склад: {warehouse}"
             logger.error(error_msg)
             raise HTTPException(
                 status_code=400,
@@ -576,7 +547,6 @@ async def create_product(
         image_url = None
         
         if image:
-            logger.info(f"Обработка изображения: {image.filename}, content_type: {image.content_type}")
             # Проверяем размер файла (5MB максимум)
             MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB в байтах
             file_size = 0
@@ -585,7 +555,7 @@ async def create_product(
             while chunk := await image.read(8192):
                 file_size += len(chunk)
                 if file_size > MAX_FILE_SIZE:
-                    error_msg = f"Размер файла превышает 5MB: {file_size / (1024*1024):.2f} MB"
+                    error_msg = f"Размер файла превышает 5MB"
                     logger.error(error_msg)
                     raise HTTPException(
                         status_code=400,
@@ -594,38 +564,26 @@ async def create_product(
                 raw_image_data.extend(chunk)
             
             if file_size:
-                logger.info(f"Размер загруженного изображения: {file_size / 1024:.2f} КБ")
                 # Получаем base_url из запроса для формирования полных ссылок
-                # Проверяем заголовки прокси для определения правильной схемы
                 scheme = request.headers.get('x-forwarded-proto', 'https' if request.url.scheme == 'https' else 'http')
                 host = request.headers.get('host', str(request.base_url.hostname))
                 base_url = f"{scheme}://{host}"
-                logger.info(f"Base URL для изображения: {base_url}")
                 
                 # Используем метод compress_image из InventoryManager для правильной обработки
                 try:
                     compressed_image, original_image, image_url = manager.compress_image(
                         bytes(raw_image_data), sku, base_url
                     )
-                    
-                    if compressed_image:
-                        logger.info(f"Размер сжатого изображения: {len(compressed_image) / 1024:.2f} КБ")
-                        logger.info(f"Размер оригинального изображения: {len(original_image) / 1024:.2f} КБ")
-                    else:
-                        logger.warning("Не удалось обработать изображение")
                 except Exception as img_error:
                     logger.error(f"Ошибка при обработке изображения: {img_error}")
-                    # Продолжаем без изображения
                     compressed_image = None
                     original_image = None
                     image_url = None
 
         # Разбиваем строку EAN по запятой и очищаем от пробелов
         eans = [e.strip() for e in ean.split(',')] if ean else []
-        logger.info(f"EAN коды: {eans}")
 
         # Создаем новый товар с сохранением как сжатого, так и оригинального изображения
-        logger.info("Создание объекта Product")
         new_product = Product(
             sku=sku,
             name=name,
@@ -636,29 +594,21 @@ async def create_product(
             original_image=original_image,
             image_url=image_url
         )
-        logger.info(f"Объект Product создан: {new_product}")
         
         # Добавляем начальные остатки
         if quantity:
-            logger.info(f"Создание объекта Stock для склада {warehouse}")
             stock = Stock(
                 sku=new_product.sku,
-                warehouse=warehouse,  # Используем выбранный склад
+                warehouse=warehouse,
                 quantity=quantity
             )
-            logger.info(f"Объект Stock создан: {stock}")
             db.add(stock)
         
-        logger.info("Добавление товара в сессию БД")
         db.add(new_product)
-        
-        logger.info("Коммит изменений в БД")
         await db.commit()
         await db.refresh(new_product)
-        logger.info(f"Товар успешно создан и сохранен: {new_product.sku}")
         
         # Создаем запись операции
-        logger.info("Создание записи операции")
         operations_service.create_product_operation(
             sku=sku,
             name=name,
@@ -666,11 +616,12 @@ async def create_product(
             initial_quantity=quantity,
             user_email=current_user.email
         )
-        logger.info("Запись операции создана")
         
+        logger.info(f"Product created successfully: SKU={sku}")
         return {"success": True, "sku": new_product.sku}
+        
     except Exception as e:
-        logger.error(f"Ошибка при создании товара: {str(e)}", exc_info=True)
+        logger.error(f"Error creating product: {str(e)}")
         await db.rollback()
         raise HTTPException(
             status_code=400,
@@ -750,9 +701,11 @@ async def delete_product(
             user_email=current_user.email
         )
         
+        logger.info(f"Product deleted: SKU={sku}")
         return {"message": "Товар успешно удален"}
         
     except Exception as e:
+        logger.error(f"Error deleting product: {str(e)}")
         await db.rollback()
         raise HTTPException(
             status_code=400,

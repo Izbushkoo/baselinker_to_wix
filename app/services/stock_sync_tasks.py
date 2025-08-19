@@ -92,96 +92,6 @@ def process_pending_stock_operations(self, limit: int = 50):
         raise
 
 
-# @celery.task(
-#     bind=True,
-#     name="app.services.stock_sync_tasks.reconcile_stock_states",
-#     autoretry_for=(Exception,),
-#     retry_kwargs={'max_retries': 2, 'countdown': 300}
-# )
-# def reconcile_stock_states(self, token_id: Optional[str] = None, limit: int = 100):
-#     """
-#     Периодическая сверка состояний между локальной системой и микросервисом.
-    
-#     Args:
-#         token_id: ID конкретного токена для сверки (если None - проверяются все)
-#         limit: Максимальное количество заказов для проверки
-        
-#     Returns:
-#         Dict: Результат сверки
-#     """
-#     try:
-#         with get_celery_session() as session:
-#             # Создаем JWT токен для работы с микросервисом
-#             jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
-            
-#             # Инициализируем клиенты и сервисы
-#             orders_client = OrdersClient(
-#                 jwt_token=jwt_token,
-#                 base_url=settings.MICRO_SERVICE_URL
-#             )
-#             tokens_client = AllegroTokenMicroserviceClient(
-#                 jwt_token=jwt_token,
-#                 base_url=settings.MICRO_SERVICE_URL
-#             )
-#             inventory_manager = get_manager()
-            
-#             # Создаем основной сервис синхронизации
-#             sync_service = StockSynchronizationService(
-#                 session=session,
-#                 orders_client=orders_client,
-#                 tokens_client=tokens_client,
-#                 inventory_manager=inventory_manager
-#             )
-            
-#             # Выполняем сверку
-#             token_uuid = UUID(token_id) if token_id else None
-#             result = sync_service.reconcile_stock_status(
-#                 token_id=token_uuid,
-#                 limit=limit
-#             )
-            
-#             # Получаем список проверенных аккаунтов для уведомления
-#             account_names = []
-#             if token_id:
-#                 # Для одного токена получаем его название
-#                 try:
-#                     token_response = tokens_client.get_token(token_uuid)
-#                     if token_response:
-#                         account_names = [getattr(token_response, 'account_name', 'Unknown')]
-#                 except Exception:
-#                     account_names = ['Unknown']
-#             else:
-#                 # Для всех токенов - обобщенное описание
-#                 account_names = ['Multiple accounts']
-            
-#             # Отправляем уведомление о результатах сверки
-#             if result.discrepancies_found > 0 or result.total_checked > 0:
-#                 stock_sync_notifications.notify_reconciliation_discrepancies(
-#                     result, account_names
-#                 )
-            
-#             logger.info(f"Сверка завершена: проверено {result.total_checked}, найдено расхождений {result.discrepancies_found}")
-            
-#             return {
-#                 "status": "success",
-#                 "total_checked": result.total_checked,
-#                 "discrepancies_found": result.discrepancies_found,
-#                 "auto_fixed": result.auto_fixed,
-#                 "requires_manual_review": result.requires_manual_review,
-#                 "task_id": self.request.id
-#             }
-            
-#     except Exception as e:
-#         logger.error(f"Ошибка при сверке состояний: {e}")
-#         # Отправляем уведомление об ошибке
-#         stock_sync_notifications.notify_custom_alert(
-#             title="Ошибка сверки состояний синхронизации",
-#             details=f"Задача reconcile_stock_states упала с ошибкой: {str(e)}",
-#             priority="high"
-#         )
-#         raise
-
-
 @celery.task(
     bind=True,
     name="app.services.stock_sync_tasks.monitor_sync_system_health",
@@ -489,12 +399,6 @@ def register_stock_sync_tasks():
             'kwargs': {'limit': 50}
         },
         
-        # # Валидация pending операций каждые 15 минут  
-        # 'validate-pending-operations': {
-        #     'task': 'app.services.stock_sync_tasks.validate_pending_operations',
-        #     'schedule': 900.0,  # 15 минут
-        #     'kwargs': {'limit': 100}
-        # },
         
         # Сверка состояний каждый час
         'reconcile-stock-states': {
@@ -515,12 +419,6 @@ def register_stock_sync_tasks():
             'schedule': crontab(hour=8, minute=0).__repr__()
         },
         
-        # Очистка старых логов каждые 24 часа в 02:00 UTC
-        # 'cleanup-old-sync-logs': {
-        #     'task': 'app.services.stock_sync_tasks.cleanup_old_sync_logs',
-        #     'schedule': crontab(hour=2, minute=0).__repr__(),
-        #     'kwargs': {'days_to_keep': 30}
-        # }
     }
     
     return STOCK_SYNC_SCHEDULE

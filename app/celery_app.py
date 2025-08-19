@@ -568,10 +568,7 @@ def sync_wix_inventory():
     wix_site_id = os.getenv("WIX_SITE_ID")
     wix_account_id = os.getenv("WIX_ACCOUNT_ID")
     
-    logger.info(f"Задача sync_wix_inventory - проверка переменных Wix:")
-    logger.info(f"  WIX_API_KEY: {'Загружен' if wix_api_key else 'НЕ ЗАГРУЖЕН'}")
-    logger.info(f"  WIX_SITE_ID: {'Загружен' if wix_site_id else 'НЕ ЗАГРУЖЕН'}")
-    logger.info(f"  WIX_ACCOUNT_ID: {'Загружен' if wix_account_id else 'НЕ ЗАГРУЖЕН'}")
+
     
     if not wix_api_key or not wix_site_id:
         error_msg = "Критические переменные Wix не загружены в Celery worker!"
@@ -603,12 +600,7 @@ def sync_wix_inventory():
                     "errors": 1
                 }
             
-            logger.info("Подключение к Wix API успешно установлено")
-            
             logger.info("Начало синхронизации количества товаров с Wix")
-            
-            # 1. Получаем все товары и их остатки из локальной базы
-            logger.info("Получение товаров из локальной базы данных...")
             
             # Запрос для получения всех товаров с суммарным количеством по всем складам
             products_query = select(
@@ -641,10 +633,8 @@ def sync_wix_inventory():
             
             # 2. Получаем список всех SKU
             sku_list = [product.sku for product in local_products]
-            logger.info(f"Получен список из {len(sku_list)} SKU для поиска в Wix")
             
             # 3. Получаем информацию о товарах в Wix по SKU
-            logger.info("Получение информации о товарах в Wix...")
             wix_products_info = wix_service.get_wix_products_info_by_sku_list(sku_list)
             
             logger.info(f"Найдено {len(wix_products_info)} товаров в Wix")
@@ -679,11 +669,10 @@ def sync_wix_inventory():
                             )
                             updates.append((update, local_quantity > current_wix_quantity))
                             
-                            logger.info(f"Подготовлено обновление для {sku}: {current_wix_quantity} -> {local_quantity} (diff: {local_quantity - current_wix_quantity})")
                         else:
-                            logger.debug(f"Количество для {sku} уже актуально: {local_quantity}")
+                            pass
                     else:
-                        logger.warning(f"Товар с SKU {sku} не найден в Wix")
+                        pass
                         
                 except Exception as e:
                     logger.error(f"Ошибка при обработке товара {sku}: {str(e)}")

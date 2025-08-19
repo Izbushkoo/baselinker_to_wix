@@ -102,12 +102,6 @@ class StandardizedLogger:
             self.session.add(log_entry)
             self.session.commit()
             
-            # Также логируем в стандартный logger
-            self.logger.info(
-                f"Status transition for operation {operation_id}: "
-                f"{from_status.value} -> {to_status.value} ({reason})"
-            )
-            
         except Exception as e:
             self.logger.error(f"Failed to log status transition for operation {operation_id}: {e}")
     
@@ -157,13 +151,6 @@ class StandardizedLogger:
             
             self.session.add(log_entry)
             self.session.commit()
-            
-            # Также логируем в стандартный logger с информацией о времени
-            timing_info = f" ({execution_time_ms}ms)" if execution_time_ms else ""
-            self.logger.log(
-                getattr(logging, status.upper(), logging.INFO),
-                f"Operation {operation_id} - {action.value}: {details}{timing_info}"
-            )
             
         except Exception as e:
             self.logger.error(f"Failed to log action for operation {operation_id}: {e}")

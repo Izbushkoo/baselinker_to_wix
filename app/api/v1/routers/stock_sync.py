@@ -1071,6 +1071,9 @@ async def operation_details_page(
                 status_code=404
             )
         
+        # Преобразуем статус операции в строку для корректного отображения в шаблоне
+        operation_status_str = operation.status.value if hasattr(operation.status, 'value') else str(operation.status)
+        
         # Получаем полную информацию о заказе от микросервиса
         full_order = None
         if operation.order_id and operation.token_id:
@@ -1130,6 +1133,7 @@ async def operation_details_page(
             "user": current_user,
             "current_user": current_user,
             "operation": operation,
+            "operation_status_str": operation_status_str,  # Передаем статус как строку
             "full_order": full_order,  # Передаем полную информацию о заказе
             "logs": logs,
             "validation_details": validation_details,
@@ -1201,6 +1205,9 @@ async def operation_details_by_order_page(
         # Берем самую последнюю операцию для этого заказа
         operation = operations[0]
         
+        # Преобразуем статус операции в строку для корректного отображения в шаблоне
+        operation_status_str = operation.status.value if hasattr(operation.status, 'value') else str(operation.status)
+        
         # Получаем полную информацию о заказе от микросервиса
         full_order = None
         if operation.token_id:
@@ -1260,6 +1267,7 @@ async def operation_details_by_order_page(
             "user": current_user,
             "current_user": current_user,
             "operation": operation,
+            "operation_status_str": operation_status_str,  # Передаем статус как строку
             "full_order": full_order,  # Передаем полную информацию о заказе
             "logs": logs,
             "validation_details": validation_details,

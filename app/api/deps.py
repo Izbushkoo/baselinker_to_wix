@@ -72,32 +72,26 @@ async def get_current_user_optional(
     db: AsyncSession = Depends(get_async_session),
 ) -> UserModel:
 
-    logging.info("Начало get_current_user_optional")
-    logging.info(f"Полученный access_token: {access_token}")
+
 
     if not access_token:
         logging.info("Access token отсутствует, возвращаем None")
         return None
 
-    logging.info("Пытаемся декодировать токен")
     try:
         payload = jwt.decode(
             access_token,
             settings.SECRET_KEY,
             algorithms=[security.ALGORITHM]
         )
-        logging.info(f"Токен успешно декодирован, payload: {payload}")
         
         user_id: int = int(payload.get("user_id"))
-        logging.info(f"Извлечен user_id: {user_id}")
 
     except (jwt.exceptions.PyJWTError, ValidationError) as e:
         logging.error(f"Ошибка при декодировании токена: {str(e)}")
         return None
 
-    logging.info(f"Пытаемся получить пользователя с id {user_id} из БД")
     user = await db.get(UserModel, user_id)
-    logging.info(f"Получен пользователь из БД: {user}")
 
     if not user:
         logging.warning(f"Пользователь с id {user_id} не найден в БД")
