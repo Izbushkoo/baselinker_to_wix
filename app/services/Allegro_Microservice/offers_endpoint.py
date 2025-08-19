@@ -29,7 +29,7 @@ class AllegroOffersMicroserviceClient(BaseClient):
             external_id: External ID для поиска офферов
             
         Returns:
-            List[Dict]: Список результатов с офферами для каждого токена
+            OfferListResponse: Список результатов с офферами для каждого токена
         """
         url = f"{self.base_url}/by-external-id"
         
@@ -44,6 +44,44 @@ class AllegroOffersMicroserviceClient(BaseClient):
         response = requests.get(
             url, 
             params=params, 
+            headers=self.headers, 
+            timeout=self.timeout
+        )
+        response.raise_for_status()
+        data = response.json()
+        return OfferListResponse(offers=data, total_count=len(data) if isinstance(data, list) else None)
+
+    def get_offers_by_external_ids(
+        self,
+        token_ids: List[UUID],
+        external_ids: List[str]
+    ) -> OfferListResponse:
+        """
+        Получить все офферы с указанными external_ids для выбранных токенов.
+        
+        Args:
+            token_ids: Список ID токенов для доступа к Allegro API
+            external_ids: List External ID для поиска офферов (максимум 100)
+            
+        Returns:
+            OfferListResponse: Список результатов с офферами для каждого токена
+        """
+        url = f"{self.base_url}/by-external-ids"
+        
+        # Преобразуем UUID в строки для запроса
+        token_id_strings = [str(token_id) for token_id in token_ids]
+        
+        # Используем POST с JSON в теле (как требует микросервис)
+        payload = {
+            "token_ids": token_id_strings,
+            "external_ids": external_ids,
+            "limit": 1000,  # Максимальный лимит для получения всех офферов
+            "offset": 0
+        }
+        
+        response = requests.post(
+            url, 
+            json=payload, 
             headers=self.headers, 
             timeout=self.timeout
         )
@@ -66,7 +104,7 @@ class AllegroOffersMicroserviceClient(BaseClient):
             token_ids: Список ID токенов (если не указан - для всех токенов)
             
         Returns:
-            List[Dict]: Список результатов обновления для каждого токена
+            OfferListResponse: Список результатов обновления для каждого токена
         """
         url = f"{self.base_url}/update-stock"
         

@@ -21,7 +21,7 @@ from app.core.config import settings
 from app.core.security import create_access_token
 from celery import chord, group, chain
 from celery.schedules import crontab, schedule
-from app.celery_shared import celery, SessionLocal, get_allegro_token, get_celery_session
+from app.celery_shared import celery, SessionLocal, get_celery_session
 
 from app.services.warehouse.manager import Warehouses
 from app.services import baselinker as BL
@@ -36,6 +36,10 @@ from app.services.allegro.allegro_api_service import SyncAllegroApiService, NotF
 # Импортируем модуль с задачами синхронизации складских остатков
 # Это необходимо для регистрации задач в Celery
 from app.services import stock_sync_tasks
+
+# Импортируем модуль с задачами обновления данных о публикации
+# Это необходимо для регистрации задач в Celery
+from app.services import publication_update_tasks
 
 import time
 from app.models.allegro_token import AllegroToken
@@ -196,14 +200,11 @@ class RedisScheduler(PersistentScheduler):
 
 # Определяем расписание по умолчанию
 DEFAULT_BEAT_SCHEDULE = {
-    # 'backup-base-daily': {
-    #     'task': 'app.backup_base',
-    #     'schedule': crontab(hour="3", minute="10").__repr__(),
-    # },
-    # 'check-and-update-stock': {
-    #     'task': 'app.celery_app.check_and_update_stock',
-    #     'schedule': 3600,  # 1 час
-    # },
+    'update-publication-dates': {
+        'task': 'app.services.publication_update_tasks.update_all_publication_dates_task',
+        'schedule': crontab(day_of_week="0", hour="3", minute="10"), # В воскресенье в 3:10 UTC
+    },
+
     'sync-wix-inventory': {
         'task': 'app.celery_app.sync_wix_inventory',
         'schedule': 3600,  # 1 час
@@ -214,16 +215,7 @@ DEFAULT_BEAT_SCHEDULE = {
         'schedule': 300,  # 5 минут
         'kwargs': {'limit': 50}
     },
-    # 'validate-pending-operations': {
-    #     'task': 'app.services.stock_sync_tasks.validate_pending_operations',
-    #     'schedule': 900,  # 15 минут
-    #     'kwargs': {'limit': 100}
-    # },
-    # 'reconcile-stock-states': {
-    #     'task': 'app.services.stock_sync_tasks.reconcile_stock_states',
-    #     'schedule': 3600,  # 1 час
-    #     'kwargs': {'limit': 200}
-    # },
+ 
     'monitor-sync-system-health': {
         'task': 'app.services.stock_sync_tasks.monitor_sync_system_health',
         'schedule': 600  # 10 минут
@@ -232,11 +224,7 @@ DEFAULT_BEAT_SCHEDULE = {
         'task': 'app.services.stock_sync_tasks.send_daily_sync_summary',
         'schedule': crontab(hour=8, minute=0)  # 8:00 UTC ежедневно
     },
-    # 'cleanup-old-sync-logs': {
-    #     'task': 'app.services.stock_sync_tasks.cleanup_old_sync_logs',
-    #     'schedule': crontab(hour=2, minute=0),  # 02:00 UTC ежедневно
-    #     'kwargs': {'days_to_keep': 30}
-    # }
+ 
 }
 
 def serialize_schedule_for_redis(schedule):

@@ -786,7 +786,7 @@ class InventoryManager:
             stocks = session.exec(select(Stock)).all()
 
         if not products:
-            columns = ['sku', 'name', 'eans', 'total'] + [f'warehouse_{w.value}' for w in Warehouses]
+            columns = ['sku', 'name', 'eans', 'first_publication_date', 'total'] + [f'warehouse_{w.value}' for w in Warehouses]
             empty_df = pd.DataFrame(columns=columns)
             return empty_df, []
 
@@ -805,6 +805,7 @@ class InventoryManager:
                 'sku': prod.sku,
                 'name': prod.name,
                 'eans': ', '.join(prod.eans) if prod.eans else '',
+                'first_publication_date': prod.first_publication_date,  # Оставляем как datetime объект
             }
             total = 0
             for wh in Warehouses:
@@ -819,6 +820,11 @@ class InventoryManager:
 
         # Теперь df без колонки image
         df = pd.DataFrame(rows)
+        
+        # Устанавливаем правильный порядок колонок
+        column_order = ['sku', 'name', 'eans', 'first_publication_date', 'total'] + [f'warehouse_{w.value}' for w in Warehouses]
+        df = df.reindex(columns=column_order)
+        
         return df, images
 
     def get_sales_report(self, start_date: date, end_date: date, sku: Optional[str] = None) -> pd.DataFrame:

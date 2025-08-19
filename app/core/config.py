@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     ALLEGRO_CLIENT_ID: str
     ALLEGRO_CLIENT_SECRET: str
     MICRO_SERVICE_URL: str
+    
+    # API Docs базовая авторизация
+    API_DOCS_USERNAME: str = Field(default="admin", description="Имя пользователя для базовой авторизации API docs")
+    API_DOCS_PASSWORD: str = Field(default="admin123", description="Пароль для базовой авторизации API docs")
 
     @field_validator("SQLALCHEMY_DATABASE_URI", mode='before')
     def assemble_db_connection(cls, v: Optional[str], values: ValidationInfo) -> Any:

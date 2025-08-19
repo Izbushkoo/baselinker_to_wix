@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from uuid import UUID
 
-from app.celery_shared import celery, SessionLocal, get_allegro_token, get_celery_session
+from app.celery_shared import celery, SessionLocal, get_celery_session
 from app.services.stock_synchronization_service import StockSynchronizationService
 from app.services.stock_validation_service import StockValidationService
 from app.services.stock_sync_notifications import stock_sync_notifications

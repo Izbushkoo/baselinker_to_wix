@@ -22,6 +22,8 @@ from app.services.operations_service import get_operations_service
 from app.templates.filters import operation_type_label
 from app.tg_app import router as tg_router
 
+# Импортируем задачи для регистрации в Celery
+from app.services import publication_update_tasks
 
 # Настраиваем логирование при запуске приложения
 from app.utils.logging_config import setup_project_logging, get_logger

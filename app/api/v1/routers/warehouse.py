@@ -23,6 +23,14 @@ from app.services.Allegro_Microservice.orders_endpoint import OrdersClient
 from app.models.operations import OperationType
 from app.core.security import create_access_token
 from app.core.config import settings
+from app.services.publication_update_service import PublicationUpdateService
+from app.schemas.publication_update import PublicationUpdateRequest, PublicationUpdateResponse
+from app.celery_shared import celery
+from app.services.publication_update_tasks import update_all_publication_dates_task, update_specific_publication_dates_task
+from app.services.enhanced_report_service import EnhancedReportService
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from app.core.config import settings
+import secrets
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -537,9 +545,10 @@ async def export_stock_with_sales(
     }
     mimetypes.types_map[True][".webp"] = "image/webp"
 
-    """Возвращает XLSX-файл с остатками, картинками 150×150px и статистикой продаж за 15/30/60 дней."""
-    # получаем DF без image и параллельный список bytes
-    df, images = manager.get_stock_report()
+    """Возвращает XLSX-файл с остатками, картинками 150×150px, статистикой продаж за 15/30/60 дней и датой первой публикации."""
+    # Используем EnhancedReportService для получения отчета с данными о публикации
+    enhanced_service = EnhancedReportService()
+    df, images = enhanced_service.generate_report_with_publications(skus=skus, include_images=True)
     
     # получаем статистику продаж
     sales_stats = manager.get_sales_statistics(skus)
@@ -561,6 +570,11 @@ async def export_stock_with_sales(
     host = request.headers.get('host', str(request.base_url.hostname))
     base_url = f"{scheme}://{host}"
     df['URL изображения'] = df['sku'].map(lambda x: f"{base_url}/api/products/{x}/image/original")
+    
+    # Добавляем колонку с датой первой публикации
+    df['Дата первой публикации'] = df['first_publication_date'].map(
+        lambda x: x.strftime('%d.%m.%Y') if pd.notna(x) and hasattr(x, 'strftime') else 'Не опубликован'
+    )
 
     # переименования для читабельности
     column_renames = {
@@ -579,7 +593,7 @@ async def export_stock_with_sales(
     # вставляем пустую колонку-«держатель» под изображения
     df.insert(1, "Изображение", "")
 
-    # порядок колонок - сначала общий остаток, потом по складам
+    # порядок колонок - сначала общий остаток, потом по складам, в конце дата публикации
     cols = ["SKU", "Изображение", "URL изображения", "Наименование", "EAN коды", "Общий остаток"]
     
     # Сначала добавляем склад B
@@ -589,7 +603,7 @@ async def export_stock_with_sales(
         if wh != Warehouses.B:
             cols.append(f"Склад {wh.value}")
     
-    cols.extend(["Продажи за 15 дней", "Продажи за 30 дней", "Продажи за 60 дней"])
+    cols.extend(["Продажи за 15 дней", "Продажи за 30 дней", "Продажи за 60 дней", "Дата первой публикации"])
     df = df[cols]
 
     buf = BytesIO()
@@ -610,6 +624,8 @@ async def export_stock_with_sales(
                 ws.column_dimensions[img_col_letter].width = 22  # ~150px
             elif col == "URL изображения":
                 ws.column_dimensions[get_column_letter(idx)].width = 60  # для длинных URL
+            elif col == "Дата первой публикации":
+                ws.column_dimensions[get_column_letter(idx)].width = 25  # для дат (увеличено для полного отображения)
             else:
                 max_len = max(df[col].astype(str).map(len).max(), len(col))
                 ws.column_dimensions[get_column_letter(idx)].width = min(max_len + 2, 50)
@@ -651,8 +667,10 @@ async def export_stock_with_sales_no_images(
     skus: Optional[List[str]] = Query(None, description="Список SKU для экспорта"),
     manager: manager.InventoryManager = Depends(manager.get_manager)
 ):
-    '''Возвращает XLSX-файл с остатками по складам, общим остатком и статистикой продаж за 15/30/60 дней, без изображений.'''
-    df, _ = manager.get_stock_report()  # Игнорируем список изображений
+    '''Возвращает XLSX-файл с остатками по складам, общим остатком, статистикой продаж за 15/30/60 дней и датой первой публикации, без изображений.'''
+    # Используем EnhancedReportService для получения отчета с данными о публикации
+    enhanced_service = EnhancedReportService()
+    df, _ = enhanced_service.generate_report_with_publications(skus=skus, include_images=False)
     
     # получаем статистику продаж
     sales_stats = manager.get_sales_statistics(skus)
@@ -674,6 +692,11 @@ async def export_stock_with_sales_no_images(
     base_url = f"{scheme}://{host}"
     df['URL изображения'] = df['sku'].map(lambda x: f"{base_url}/api/products/{x}/image/original")
     
+    # Добавляем колонку с датой первой публикации
+    df['Дата первой публикации'] = df['first_publication_date'].map(
+        lambda x: x.strftime('%d.%m.%Y') if pd.notna(x) and hasattr(x, 'strftime') else 'Не опубликован'
+    )
+    
     # Русские названия столбцов
     column_renames = {
         "sku": "SKU",
@@ -687,7 +710,7 @@ async def export_stock_with_sales_no_images(
     
     df = df.rename(columns=column_renames)
     
-    # порядок колонок - сначала общий остаток, потом по складам
+    # порядок колонок - сначала общий остаток, потом по складам, в конце дата публикации
     cols = ["SKU", "URL изображения", "Наименование", "EAN коды", "Общий остаток"]
     
     # Сначала добавляем склад B
@@ -697,7 +720,7 @@ async def export_stock_with_sales_no_images(
         if wh != Warehouses.B:
             cols.append(f"Склад {wh.value}")
             
-    cols.extend(["Продажи за 15 дней", "Продажи за 30 дней", "Продажи за 60 дней"])
+    cols.extend(["Продажи за 15 дней", "Продажи за 30 дней", "Продажи за 60 дней", "Дата первой публикации"])
     df = df[cols]
     
     # Создаем Excel-файл
@@ -714,6 +737,8 @@ async def export_stock_with_sales_no_images(
             # Устанавливаем ширину колонок
             if col == "URL изображения":
                 worksheet.column_dimensions[get_column_letter(idx)].width = 60  # для длинных URL
+            elif col == "Дата первой публикации":
+                worksheet.column_dimensions[get_column_letter(idx)].width = 25  # для дат (увеличено для полного отображения)
             else:
                 max_len = max(
                     df[col].astype(str).map(len).max(),
@@ -979,4 +1004,169 @@ async def get_wix_sync_status(
         raise HTTPException(
             status_code=500, 
             detail=f"Ошибка при получении статуса: {str(e)}"
+        )
+
+@router.post('/update-publication-dates/', summary='Обновление данных о публикации офферт')
+def update_publication_dates(
+    request: PublicationUpdateRequest,
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Ручное обновление данных о публикации для всех товаров или указанных SKU.
+    Требует права администратора.
+    
+    Args:
+        request: Параметры обновления (SKU и размер батча)
+        current_user: Текущий пользователь (должен быть администратором)
+        
+    Returns:
+        PublicationUpdateResponse: Статус операции и количество товаров для обработки
+    """
+    try:
+        # Проверяем, не выполняется ли уже обновление
+        # TODO: Добавить проверку на уже выполняющиеся задачи через PublicationUpdateLimiter
+        
+        # Создаем сервис
+        service = PublicationUpdateService()
+        
+        if request.skus:
+            # Обновляем конкретные SKU
+            logging.info(f"Запуск обновления данных о публикации для {len(request.skus)} товаров")
+            
+            # Запускаем Celery задачу
+            task = update_specific_publication_dates_task.delay(request.skus)
+            
+            return PublicationUpdateResponse(
+                status="started",
+                total_products=len(request.skus),
+                task_id=task.id,
+                message=f"Запущено обновление данных о публикации для {len(request.skus)} товаров"
+            )
+        else:
+            # Обновляем все товары
+            logging.info("Запуск обновления данных о публикации для всех товаров")
+            
+            # Запускаем Celery задачу (без аргументов, так как задача не принимает параметры)
+            task = update_all_publication_dates_task.delay()
+            
+            return PublicationUpdateResponse(
+                status="started",
+                total_products=0,  # Будет определено в задаче
+                task_id=task.id,
+                message="Запущено обновление данных о публикации для всех товаров"
+            )
+            
+    except Exception as e:
+        logging.error(f"Ошибка при запуске обновления данных о публикации: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при запуске обновления: {str(e)}"
+        )
+
+
+@router.get('/update-publication-dates/status/{task_id}', summary='Статус обновления данных о публикации')
+def get_publication_update_status(
+    task_id: str,
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Получает статус выполнения задачи обновления данных о публикации.
+    
+    Args:
+        task_id: ID задачи Celery
+        
+    Returns:
+        JSONResponse: Статус задачи и результат выполнения
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    
+    try:
+        from celery.result import AsyncResult
+        
+        # Получаем результат задачи
+        result = AsyncResult(task_id)
+        
+        response_data = {
+            "task_id": task_id,
+            "status": result.status,
+            "ready": result.ready()
+        }
+        
+        # Если задача завершена, добавляем результат
+        if result.ready():
+            if result.successful():
+                response_data["result"] = result.result
+            else:
+                response_data["error"] = str(result.info)
+        
+        return JSONResponse(response_data)
+        
+    except Exception as e:
+        logging.error(f"Ошибка при получении статуса задачи {task_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Ошибка при получении статуса: {str(e)}"
+        )
+
+
+# Схема базовой авторизации для API docs
+security = HTTPBasic()
+
+
+def verify_basic_auth(credentials: HTTPBasicCredentials = Depends(security)):
+    """
+    Проверяет базовую авторизацию для API docs.
+    Использует настройки из конфигурации.
+    """
+    is_correct_username = secrets.compare_digest(credentials.username, settings.API_DOCS_USERNAME)
+    is_correct_password = secrets.compare_digest(credentials.password, settings.API_DOCS_PASSWORD)
+    
+    if not (is_correct_username and is_correct_password):
+        raise HTTPException(
+            status_code=401,
+            detail="Неверные учетные данные",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    
+    return credentials
+
+
+@router.post('/api-docs/update-all-publication-dates/', summary='Ручной запуск обновления дат публикации для всех товаров (API Docs)')
+def update_all_publication_dates_api_docs(
+    credentials: HTTPBasicCredentials = Depends(verify_basic_auth)
+):
+    """
+    Ручной запуск задачи обновления дат публикации для всех товаров через API docs.
+    Требует базовую авторизацию.
+    
+    Args:
+        credentials: Учетные данные для базовой авторизации
+        
+    Returns:
+        JSONResponse: Статус операции и ID задачи
+    """
+    try:
+        logging.info("API Docs: Запуск обновления данных о публикации для всех товаров")
+        
+        # Запускаем Celery задачу
+        task = update_all_publication_dates_task.delay()
+        
+        return JSONResponse({
+            "status": "success",
+            "message": "Запущено обновление данных о публикации для всех товаров",
+            "task_id": task.id,
+            "task_status": "PENDING",
+            "details": {
+                "triggered_by": "api_docs",
+                "username": credentials.username,
+                "timestamp": datetime.now().isoformat()
+            }
+        })
+        
+    except Exception as e:
+        logging.error(f"API Docs: Ошибка при запуске обновления данных о публикации: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при запуске обновления: {str(e)}"
         )

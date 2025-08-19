@@ -35,7 +35,7 @@ celery = Celery(
     "baselinker_to_wix",
     broker=CELERY_BROKER_URL,
     backend=CELERY_BROKER_URL,
-    include=["app.services.allegro.sync_tasks"]
+    include=["app.services.allegro.sync_tasks", "app.services.publication_update_tasks"]
 )
 
 celery.conf.result_backend = "redis://redis:6379/1"
@@ -72,36 +72,3 @@ def get_celery_session():
     """
     return CelerySessionLocal()
 
-def get_allegro_token(session: Session, token_id: str) -> AllegroToken:
-    """
-    Получает и проверяет токен Allegro из базы данных.
-    
-    Args:
-        session: Сессия SQLModel
-        token_id: ID токена
-        
-    Returns:
-        AllegroToken: Проверенный и обновленный токен
-        
-    Raises:
-        ValueError: Если токен не найден или не удалось его проверить/обновить
-    """
-    # Получаем токен из базы
-    token = get_token_by_id_sync(session, token_id)
-    if not token:
-        raise ValueError(f"Токен Allegro с ID {token_id} не найден в базе данных")
-    
-    # Проверяем и при необходимости обновляем токен
-    result = check_token_sync(token_id)
-    if not result:
-        raise ValueError(f"Не удалось проверить/обновить токен с ID {token_id}")
-        
-    # Обновляем токен в сессии если он был обновлен
-    if result.get('access_token') != token.access_token:
-        token.access_token = result['access_token']
-        token.refresh_token = result['refresh_token']
-        session.add(token)
-        session.commit()
-        session.refresh(token)
-        
-    return token 
