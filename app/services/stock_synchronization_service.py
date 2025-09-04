@@ -851,6 +851,12 @@ class StockSynchronizationService:
         """
         Обработка операций из очереди с retry логикой.
         
+        Логика работы:
+        1. PENDING -> проверка статуса заказа -> загрузка line_items -> PROCESSING -> списание -> STOCK_DEDUCTED
+        2. PROCESSING -> списание -> STOCK_DEDUCTED  
+        3. STOCK_DEDUCTED -> синхронизация с микросервисом -> COMPLETED
+        4. FAILED -> повторная попытка согласно статусу
+        
         Args:
             limit: Максимальное количество операций для обработки
             
@@ -863,13 +869,15 @@ class StockSynchronizationService:
         
         # Получаем операции готовые для retry
         now = datetime.utcnow()
-        # Получаем операции готовые для обработки:
-        # - PENDING (нужно списание + синхронизация)
-        # - PROCESSING (только синхронизация, списание уже выполнено)
         statement = (
             select(PendingStockOperation)
             .where(
-                PendingStockOperation.status.in_([OperationStatus.PENDING, OperationStatus.PROCESSING, OperationStatus.FAILED, OperationStatus.STOCK_DEDUCTED]),
+                PendingStockOperation.status.in_([
+                    OperationStatus.PENDING, 
+                    OperationStatus.PROCESSING, 
+                    OperationStatus.FAILED, 
+                    OperationStatus.STOCK_DEDUCTED
+                ]),
                 PendingStockOperation.next_retry_at <= now
             )
             .order_by(PendingStockOperation.created_at)
@@ -886,188 +894,63 @@ class StockSynchronizationService:
                 
                 # Увеличиваем счетчик попыток
                 operation.retry_count += 1
-            
-            # Если операция в PENDING - нужно выполнить списание
-            if operation.status == OperationStatus.PENDING:
-                self.standardized_logger.log_action_with_timing(
-                    operation_id=operation.id,
-                    action=LogAction.STOCK_DEDUCTION_STARTED,
-                    details=f"Попытка обработки #{operation.retry_count} для аккаунта {account_name} - проверка состояния заказа и выполнение списания",
-                    additional_context={
-                        "retry_count": operation.retry_count,
-                        "account_name": account_name
-                    }
-                )
                 
-                # Проверяем текущее состояние заказа в микросервисе
-                order_status = self._check_order_status_in_microservice(operation.token_id, operation.order_id)
+                # Обработка операций в статусе PENDING
+                if operation.status == OperationStatus.PENDING:
+                    success = self._process_pending_operation(operation, account_name, result)
+                    if success:
+                        # Операция успешно обработана, переходим к следующей
+                        continue
                 
-                if order_status is None:
-                    # Не удалось получить статус заказа - планируем повторную попытку
-                    delay = min(
-                        self.config.retry_initial_delay * (self.config.retry_exponential_base ** (operation.retry_count - 1)),
-                        self.config.retry_max_delay
-                    )
-                    operation.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
-                    result.failed += 1
-                    
-                    self.standardized_logger.log_retry_scheduled(
-                        operation_id=operation.id,
-                        retry_count=operation.retry_count,
-                        next_retry_at=operation.next_retry_at,
-                        reason=f"Не удалось проверить состояние заказа в микросервисе, повторная попытка через {delay}с"
-                    )
-                    
-                    operation.updated_at = datetime.utcnow()
-                    self.session.commit()
-                    
-                    # Добавляем детали о неудачной проверке статуса
-                    result.details.append({
-                        "operation_id": str(operation.id),
-                        "account_name": account_name,
-                        "order_id": operation.order_id,
-                        "retry_count": operation.retry_count,
-                        "status": operation.status,
-                        "success": False,
-                        "error_type": "order_status_check_failed",
-                        "error_message": "Failed to check order status in microservice"
-                    })
-                    continue
-                
-                # Проверяем, не был ли заказ уже списан вручную
-                if order_status.get("is_stock_updated", False):
-                    # Заказ уже списан - помечаем операцию как завершенную
-                    operation.status = OperationStatus.COMPLETED
-                    operation.completed_at = datetime.utcnow()
-                    result.succeeded += 1
-                    
-                    self.standardized_logger.log_status_transition(
-                        operation_id=operation.id,
-                        from_status=OperationStatus.PENDING,
-                        to_status=OperationStatus.COMPLETED,
-                        reason=f"Заказ {operation.order_id} уже был списан вручную в микросервисе",
-                        additional_context={
-                            "order_status": order_status,
-                            "completion_reason": "already_processed_in_microservice"
-                        }
-                    )
-                    
-                    operation.updated_at = datetime.utcnow()
-                    self.session.commit()
-                    
-                    # Добавляем детали о завершенной операции
-                    result.details.append({
-                        "operation_id": str(operation.id),
-                        "account_name": account_name,
-                        "order_id": operation.order_id,
-                        "retry_count": operation.retry_count,
-                        "status": operation.status,
-                        "success": True,
-                        "completion_reason": "already_processed_in_microservice",
-                        "order_status": order_status
-                    })
-                    continue
-                
-                # Проверяем статус заказа - должен быть READY_FOR_PROCESSING
-                if order_status.get("status") != "READY_FOR_PROCESSING":
-                    # Заказ не готов к обработке - планируем повторную попытку
-                    delay = min(
-                        self.config.retry_initial_delay * (self.config.retry_exponential_base ** (operation.retry_count - 1)),
-                        self.config.retry_max_delay
-                    )
-                    operation.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
-                    result.failed += 1
-                    
-                    self.standardized_logger.log_retry_scheduled(
-                        operation_id=operation.id,
-                        retry_count=operation.retry_count,
-                        next_retry_at=operation.next_retry_at,
-                        reason=f"Заказ {operation.order_id} не готов к обработке (статус: {order_status.get('status')})"
-                    )
-                    
-                    operation.updated_at = datetime.utcnow()
-                    self.session.commit()
-                    
-                    # Добавляем детали о неготовности заказа
-                    result.details.append({
-                        "operation_id": str(operation.id),
-                        "account_name": account_name,
-                        "order_id": operation.order_id,
-                        "retry_count": operation.retry_count,
-                        "status": operation.status,
-                        "success": False,
-                        "error_type": "order_not_ready",
-                        "error_message": f"Order status is {order_status.get('status')}, expected READY_FOR_PROCESSING",
-                        "order_status": order_status
-                    })
-                    continue
-                
-                # Проверяем, не отменен ли заказ
-                if order_status.get("fulfillment_status") == "CANCELLED":
-                    # Заказ отменен - помечаем операцию как завершенную
-                    operation.status = OperationStatus.COMPLETED
-                    operation.completed_at = datetime.utcnow()
-                    result.succeeded += 1
-                    
-                    self.standardized_logger.log_status_transition(
-                        operation_id=operation.id,
-                        from_status=OperationStatus.PENDING,
-                        to_status=OperationStatus.COMPLETED,
-                        reason=f"Заказ {operation.order_id} отменен",
-                        additional_context={
-                            "order_status": order_status,
-                            "completion_reason": "order_cancelled"
-                        }
-                    )
-                    
-                    operation.updated_at = datetime.utcnow()
-                    self.session.commit()
-                    
-                    # Добавляем детали о завершенной операции
-                    result.details.append({
-                        "operation_id": str(operation.id),
-                        "account_name": account_name,
-                        "order_id": operation.order_id,
-                        "retry_count": operation.retry_count,
-                        "status": operation.status,
-                        "success": True,
-                        "completion_reason": "order_cancelled",
-                        "order_status": order_status
-                    })
-                    continue
-                
-                # Загружаем line_items если их еще нет
-                if not self._ensure_line_items_loaded(operation):
-                    # Если не удалось загрузить line_items, переходим к обработке ошибки
-                    if False:  # removed max_retries limit for infinite retries
-                        operation.status = OperationStatus.FAILED
-                        result.max_retries_reached += 1
+                # Обработка операций в статусе PROCESSING  
+                elif operation.status == OperationStatus.PROCESSING:
+                    success = self._process_processing_operation(operation, account_name, result)
+                    if success:
+                        continue
                         
-                        self.standardized_logger.log_max_retries_reached(
-                            operation_id=operation.id,
-                            max_retries=self.config.max_retries,
-                            final_error="Не удалось загрузить позиции заказа"
-                        )
-                    else:
-                        # Exponential backoff для следующей попытки
-                        delay = min(
-                            self.config.retry_initial_delay * (self.config.retry_exponential_base ** (operation.retry_count - 1)),
-                            self.config.retry_max_delay
-                        )
-                        operation.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
-                        result.failed += 1
+                # Обработка операций в статусе STOCK_DEDUCTED
+                elif operation.status == OperationStatus.STOCK_DEDUCTED:
+                    success = self._process_stock_deducted_operation(operation, account_name, result)
+                    if success:
+                        continue
+                
+                # Обработка операций в статусе FAILED или других статусах
+                else:
+                    # Для FAILED операций пытаемся повторить согласно их предыдущему статусу
+                    if operation.status == OperationStatus.FAILED:
+                        # Определяем, на каком этапе произошла ошибка и возвращаемся к соответствующему статусу
+                        if operation.stock_deducted_at:
+                            # Ошибка была на этапе синхронизации - возвращаемся к STOCK_DEDUCTED
+                            operation.status = OperationStatus.STOCK_DEDUCTED
+                        elif operation.line_items_loaded_at:
+                            # Ошибка была на этапе списания - возвращаемся к PROCESSING
+                            operation.status = OperationStatus.PROCESSING
+                        else:
+                            # Ошибка была на начальном этапе - возвращаемся к PENDING
+                            operation.status = OperationStatus.PENDING
                         
-                        self.standardized_logger.log_retry_scheduled(
+                        self.standardized_logger.log_status_transition(
                             operation_id=operation.id,
-                            retry_count=operation.retry_count,
-                            next_retry_at=operation.next_retry_at,
-                            reason="Не удалось загрузить позиции заказа"
+                            from_status=OperationStatus.FAILED,
+                            to_status=operation.status,
+                            reason=f"Повторная попытка после ошибки для аккаунта {account_name}",
+                            additional_context={
+                                "retry_count": operation.retry_count,
+                                "account_name": account_name
+                            }
                         )
                     
+                    # Планируем следующую попытку
+                    delay = min(
+                        self.config.retry_initial_delay * (self.config.retry_exponential_base ** (operation.retry_count - 1)),
+                        self.config.retry_max_delay
+                    )
+                    operation.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
                     operation.updated_at = datetime.utcnow()
+                    result.failed += 1
+                    
                     self.session.commit()
                     
-                    # Добавляем детали о неудачной загрузке
                     result.details.append({
                         "operation_id": str(operation.id),
                         "account_name": account_name,
@@ -1075,250 +958,9 @@ class StockSynchronizationService:
                         "retry_count": operation.retry_count,
                         "status": operation.status,
                         "success": False,
-                        "error_type": "line_items_load_failed",
-                        "error_message": operation.error_message or "Failed to load line items"
+                        "error_type": "retry_scheduled",
+                        "error_message": f"Scheduled retry for status {operation.status}"
                     })
-                    continue
-                
-                # Переводим в PROCESSING после загрузки line_items
-                old_status = operation.status
-                operation.status = OperationStatus.PROCESSING
-                operation.line_items_loaded_at = datetime.utcnow()
-                operation.updated_at = datetime.utcnow()
-                
-                self.standardized_logger.log_status_transition(
-                    operation_id=operation.id,
-                    from_status=old_status,
-                    to_status=OperationStatus.PROCESSING,
-                    reason=f"Позиции заказа загружены для заказа {operation.order_id}",
-                    additional_context={
-                        "items_count": len(operation.line_items) if operation.line_items else 0
-                    }
-                )
-                
-                # Коммитим переход в PROCESSING
-                self.session.commit()
-                
-                # Валидируем и выполняем списание
-                if self._validate_and_deduct_stock(operation):
-                    # Переводим в STOCK_DEDUCTED после успешного списания
-                    old_status = operation.status
-                    operation.status = OperationStatus.STOCK_DEDUCTED
-                    operation.stock_deducted_at = datetime.utcnow()
-                    operation.updated_at = datetime.utcnow()
-                    
-                    self.standardized_logger.log_status_transition(
-                        operation_id=operation.id,
-                        from_status=old_status,
-                        to_status=OperationStatus.STOCK_DEDUCTED,
-                        reason=f"Списание выполнено для заказа {operation.order_id}",
-                        additional_context={
-                            "items_count": len(operation.line_items) if operation.line_items else 0
-                        }
-                    )
-                else:
-                    # Списание не удалось - остаемся в PROCESSING (line_items уже загружены)
-                    # Exponential backoff для следующей попытки
-                    delay = min(
-                        self.config.retry_initial_delay * (self.config.retry_exponential_base ** (operation.retry_count - 1)),
-                        self.config.retry_max_delay
-                    )
-                    operation.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
-                    result.failed += 1
-                    
-                    self.standardized_logger.log_retry_scheduled(
-                        operation_id=operation.id,
-                        retry_count=operation.retry_count,
-                        next_retry_at=operation.next_retry_at,
-                        reason=f"Списание провалено: {operation.error_message}, остаемся в PROCESSING"
-                    )
-                    
-                    operation.updated_at = datetime.utcnow()
-                    self.session.commit()
-                    
-                    # Добавляем детали о неудачном списании
-                    result.details.append({
-                        "operation_id": str(operation.id),
-                        "account_name": account_name,
-                        "order_id": operation.order_id,
-                        "retry_count": operation.retry_count,
-                        "status": operation.status,
-                        "success": False,
-                        "error_type": "stock_deduction_failed",
-                        "error_message": operation.error_message or "Stock deduction failed"
-                    })
-                    continue
-            elif operation.status == OperationStatus.PROCESSING:
-                # Операция в PROCESSING - line_items загружены, нужно выполнить списание
-                self.standardized_logger.log_action_with_timing(
-                    operation_id=operation.id,
-                    action=LogAction.STOCK_DEDUCTION_STARTED,
-                    details=f"Повторная попытка списания #{operation.retry_count} для аккаунта {account_name}",
-                    additional_context={
-                        "retry_count": operation.retry_count,
-                        "account_name": account_name
-                    }
-                )
-                
-                # Валидируем и выполняем списание
-                if self._validate_and_deduct_stock(operation):
-                    # Переводим в STOCK_DEDUCTED после успешного списания
-                    old_status = operation.status
-                    operation.status = OperationStatus.STOCK_DEDUCTED
-                    operation.stock_deducted_at = datetime.utcnow()
-                    operation.updated_at = datetime.utcnow()
-                    
-                    self.standardized_logger.log_status_transition(
-                        operation_id=operation.id,
-                        from_status=old_status,
-                        to_status=OperationStatus.STOCK_DEDUCTED,
-                        reason=f"Списание выполнено для заказа {operation.order_id}",
-                        additional_context={
-                            "items_count": len(operation.line_items) if operation.line_items else 0
-                        }
-                    )
-                else:
-                    # Списание не удалось - остаемся в PROCESSING (line_items уже загружены)
-                    # Exponential backoff для следующей попытки
-                    delay = min(
-                        self.config.retry_initial_delay * (self.config.retry_exponential_base ** (operation.retry_count - 1)),
-                        self.config.retry_max_delay
-                    )
-                    operation.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
-                    result.failed += 1
-                    
-                    self.standardized_logger.log_retry_scheduled(
-                        operation_id=operation.id,
-                        retry_count=operation.retry_count,
-                        next_retry_at=operation.next_retry_at,
-                        reason=f"Списание провалено: {operation.error_message}, остаемся в PROCESSING"
-                    )
-                    
-                    operation.updated_at = datetime.utcnow()
-                    self.session.commit()
-                    
-                    # Добавляем детали о неудачном списании
-                    result.details.append({
-                        "operation_id": str(operation.id),
-                        "account_name": account_name,
-                        "order_id": operation.order_id,
-                        "retry_count": operation.retry_count,
-                        "status": operation.status,
-                        "success": False,
-                        "error_type": "stock_deduction_failed",
-                        "error_message": operation.error_message or "Stock deduction failed"
-                    })
-                    continue
-                    
-            elif operation.status == OperationStatus.STOCK_DEDUCTED:
-                # Операция в STOCK_DEDUCTED - остатки списаны, нужна синхронизация с микросервисом
-                self.standardized_logger.log_action_with_timing(
-                    operation_id=operation.id,
-                    action=LogAction.MICROSERVICE_SYNC_STARTED,
-                    details=f"Попытка синхронизации #{operation.retry_count} для аккаунта {account_name} - остатки уже списаны",
-                    additional_context={
-                        "retry_count": operation.retry_count,
-                        "account_name": account_name
-                    }
-                )
-                
-                # Проверяем, не был ли заказ уже обработан в микросервисе
-                order_status = self._check_order_status_in_microservice(operation.token_id, operation.order_id)
-                
-                if order_status and order_status.get("is_stock_updated", False):
-                    # Заказ уже обработан в микросервисе - помечаем операцию как завершенную
-                    operation.status = OperationStatus.COMPLETED
-                    operation.completed_at = datetime.utcnow()
-                    operation.microservice_synced_at = datetime.utcnow()
-                    result.succeeded += 1
-                    
-                    self.standardized_logger.log_status_transition(
-                        operation_id=operation.id,
-                        from_status=OperationStatus.STOCK_DEDUCTED,
-                        to_status=OperationStatus.COMPLETED,
-                        reason=f"Заказ {operation.order_id} уже обработан в микросервисе",
-                        additional_context={
-                            "order_status": order_status,
-                            "completion_reason": "already_synced_in_microservice"
-                        }
-                    )
-                    
-                    operation.updated_at = datetime.utcnow()
-                    self.session.commit()
-                    
-                    # Добавляем детали о завершенной операции
-                    result.details.append({
-                        "operation_id": str(operation.id),
-                        "account_name": account_name,
-                        "order_id": operation.order_id,
-                        "retry_count": operation.retry_count,
-                        "status": operation.status,
-                        "success": True,
-                        "completion_reason": "already_synced_in_microservice",
-                        "order_status": order_status
-                    })
-                    continue
-                    
-            else:
-                # Операция в FAILED или другом статусе - пропускаем
-                continue
-            
-            # Попытка синхронизации с микросервисом (только для STOCK_DEDUCTED операций)
-            if operation.status == OperationStatus.STOCK_DEDUCTED:
-                sync_success = self._try_sync_with_microservice(operation)
-                
-                if sync_success:
-                    old_status = operation.status
-                    operation.status = OperationStatus.COMPLETED
-                    operation.completed_at = datetime.utcnow()
-                    operation.microservice_synced_at = datetime.utcnow()
-                    result.succeeded += 1
-                    
-                    self.standardized_logger.log_status_transition(
-                        operation_id=operation.id,
-                        from_status=old_status,
-                        to_status=OperationStatus.COMPLETED,
-                        reason=f"Синхронизация с микросервисом успешна для аккаунта {account_name}",
-                        additional_context={
-                            "retry_count": operation.retry_count,
-                            "account_name": account_name
-                        }
-                    )
-                else:
-                    # Синхронизация не удалась - остаемся в STOCK_DEDUCTED для повтора
-                    delay = min(
-                        self.config.retry_initial_delay * (self.config.retry_exponential_base ** (operation.retry_count - 1)),
-                        self.config.retry_max_delay
-                    )
-                    operation.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
-                    result.failed += 1
-                    
-                    self.standardized_logger.log_retry_scheduled(
-                        operation_id=operation.id,
-                        retry_count=operation.retry_count,
-                        next_retry_at=operation.next_retry_at,
-                        reason=f"Синхронизация с микросервисом провалена для аккаунта {account_name}"
-                    )
-
-            
-                
-                operation.updated_at = datetime.utcnow()
-                self.session.commit()
-                
-                # Добавляем детали обработанной операции
-                result.details.append({
-                    "operation_id": str(operation.id),
-                    "account_name": account_name,
-                    "order_id": operation.order_id,
-                    "retry_count": operation.retry_count,
-                    "status": operation.status,
-                    "success": sync_success,
-                    "line_items_count": len(operation.line_items) if operation.line_items else 0
-                })
-            else:
-                # Операция не в STOCK_DEDUCTED - просто коммитим изменения
-                operation.updated_at = datetime.utcnow()
-                self.session.commit()
                 
             except Exception as e:
                 # Обработка критических ошибок при обработке операции
@@ -1386,6 +1028,312 @@ class StockSynchronizationService:
         
         self.logger.info(f"Processed {result.processed} operations: {result.succeeded} succeeded, {result.failed} failed, {result.max_retries_reached} max retries reached")
         return result
+
+    def _process_pending_operation(self, operation: PendingStockOperation, account_name: str, result: ProcessingResult) -> bool:
+        """
+        Обработка операции в статусе PENDING.
+        
+        Returns:
+            True если операция успешно обработана или завершена, False если нужна повторная попытка
+        """
+        self.standardized_logger.log_action_with_timing(
+            operation_id=operation.id,
+            action=LogAction.STOCK_DEDUCTION_STARTED,
+            details=f"Попытка обработки #{operation.retry_count} для аккаунта {account_name} - проверка состояния заказа и выполнение списания",
+            additional_context={
+                "retry_count": operation.retry_count,
+                "account_name": account_name
+            }
+        )
+        
+        # Проверяем текущее состояние заказа в микросервисе
+        order_status = self._check_order_status_in_microservice(operation.token_id, operation.order_id)
+        
+        if order_status is None:
+            return self._schedule_retry(operation, result, account_name, "order_status_check_failed", 
+                                      "Не удалось проверить состояние заказа в микросервисе")
+        
+        # Проверяем, не был ли заказ уже списан вручную
+        if order_status.get("is_stock_updated", False):
+            return self._complete_operation(operation, result, account_name, "already_processed_in_microservice", order_status)
+        
+        # Проверяем статус заказа - должен быть READY_FOR_PROCESSING
+        if order_status.get("status") != "READY_FOR_PROCESSING":
+            return self._schedule_retry(operation, result, account_name, "order_not_ready", 
+                                      f"Order status is {order_status.get('status')}, expected READY_FOR_PROCESSING", order_status)
+        
+        # Проверяем, не отменен ли заказ
+        if order_status.get("fulfillment_status") == "CANCELLED":
+            return self._complete_operation(operation, result, account_name, "order_cancelled", order_status)
+        
+        # Загружаем line_items если их еще нет
+        if not self._ensure_line_items_loaded(operation):
+            return self._schedule_retry(operation, result, account_name, "line_items_load_failed", 
+                                      operation.error_message or "Failed to load line items")
+        
+        # Переводим в PROCESSING после загрузки line_items
+        old_status = operation.status
+        operation.status = OperationStatus.PROCESSING
+        operation.line_items_loaded_at = datetime.utcnow()
+        operation.updated_at = datetime.utcnow()
+        
+        self.standardized_logger.log_status_transition(
+            operation_id=operation.id,
+            from_status=old_status,
+            to_status=OperationStatus.PROCESSING,
+            reason=f"Позиции заказа загружены для заказа {operation.order_id}",
+            additional_context={
+                "items_count": len(operation.line_items) if operation.line_items else 0
+            }
+        )
+        
+        # Коммитим переход в PROCESSING
+        self.session.commit()
+        
+        # Валидируем и выполняем списание
+        if self._validate_and_deduct_stock(operation):
+            # Переводим в STOCK_DEDUCTED после успешного списания
+            old_status = operation.status
+            operation.status = OperationStatus.STOCK_DEDUCTED
+            operation.stock_deducted_at = datetime.utcnow()
+            operation.updated_at = datetime.utcnow()
+            
+            self.standardized_logger.log_status_transition(
+                operation_id=operation.id,
+                from_status=old_status,
+                to_status=OperationStatus.STOCK_DEDUCTED,
+                reason=f"Списание выполнено для заказа {operation.order_id}",
+                additional_context={
+                    "items_count": len(operation.line_items) if operation.line_items else 0
+                }
+            )
+            self.session.commit()
+            return True
+        else:
+            # Списание не удалось - остаемся в PROCESSING для повтора
+            return self._schedule_retry(operation, result, account_name, "stock_deduction_failed", 
+                                      operation.error_message or "Stock deduction failed")
+
+    def _process_processing_operation(self, operation: PendingStockOperation, account_name: str, result: ProcessingResult) -> bool:
+        """
+        Обработка операции в статусе PROCESSING.
+        
+        Returns:
+            True если операция успешно обработана, False если нужна повторная попытка
+        """
+        self.standardized_logger.log_action_with_timing(
+            operation_id=operation.id,
+            action=LogAction.STOCK_DEDUCTION_STARTED,
+            details=f"Повторная попытка списания #{operation.retry_count} для аккаунта {account_name}",
+            additional_context={
+                "retry_count": operation.retry_count,
+                "account_name": account_name
+            }
+        )
+        
+        # Валидируем и выполняем списание
+        if self._validate_and_deduct_stock(operation):
+            # Переводим в STOCK_DEDUCTED после успешного списания
+            old_status = operation.status
+            operation.status = OperationStatus.STOCK_DEDUCTED
+            operation.stock_deducted_at = datetime.utcnow()
+            operation.updated_at = datetime.utcnow()
+            
+            self.standardized_logger.log_status_transition(
+                operation_id=operation.id,
+                from_status=old_status,
+                to_status=OperationStatus.STOCK_DEDUCTED,
+                reason=f"Списание выполнено для заказа {operation.order_id}",
+                additional_context={
+                    "items_count": len(operation.line_items) if operation.line_items else 0
+                }
+            )
+            self.session.commit()
+            return True
+        else:
+            # Списание не удалось - остаемся в PROCESSING для повтора
+            return self._schedule_retry(operation, result, account_name, "stock_deduction_failed", 
+                                      operation.error_message or "Stock deduction failed")
+
+    def _process_stock_deducted_operation(self, operation: PendingStockOperation, account_name: str, result: ProcessingResult) -> bool:
+        """
+        Обработка операции в статусе STOCK_DEDUCTED.
+        
+        Returns:
+            True если операция успешно обработана, False если нужна повторная попытка
+        """
+        self.standardized_logger.log_action_with_timing(
+            operation_id=operation.id,
+            action=LogAction.MICROSERVICE_SYNC_STARTED,
+            details=f"Попытка синхронизации #{operation.retry_count} для аккаунта {account_name} - остатки уже списаны",
+            additional_context={
+                "retry_count": operation.retry_count,
+                "account_name": account_name
+            }
+        )
+        
+        # Проверяем, не был ли заказ уже обработан в микросервисе
+        order_status = self._check_order_status_in_microservice(operation.token_id, operation.order_id)
+        
+        if order_status and order_status.get("is_stock_updated", False):
+            # Заказ уже обработан в микросервисе - помечаем операцию как завершенную
+            operation.status = OperationStatus.COMPLETED
+            operation.completed_at = datetime.utcnow()
+            operation.microservice_synced_at = datetime.utcnow()
+            result.succeeded += 1
+            
+            self.standardized_logger.log_status_transition(
+                operation_id=operation.id,
+                from_status=OperationStatus.STOCK_DEDUCTED,
+                to_status=OperationStatus.COMPLETED,
+                reason=f"Заказ {operation.order_id} уже обработан в микросервисе",
+                additional_context={
+                    "order_status": order_status,
+                    "completion_reason": "already_synced_in_microservice"
+                }
+            )
+            
+            operation.updated_at = datetime.utcnow()
+            self.session.commit()
+            
+            result.details.append({
+                "operation_id": str(operation.id),
+                "account_name": account_name,
+                "order_id": operation.order_id,
+                "retry_count": operation.retry_count,
+                "status": operation.status,
+                "success": True,
+                "completion_reason": "already_synced_in_microservice",
+                "order_status": order_status
+            })
+            return True
+        
+        # Если заказ еще не обработан в микросервисе, пытаемся синхронизировать
+        sync_success = self._try_sync_with_microservice(operation)
+        
+        if sync_success:
+            old_status = operation.status
+            operation.status = OperationStatus.COMPLETED
+            operation.completed_at = datetime.utcnow()
+            operation.microservice_synced_at = datetime.utcnow()
+            result.succeeded += 1
+            
+            self.standardized_logger.log_status_transition(
+                operation_id=operation.id,
+                from_status=old_status,
+                to_status=OperationStatus.COMPLETED,
+                reason=f"Синхронизация с микросервисом успешна для аккаунта {account_name}",
+                additional_context={
+                    "retry_count": operation.retry_count,
+                    "account_name": account_name
+                }
+            )
+            
+            operation.updated_at = datetime.utcnow()
+            self.session.commit()
+            
+            result.details.append({
+                "operation_id": str(operation.id),
+                "account_name": account_name,
+                "order_id": operation.order_id,
+                "retry_count": operation.retry_count,
+                "status": operation.status,
+                "success": True,
+                "line_items_count": len(operation.line_items) if operation.line_items else 0
+            })
+            return True
+        else:
+            # Синхронизация не удалась - остаемся в STOCK_DEDUCTED для повтора
+            return self._schedule_retry(operation, result, account_name, "microservice_sync_failed", 
+                                      f"Синхронизация с микросервисом провалена для аккаунта {account_name}")
+
+    def _schedule_retry(self, operation: PendingStockOperation, result: ProcessingResult, account_name: str, 
+                       error_type: str, error_message: str, order_status: dict = None) -> bool:
+        """
+        Планирует повторную попытку для операции.
+        
+        Returns:
+            False (операция не завершена, нужна повторная попытка)
+        """
+        delay = min(
+            self.config.retry_initial_delay * (self.config.retry_exponential_base ** (operation.retry_count - 1)),
+            self.config.retry_max_delay
+        )
+        operation.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
+        operation.error_message = error_message
+        operation.updated_at = datetime.utcnow()
+        result.failed += 1
+        
+        self.standardized_logger.log_retry_scheduled(
+            operation_id=operation.id,
+            retry_count=operation.retry_count,
+            next_retry_at=operation.next_retry_at,
+            reason=error_message
+        )
+        
+        self.session.commit()
+        
+        # Добавляем детали о неудачной попытке
+        detail = {
+            "operation_id": str(operation.id),
+            "account_name": account_name,
+            "order_id": operation.order_id,
+            "retry_count": operation.retry_count,
+            "status": operation.status,
+            "success": False,
+            "error_type": error_type,
+            "error_message": error_message
+        }
+        
+        if order_status:
+            detail["order_status"] = order_status
+            
+        result.details.append(detail)
+        return False
+
+    def _complete_operation(self, operation: PendingStockOperation, result: ProcessingResult, account_name: str, 
+                           completion_reason: str, order_status: dict = None) -> bool:
+        """
+        Завершает операцию как успешную.
+        
+        Returns:
+            True (операция завершена)
+        """
+        old_status = operation.status
+        operation.status = OperationStatus.COMPLETED
+        operation.completed_at = datetime.utcnow()
+        operation.updated_at = datetime.utcnow()
+        result.succeeded += 1
+        
+        self.standardized_logger.log_status_transition(
+            operation_id=operation.id,
+            from_status=old_status,
+            to_status=OperationStatus.COMPLETED,
+            reason=f"Заказ {operation.order_id} завершен: {completion_reason}",
+            additional_context={
+                "order_status": order_status,
+                "completion_reason": completion_reason
+            }
+        )
+        
+        self.session.commit()
+        
+        # Добавляем детали о завершенной операции
+        detail = {
+            "operation_id": str(operation.id),
+            "account_name": account_name,
+            "order_id": operation.order_id,
+            "retry_count": operation.retry_count,
+            "status": operation.status,
+            "success": True,
+            "completion_reason": completion_reason
+        }
+        
+        if order_status:
+            detail["order_status"] = order_status
+            
+        result.details.append(detail)
+        return True
     
     def reconcile_stock_status(
         self, 
