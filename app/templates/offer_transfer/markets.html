@@ -1,0 +1,109 @@
+{% extends "offer_transfer/base.html" %}
+
+{% block page_title %}Выбор рынков - Перенос офферов Allegro{% endblock %}
+
+{% block offer_transfer_content %}
+<div class="max-w-4xl mx-auto">
+    <!-- Заголовок -->
+    <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-4">Выбор целевых рынков</h1>
+        <p class="text-lg text-gray-600">Выберите рынки, на которые будут перенесены офферы</p>
+    </div>
+
+    <!-- Информация о выбранных офферах -->
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+        <div class="flex items-center">
+            <svg class="h-5 w-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <span class="text-blue-800">
+                Выбрано <span id="selected-offers-count">0</span> офферов для переноса
+            </span>
+        </div>
+    </div>
+
+    <!-- Выбор рынков -->
+    <div class="bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 p-6" x-data="marketsSelector()">
+        <h2 class="text-xl font-semibold text-gray-900 mb-6">Доступные рынки</h2>
+        
+        <!-- Список рынков -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            <template x-for="market in markets" :key="market.code">
+                <label class="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
+                    <input type="checkbox" 
+                           :value="market.code" 
+                           x-model="selectedMarkets"
+                           class="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 mr-3">
+                    
+                    <div class="flex items-center space-x-3">
+                        <span class="text-2xl" x-text="market.flag"></span>
+                        <div>
+                            <p class="font-medium text-gray-900" x-text="market.name"></p>
+                            <p class="text-sm text-gray-500" x-text="market.currency"></p>
+                        </div>
+                    </div>
+                </label>
+            </template>
+        </div>
+        
+        <!-- Валидация выбора -->
+        <div x-show="validationError" 
+             x-transition
+             class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+            <p x-text="validationError"></p>
+        </div>
+        
+        <!-- Кнопки навигации -->
+        <div class="flex justify-between">
+            <button @click="goBack()" 
+                    class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-6 rounded-lg transition-colors">
+                ← Назад к офферам
+            </button>
+            
+            <button @click="proceedToPricing()" 
+                    :disabled="!canProceed"
+                    :class="{ 'opacity-50 cursor-not-allowed': !canProceed }"
+                    class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                Настроить цены →
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+function marketsSelector() {
+    return {
+        markets: {{ markets|tojson }},
+        selectedMarkets: [],
+        validationError: '',
+        
+        get canProceed() {
+            return this.selectedMarkets.length > 0;
+        },
+        
+        init() {
+            // Загружаем количество выбранных офферов
+            const selectedOffers = sessionStorage.getItem('selectedOffers');
+            if (selectedOffers) {
+                const count = JSON.parse(selectedOffers).length;
+                document.getElementById('selected-offers-count').textContent = count;
+            }
+        },
+        
+        goBack() {
+            window.location.href = '/offer-transfer/';
+        },
+        
+        proceedToPricing() {
+            if (this.canProceed) {
+                // Сохраняем выбранные рынки
+                sessionStorage.setItem('selectedMarkets', JSON.stringify(this.selectedMarkets));
+                
+                // Переходим к настройке цен
+                window.location.href = '/offer-transfer/pricing';
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

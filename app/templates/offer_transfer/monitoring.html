@@ -1,0 +1,240 @@
+{% extends "offer_transfer/base.html" %}
+
+{% block page_title %}Мониторинг - Перенос офферов Allegro{% endblock %}
+
+{% block offer_transfer_content %}
+<div class="max-w-6xl mx-auto">
+    <!-- Заголовок -->
+    <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-4">Мониторинг переноса офферов</h1>
+        <p class="text-lg text-gray-600">Отслеживайте прогресс переноса офферов в реальном времени</p>
+    </div>
+
+    <!-- Статистика сессии -->
+    <div class="bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 p-6 mb-6" x-data="sessionMonitor()">
+        <h2 class="text-xl font-semibold text-gray-900 mb-6">Статистика сессии</h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+            <div class="text-center">
+                <div class="text-3xl font-bold text-allegro-orange" x-text="totalOffers">0</div>
+                <div class="text-sm text-gray-500">Всего офферов</div>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl font-bold text-blue-500" x-text="processedOffers">0</div>
+                <div class="text-sm text-gray-500">Обработано</div>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl font-bold text-green-500" x-text="successfulOffers">0</div>
+                <div class="text-sm text-gray-500">Успешно</div>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl font-bold text-red-500" x-text="failedOffers">0</div>
+                <div class="text-sm text-gray-500">Ошибки</div>
+            </div>
+        </div>
+        
+        <!-- Прогресс бар -->
+        <div class="mb-6">
+            <div class="flex justify-between text-sm text-gray-600 mb-2">
+                <span>Прогресс</span>
+                <span x-text="`${progressPercentage}%`"></span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-3">
+                <div class="bg-allegro-orange h-3 rounded-full transition-all duration-300" 
+                     :style="`width: ${progressPercentage}%`"></div>
+            </div>
+        </div>
+        
+        <!-- Управление сессией -->
+        <div class="flex justify-center space-x-4">
+            <button @click="pauseSession()" 
+                    x-show="sessionStatus === 'running'"
+                    class="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors">
+                ⏸️ Приостановить
+            </button>
+            
+            <button @click="resumeSession()" 
+                    x-show="sessionStatus === 'paused'"
+                    class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors">
+                ▶️ Возобновить
+            </button>
+            
+            <button @click="cancelSession()" 
+                    class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors">
+                ❌ Отменить
+            </button>
+        </div>
+    </div>
+    
+    <!-- Список офферов с статусами -->
+    <div class="bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 p-6">
+        <h2 class="text-xl font-semibold text-gray-900 mb-6">Статус офферов</h2>
+        
+        <div class="space-y-4">
+            <template x-for="offer in offers" :key="offer.id">
+                <div class="border border-gray-200 rounded-lg p-4" 
+                     :class="{
+                         'bg-green-50 border-green-200': offer.status === 'success',
+                         'bg-red-50 border-red-200': offer.status === 'failed',
+                         'bg-yellow-50 border-yellow-200': offer.status === 'processing',
+                         'bg-gray-50 border-gray-200': offer.status === 'pending'
+                     }">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-4">
+                            <div class="flex-shrink-0">
+                                <img :src="offer.image" 
+                                     :alt="offer.name"
+                                     class="w-16 h-16 object-cover rounded-md">
+                            </div>
+                            
+                            <div>
+                                <h3 class="font-semibold text-gray-900" x-text="offer.name"></h3>
+                                <p class="text-sm text-gray-500" x-text="`ID: ${offer.id}`"></p>
+                                <p class="text-sm text-gray-500" x-text="`External ID: ${offer.external_id}`"></p>
+                            </div>
+                        </div>
+                        
+                        <div class="text-right">
+                            <div class="flex items-center space-x-2">
+                                <span x-text="getStatusIcon(offer.status)" class="text-2xl"></span>
+                                <span x-text="getStatusText(offer.status)" 
+                                      :class="getStatusColor(offer.status)"
+                                      class="text-sm font-medium"></span>
+                            </div>
+                            
+                            <div x-show="offer.new_id" class="text-sm text-gray-500 mt-1">
+                                Новый ID: <span x-text="offer.new_id"></span>
+                            </div>
+                            
+                            <div x-show="offer.error" class="text-sm text-red-500 mt-1">
+                                <span x-text="offer.error"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+</div>
+
+<script>
+function sessionMonitor() {
+    return {
+        sessionStatus: 'pending', // pending, running, paused, completed, cancelled
+        totalOffers: 0,
+        processedOffers: 0,
+        successfulOffers: 0,
+        failedOffers: 0,
+        progressPercentage: 0,
+        offers: [],
+        
+        init() {
+            // Загружаем данные о выбранных офферах
+            const selectedOffers = sessionStorage.getItem('selectedOffers');
+            if (selectedOffers) {
+                const offerIds = JSON.parse(selectedOffers);
+                this.totalOffers = offerIds.length;
+                
+                // Инициализируем офферы с временными данными
+                this.offers = offerIds.map(id => ({
+                    id: id,
+                    external_id: `EXT${id.padStart(3, '0')}`,
+                    name: `Тестовый товар ${id}`,
+                    image: `https://via.placeholder.com/150x150?text=Product+${id}`,
+                    status: 'pending'
+                }));
+            }
+            
+            // Запускаем симуляцию процесса
+            this.startSimulation();
+        },
+        
+        startSimulation() {
+            this.sessionStatus = 'running';
+            
+            let processed = 0;
+            const interval = setInterval(() => {
+                if (this.sessionStatus === 'paused') return;
+                
+                if (processed < this.totalOffers) {
+                    const offer = this.offers[processed];
+                    offer.status = 'processing';
+                    
+                    // Симулируем обработку
+                    setTimeout(() => {
+                        if (Math.random() > 0.2) { // 80% успеха
+                            offer.status = 'success';
+                            offer.new_id = `NEW_${Math.random().toString(36).substr(2, 9)}`;
+                            this.successfulOffers++;
+                        } else {
+                            offer.status = 'failed';
+                            offer.error = 'Ошибка при создании оффера';
+                            this.failedOffers++;
+                        }
+                        
+                        this.processedOffers++;
+                        this.updateProgress();
+                        
+                        if (this.processedOffers === this.totalOffers) {
+                            this.sessionStatus = 'completed';
+                            clearInterval(interval);
+                        }
+                    }, 1000 + Math.random() * 2000);
+                    
+                    processed++;
+                }
+            }, 2000);
+        },
+        
+        updateProgress() {
+            this.progressPercentage = Math.round((this.processedOffers / this.totalOffers) * 100);
+        },
+        
+        pauseSession() {
+            this.sessionStatus = 'paused';
+        },
+        
+        resumeSession() {
+            this.sessionStatus = 'running';
+        },
+        
+        cancelSession() {
+            if (confirm('Вы уверены, что хотите отменить перенос?')) {
+                this.sessionStatus = 'cancelled';
+                showNotification('warning', 'Перенос отменен');
+            }
+        },
+        
+        getStatusIcon(status) {
+            const icons = {
+                'pending': '⏳',
+                'processing': '🔄',
+                'success': '✅',
+                'failed': '❌'
+            };
+            return icons[status] || '⏳';
+        },
+        
+        getStatusText(status) {
+            const texts = {
+                'pending': 'Ожидает',
+                'processing': 'Обрабатывается',
+                'success': 'Успешно',
+                'failed': 'Ошибка'
+            };
+            return texts[status] || 'Неизвестно';
+        },
+        
+        getStatusColor(status) {
+            const colors = {
+                'pending': 'text-gray-500',
+                'processing': 'text-yellow-600',
+                'success': 'text-green-600',
+                'failed': 'text-red-600'
+            };
+            return colors[status] || 'text-gray-500';
+        }
+    }
+}
+</script>
+{% endblock %}

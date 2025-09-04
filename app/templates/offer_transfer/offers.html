@@ -1,0 +1,208 @@
+{% extends "offer_transfer/base.html" %}
+
+{% block page_title %}Выбор офферов - Перенос офферов Allegro{% endblock %}
+
+{% block offer_transfer_content %}
+<div class="max-w-6xl mx-auto">
+    <!-- Заголовок -->
+    <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-4">Выбор офферов для переноса</h1>
+        <p class="text-lg text-gray-600">Выберите офферы, которые будут перенесены на целевые рынки</p>
+    </div>
+
+    <!-- Информация о выбранных аккаунтах -->
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="flex items-center">
+                <svg class="h-5 w-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span class="text-blue-800">
+                    Исходный: <span id="source-account-name">Не выбран</span>
+                </span>
+            </div>
+            <div class="flex items-center">
+                <svg class="h-5 w-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span class="text-blue-800">
+                    Целевой: <span id="target-account-name">Не выбран</span>
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Список офферов -->
+    <div class="bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 p-6" x-data="offersSelector()">
+        <h2 class="text-xl font-semibold text-gray-900 mb-6">Доступные офферы</h2>
+        
+        <!-- Управление выбором -->
+        <div class="flex items-center space-x-4 mb-6">
+            <button @click="selectAll()" 
+                    class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg transition-colors">
+                Выбрать все
+            </button>
+            <button @click="deselectAll()" 
+                    class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg transition-colors">
+                Снять выбор
+            </button>
+            <span class="text-gray-600">
+                Выбрано: <span x-text="selectedOffers.length" class="font-semibold"></span> из {{ total_count if total_count else 0 }}
+            </span>
+        </div>
+        
+        <!-- Поиск -->
+        <div class="mb-6">
+            <div class="relative">
+                <input type="text" 
+                       x-model="searchQuery"
+                       @input.debounce.300ms="filterOffers()"
+                       placeholder="Поиск по названию или external ID..."
+                       class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Список офферов -->
+        <div class="space-y-4">
+            <template x-for="offer in filteredOffers" :key="offer.id">
+                <div class="bg-white rounded-lg shadow-md border border-gray-200 p-4 hover:shadow-lg transition-shadow">
+                    <div class="flex items-start space-x-4">
+                        <!-- Изображение -->
+                        <div class="flex-shrink-0">
+                            <img :src="offer.images[0] || 'https://via.placeholder.com/80x80?text=No+Image'" 
+                                 :alt="offer.name"
+                                 class="w-20 h-20 object-cover rounded-md">
+                        </div>
+                        
+                        <!-- Информация об оффере -->
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1">
+                                    <h3 class="text-lg font-semibold text-gray-900 truncate" x-text="offer.name"></h3>
+                                    <div class="mt-1 space-y-1">
+                                        <p class="text-sm text-gray-500">
+                                            <span class="font-medium">ID:</span> <span x-text="offer.id"></span>
+                                        </p>
+                                        <p class="text-sm text-gray-500">
+                                            <span class="font-medium">External ID:</span> <span x-text="offer.external_id"></span>
+                                        </p>
+                                        <p class="text-sm text-gray-500">
+                                            <span class="font-medium">Категория:</span> <span x-text="offer.category"></span>
+                                        </p>
+                                        <p class="text-sm text-gray-500">
+                                            <span class="font-medium">Остаток:</span> <span x-text="offer.stock"></span> шт.
+                                        </p>
+                                    </div>
+                                </div>
+                                
+                                <!-- Цена -->
+                                <div class="text-right ml-4">
+                                    <p class="text-xl font-bold text-allegro-orange" x-text="`${offer.price.amount} ${offer.price.currency}`"></p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Чекбокс выбора -->
+                        <div class="flex-shrink-0 ml-4">
+                            <input type="checkbox" 
+                                   :value="offer.id" 
+                                   x-model="selectedOffers"
+                                   class="w-5 h-5 text-blue-600 rounded focus:ring-blue-500">
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+        
+        <!-- Кнопка продолжения -->
+        <div class="text-center pt-6">
+            <button @click="proceedToMarkets()" 
+                    :disabled="selectedOffers.length === 0"
+                    :class="{ 'opacity-50 cursor-not-allowed': selectedOffers.length === 0 }"
+                    class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-8 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                Настроить рынки (<span x-text="selectedOffers.length"></span> офферов)
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+function offersSelector() {
+    return {
+        offers: [
+            {
+                id: "1",
+                external_id: "EXT001",
+                name: "Тестовый товар 1",
+                price: {amount: "100.00", currency: "PLN"},
+                stock: 50,
+                category: "Электроника",
+                images: ["https://via.placeholder.com/150x150?text=Product+1"]
+            },
+            {
+                id: "2", 
+                external_id: "EXT002",
+                name: "Тестовый товар 2",
+                price: {amount: "250.00", currency: "PLN"},
+                stock: 25,
+                category: "Одежда",
+                images: ["https://via.placeholder.com/150x150?text=Product+2"]
+            },
+            {
+                id: "3",
+                external_id: "EXT003", 
+                name: "Тестовый товар 3",
+                price: {amount: "75.50", currency: "PLN"},
+                stock: 100,
+                category: "Книги",
+                images: ["https://via.placeholder.com/150x150?text=Product+3"]
+            }
+        ],
+        selectedOffers: [],
+        searchQuery: '',
+        filteredOffers: [],
+        
+        init() {
+            this.filteredOffers = [...this.offers];
+        },
+        
+        filterOffers() {
+            if (!this.searchQuery.trim()) {
+                this.filteredOffers = [...this.offers];
+                return;
+            }
+            
+            const query = this.searchQuery.toLowerCase();
+            this.filteredOffers = this.offers.filter(offer => 
+                offer.name.toLowerCase().includes(query) ||
+                offer.external_id.toLowerCase().includes(query)
+            );
+        },
+        
+        selectAll() {
+            this.selectedOffers = this.filteredOffers.map(offer => offer.id);
+        },
+        
+        deselectAll() {
+            this.selectedOffers = [];
+        },
+        
+        proceedToMarkets() {
+            if (this.selectedOffers.length > 0) {
+                // Сохраняем выбранные офферы в sessionStorage для следующего шага
+                sessionStorage.setItem('selectedOffers', JSON.stringify(this.selectedOffers));
+                
+                // Переходим к следующему шагу
+                window.location.href = '/offer-transfer/markets';
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

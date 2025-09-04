@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}{% block page_title %}Перенос офферов Allegro{% endblock %} - Warehouse{% endblock %}
+
+{% block extra_head %}
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    
+    <!-- WebSocket extension для HTMX -->
+    <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
+    
+    <script>
+        // Добавляем цвета Allegro к существующей конфигурации Tailwind
+        tailwind.config.theme.extend.colors.allegro = {
+            'orange': '#ff5a00',
+            'dark': '#1a1a1a',
+            'gray': '#f5f5f5'
+        };
+    </script>
+{% endblock %}
+
+{% block content %}
+    <!-- Хлебные крошки для системы переноса офферов -->
+    <div class="mb-6">
+        <nav class="flex" aria-label="Breadcrumb">
+            <ol class="flex items-center space-x-4">
+                <li>
+                    <div>
+                        <a href="/catalog" class="text-gray-400 hover:text-gray-500">
+                            <svg class="h-5 w-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path>
+                            </svg>
+                            <span class="sr-only">Главная</span>
+                        </a>
+                    </div>
+                </li>
+                <li>
+                    <div class="flex items-center">
+                        <svg class="h-5 w-5 flex-shrink-0 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 111.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
+                        </svg>
+                        <a href="/offer-transfer/" class="ml-4 text-sm font-medium text-gray-500 hover:text-gray-700">
+                            Перенос офферов Allegro
+                        </a>
+                    </div>
+                </li>
+            </ol>
+        </nav>
+    </div>
+
+    <!-- Контент страницы -->
+    {% block offer_transfer_content %}{% endblock %}
+    
+    <!-- Контейнер для уведомлений -->
+    <div x-data="notificationManager()" 
+         x-show="notifications.length > 0"
+         class="fixed top-4 right-4 z-50 space-y-2">
+        <template x-for="notification in notifications" :key="notification.id">
+            <div x-show="notification.visible"
+                 x-transition:enter="transform ease-out duration-300 transition"
+                 x-transition:enter-start="translate-y-2 opacity-0 sm:translate-y-0 sm:translate-x-2"
+                 x-transition:enter-end="translate-y-0 opacity-100 sm:translate-x-0"
+                 x-transition:leave="transition ease-in duration-100"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0"
+                 :class="{
+                   'bg-green-100 border-green-400 text-green-700': notification.type === 'success',
+                   'bg-red-100 border-red-400 text-red-700': notification.type === 'error',
+                   'bg-yellow-100 border-yellow-400 text-yellow-700': notification.type === 'warning',
+                   'bg-blue-100 border-blue-400 text-blue-700': notification.type === 'info'
+                 }"
+                 class="max-w-sm w-full border px-4 py-3 rounded-lg shadow-lg">
+                <div class="flex items-center">
+                    <span x-text="getIcon(notification.type)" class="mr-2"></span>
+                    <span x-text="notification.message" class="flex-1"></span>
+                    <button @click="removeNotification(notification.id)" 
+                            class="ml-2 hover:opacity-75">×</button>
+                </div>
+            </div>
+        </template>
+    </div>
+    
+    <!-- Глобальные скрипты -->
+    <script>
+        {% include 'offer_transfer/blocks/global_scripts.html' %}
+    </script>
+{% endblock %}
+
+{% block extra_scripts %}{% endblock %}

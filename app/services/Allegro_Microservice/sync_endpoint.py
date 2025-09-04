@@ -78,7 +78,7 @@ class SyncClient(BaseClient):
         )
         resp.raise_for_status()
         data = resp.json()
-        return SyncListResponse(data)
+        return SyncListResponse(items=data if isinstance(data, list) else [data])
 
     def get_sync_status(self, sync_id: UUID) -> GenericResponse:
         resp = requests.get(

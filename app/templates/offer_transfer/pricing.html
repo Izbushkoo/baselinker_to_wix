@@ -1,0 +1,288 @@
+{% extends "offer_transfer/base.html" %}
+
+{% block page_title %}Настройка цен - Перенос офферов Allegro{% endblock %}
+
+{% block offer_transfer_content %}
+<div class="max-w-6xl mx-auto">
+    <!-- Заголовок -->
+    <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-4">Настройка правил ценообразования</h1>
+        <p class="text-lg text-gray-600">Настройте правила расчета цен для каждого выбранного рынка</p>
+    </div>
+
+    <!-- Информация о выбранных данных -->
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="flex items-center">
+                <svg class="h-5 w-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span class="text-blue-800">
+                    Офферов: <span id="selected-offers-count">0</span>
+                </span>
+            </div>
+            <div class="flex items-center">
+                <svg class="h-5 w-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span class="text-blue-800">
+                    Рынков: <span id="selected-markets-count">0</span>
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Настройка правил ценообразования -->
+    <div class="bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 p-6" x-data="pricingRules()">
+        <h2 class="text-xl font-semibold text-gray-900 mb-6">Правила ценообразования по рынкам</h2>
+        
+        <!-- Карточки настроек для каждого рынка -->
+        <div class="space-y-6 mb-8">
+            <template x-for="market in selectedMarkets" :key="market">
+                <div class="border border-gray-200 rounded-lg p-6">
+                    <div class="flex items-center mb-4">
+                        <span class="text-2xl mr-3" x-text="market.flag"></span>
+                        <h3 class="text-lg font-semibold text-gray-900" x-text="`${market.name} (${market.currency})`"></h3>
+                    </div>
+                    
+                    <!-- Тип правила -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Тип правила</label>
+                        <select x-model="rules[market.code].type" 
+                                @change="updateRuleFields(market.code)"
+                                class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <option value="multiply">Умножить на коэффициент</option>
+                            <option value="add">Добавить фиксированную сумму</option>
+                            <option value="convert_with_markup">Конвертировать с наценкой (%)</option>
+                            <option value="custom">Кастомная формула</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Поля ввода в зависимости от типа правила -->
+                    <div x-show="rules[market.code].type === 'multiply'" class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Коэффициент</label>
+                        <input type="number" 
+                               x-model.number="rules[market.code].multiplier"
+                               min="0.1" 
+                               max="100" 
+                               step="0.1"
+                               class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                               :class="{ 'border-red-500': errors[market.code + '_multiplier'] }">
+                        <p x-show="errors[market.code + '_multiplier']" 
+                           x-text="errors[market.code + '_multiplier']" 
+                           class="text-red-500 text-sm mt-1"></p>
+                    </div>
+                    
+                    <div x-show="rules[market.code].type === 'add'" class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Сумма для добавления</label>
+                        <input type="number" 
+                               x-model.number="rules[market.code].addAmount"
+                               min="0" 
+                               step="0.01"
+                               class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                               :class="{ 'border-red-500': errors[market.code + '_add'] }">
+                        <p x-show="errors[market.code + '_add']" 
+                           x-text="errors[market.code + '_add']" 
+                           class="text-red-500 text-sm mt-1"></p>
+                    </div>
+                    
+                    <div x-show="rules[market.code].type === 'convert_with_markup'" class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Наценка (%)</label>
+                        <input type="number" 
+                               x-model.number="rules[market.code].markupPercent"
+                               min="0" 
+                               max="1000" 
+                               step="1"
+                               class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                               :class="{ 'border-red-500': errors[market.code + '_markup'] }">
+                        <p x-show="errors[market.code + '_add']" 
+                           x-text="errors[market.code + '_add']" 
+                           class="text-red-500 text-sm mt-1"></p>
+                    </div>
+                    
+                    <div x-show="rules[market.code].type === 'custom'" class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Кастомная формула</label>
+                        <input type="text" 
+                               x-model="rules[market.code].customFormula"
+                               placeholder="Например: price * 1.2 + 10"
+                               class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                               :class="{ 'border-red-500': errors[market.code + '_custom'] }">
+                        <p x-show="errors[market.code + '_custom']" 
+                           x-text="errors[market.code + '_custom']" 
+                           class="text-red-500 text-sm mt-1"></p>
+                    </div>
+                </div>
+            </template>
+        </div>
+        
+        <!-- Валидация правил -->
+        <div x-show="validationError" 
+             x-transition
+             class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+            <p x-text="validationError"></p>
+        </div>
+        
+        <!-- Кнопки действий -->
+        <div class="flex justify-between">
+            <button @click="goBack()" 
+                    class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-6 rounded-lg transition-colors">
+                ← Назад к рынкам
+            </button>
+            
+            <div class="flex space-x-4">
+                <button @click="calculatePrices()" 
+                        :disabled="!isValid"
+                        :class="{ 'opacity-50 cursor-not-allowed': !isValid }"
+                        class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    Рассчитать цены
+                </button>
+                
+                <button @click="proceedToTransfer()" 
+                        :disabled="!isValid"
+                        :class="{ 'opacity-50 cursor-not-allowed': !isValid }"
+                        class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    Запустить перенос
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Предварительный расчет цен -->
+    <div id="pricing-preview" class="mt-8" style="display: none;">
+        <!-- Результаты расчета будут загружены сюда -->
+    </div>
+</div>
+
+<script>
+function pricingRules() {
+    return {
+        selectedMarkets: [],
+        rules: {},
+        errors: {},
+        validationError: '',
+        
+        get isValid() {
+            this.validateRules();
+            return Object.keys(this.errors).length === 0;
+        },
+        
+        init() {
+            // Загружаем выбранные рынки
+            const marketsData = sessionStorage.getItem('selectedMarkets');
+            if (marketsData) {
+                this.selectedMarkets = JSON.parse(marketsData);
+                
+                // Инициализируем правила для каждого рынка
+                this.selectedMarkets.forEach(market => {
+                    this.rules[market.code] = {
+                        type: 'multiply',
+                        multiplier: 1.0,
+                        addAmount: 0,
+                        markupPercent: 0,
+                        customFormula: ''
+                    };
+                });
+            }
+            
+            // Загружаем количество офферов
+            const offersData = sessionStorage.getItem('selectedOffers');
+            if (offersData) {
+                const count = JSON.parse(offersData).length;
+                document.getElementById('selected-offers-count').textContent = count;
+            }
+            
+            // Загружаем количество рынков
+            document.getElementById('selected-markets-count').textContent = this.selectedMarkets.length;
+        },
+        
+        updateRuleFields(marketCode) {
+            // Сбрасываем ошибки при изменении типа правила
+            Object.keys(this.errors).forEach(key => {
+                if (key.startsWith(marketCode)) {
+                    delete this.errors[key];
+                }
+            });
+        },
+        
+        validateRules() {
+            this.errors = {};
+            
+            for (const market of this.selectedMarkets) {
+                const rule = this.rules[market.code];
+                
+                if (rule.type === 'multiply') {
+                    if (rule.multiplier <= 0 || rule.multiplier > 100) {
+                        this.errors[market.code + '_multiplier'] = 'Коэффициент должен быть от 0.1 до 100';
+                    }
+                }
+                
+                if (rule.type === 'add') {
+                    if (rule.addAmount < 0) {
+                        this.errors[market.code + '_add'] = 'Сумма не может быть отрицательной';
+                    }
+                }
+                
+                if (rule.type === 'convert_with_markup') {
+                    if (rule.markupPercent < 0 || rule.markupPercent > 1000) {
+                        this.errors[market.code + '_markup'] = 'Наценка должна быть от 0% до 1000%';
+                    }
+                }
+                
+                if (rule.type === 'custom') {
+                    if (!rule.customFormula.trim()) {
+                        this.errors[market.code + '_custom'] = 'Введите формулу';
+                    }
+                }
+            }
+        },
+        
+        calculatePrices() {
+            if (this.isValid) {
+                // Показываем индикатор загрузки
+                const preview = document.getElementById('pricing-preview');
+                preview.style.display = 'block';
+                preview.innerHTML = `
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <div class="flex items-center justify-center py-8">
+                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-allegro-orange"></div>
+                            <span class="ml-2 text-gray-600">Расчет цен...</span>
+                        </div>
+                    </div>
+                `;
+                
+                // Здесь будет вызов API для расчета цен
+                setTimeout(() => {
+                    this.showPricingPreview();
+                }, 1000);
+            }
+        },
+        
+        showPricingPreview() {
+            const preview = document.getElementById('pricing-preview');
+            preview.innerHTML = `
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Предварительный расчет цен</h3>
+                    <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+                        <p>Расчет завершен успешно! Цены рассчитаны для всех выбранных рынков.</p>
+                    </div>
+                </div>
+            `;
+        },
+        
+        goBack() {
+            window.location.href = '/offer-transfer/markets';
+        },
+        
+        proceedToTransfer() {
+            if (this.isValid) {
+                // Сохраняем правила ценообразования
+                sessionStorage.setItem('pricingRules', JSON.stringify(this.rules));
+                
+                // Переходим к запуску переноса
+                window.location.href = '/offer-transfer/monitoring';
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

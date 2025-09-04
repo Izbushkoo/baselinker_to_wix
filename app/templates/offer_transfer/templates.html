@@ -1,0 +1,232 @@
+{% extends "offer_transfer/base.html" %}
+
+{% block page_title %}Шаблоны - Перенос офферов Allegro{% endblock %}
+
+{% block offer_transfer_content %}
+<div class="max-w-6xl mx-auto">
+    <!-- Заголовок -->
+    <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-4">Управление шаблонами</h1>
+        <p class="text-lg text-gray-600">Сохраняйте и используйте настройки для быстрого запуска переноса</p>
+    </div>
+
+    <!-- Список шаблонов -->
+    <div class="bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 p-6" x-data="templatesManager()">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-xl font-semibold text-gray-900">Сохраненные шаблоны</h2>
+            <button @click="showCreateForm = true" 
+                    class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors">
+                + Создать шаблон
+            </button>
+        </div>
+        
+        <!-- Список шаблонов -->
+        <div class="space-y-4">
+            <template x-for="template in templates" :key="template.id">
+                <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                    <div class="flex items-center justify-between">
+                        <div class="flex-1">
+                            <h3 class="text-lg font-semibold text-gray-900" x-text="template.name"></h3>
+                            <p class="text-sm text-gray-500" x-text="template.description"></p>
+                            <div class="mt-2 flex items-center space-x-4 text-sm text-gray-600">
+                                <span>Рынков: <span x-text="template.markets_count"></span></span>
+                                <span>Создан: <span x-text="formatDate(template.created_at)"></span></span>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-center space-x-2">
+                            <button @click="applyTemplate(template)" 
+                                    class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm transition-colors">
+                                Применить
+                            </button>
+                            <button @click="editTemplate(template)" 
+                                    class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm transition-colors">
+                                Редактировать
+                            </button>
+                            <button @click="deleteTemplate(template.id)" 
+                                    class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm transition-colors">
+                                Удалить
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </template>
+            
+            <!-- Пустое состояние -->
+            <div x-show="templates.length === 0" 
+                 class="text-center py-12 text-gray-500">
+                <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                <p class="text-lg font-medium">Шаблоны не найдены</p>
+                <p class="text-sm">Создайте первый шаблон для быстрого запуска переноса</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Модальное окно создания/редактирования шаблона -->
+    <div x-show="showCreateForm || showEditForm" 
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+         @click.self="closeForm()">
+        <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 class="text-lg font-semibold mb-4" x-text="showEditForm ? 'Редактировать шаблон' : 'Создать шаблон'"></h3>
+            
+            <form @submit.prevent="saveTemplate()">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Название шаблона</label>
+                        <input type="text" 
+                               x-model="currentTemplate.name"
+                               required
+                               class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-allegro-orange">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Описание</label>
+                        <textarea x-model="currentTemplate.description"
+                                  rows="3"
+                                  class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-allegro-orange"></textarea>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Рынки</label>
+                        <div class="space-y-2">
+                            <template x-for="market in availableMarkets" :key="market.code">
+                                <label class="flex items-center">
+                                    <input type="checkbox" 
+                                           :value="market.code" 
+                                           x-model="currentTemplate.markets"
+                                           class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 mr-2">
+                                    <span x-text="`${market.flag} ${market.name}`"></span>
+                                </label>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex space-x-3 mt-6">
+                    <button type="submit" 
+                                                         class="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded-lg">
+                        <span x-text="showEditForm ? 'Сохранить' : 'Создать'"></span>
+                    </button>
+                    <button type="button" 
+                            @click="closeForm()"
+                            class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-lg">
+                        Отмена
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function templatesManager() {
+    return {
+        templates: [
+            {
+                id: 1,
+                name: 'Стандартный шаблон',
+                description: 'Базовые настройки для европейских рынков',
+                markets: ['PL', 'CZ', 'SK'],
+                markets_count: 3,
+                created_at: '2024-12-19T10:00:00Z'
+            },
+            {
+                id: 2,
+                name: 'Премиум шаблон',
+                description: 'Настройки с повышенными ценами',
+                markets: ['PL', 'CZ', 'SK', 'HU'],
+                markets_count: 4,
+                created_at: '2024-12-19T11:00:00Z'
+            }
+        ],
+        showCreateForm: false,
+        showEditForm: false,
+        currentTemplate: {
+            name: '',
+            description: '',
+            markets: []
+        },
+        availableMarkets: [
+            { code: 'PL', name: 'Польша', flag: '🇵🇱' },
+            { code: 'CZ', name: 'Чехия', flag: '🇨🇿' },
+            { code: 'SK', name: 'Словакия', flag: '🇸🇰' },
+            { code: 'HU', name: 'Венгрия', flag: '🇭🇺' },
+            { code: 'RO', name: 'Румыния', flag: '🇷🇴' },
+            { code: 'BG', name: 'Болгария', flag: '🇧🇬' }
+        ],
+        
+        showCreateForm: false,
+        showEditForm: false,
+        
+        createTemplate() {
+            this.currentTemplate = {
+                name: '',
+                description: '',
+                markets: []
+            };
+            this.showCreateForm = true;
+            this.showEditForm = false;
+        },
+        
+        editTemplate(template) {
+            this.currentTemplate = { ...template };
+            this.showEditForm = true;
+            this.showCreateForm = false;
+        },
+        
+        closeForm() {
+            this.showCreateForm = false;
+            this.showEditForm = false;
+            this.currentTemplate = {
+                name: '',
+                description: '',
+                markets: []
+            };
+        },
+        
+        saveTemplate() {
+            if (this.showEditForm) {
+                // Обновляем существующий шаблон
+                const index = this.templates.findIndex(t => t.id === this.currentTemplate.id);
+                if (index !== -1) {
+                    this.templates[index] = { ...this.currentTemplate };
+                }
+            } else {
+                // Создаем новый шаблон
+                const newTemplate = {
+                    ...this.currentTemplate,
+                    id: Date.now(),
+                    markets_count: this.currentTemplate.markets.length,
+                    created_at: new Date().toISOString()
+                };
+                this.templates.push(newTemplate);
+            }
+            
+            this.closeForm();
+            showNotification('success', 'Шаблон сохранен успешно');
+        },
+        
+        deleteTemplate(templateId) {
+            if (confirm('Вы уверены, что хотите удалить этот шаблон?')) {
+                this.templates = this.templates.filter(t => t.id !== templateId);
+                showNotification('success', 'Шаблон удален');
+            }
+        },
+        
+        applyTemplate(template) {
+            // Сохраняем выбранные рынки в sessionStorage
+            sessionStorage.setItem('selectedMarkets', JSON.stringify(template.markets));
+            
+            // Переходим к настройке цен
+            window.location.href = '/offer-transfer/pricing';
+        },
+        
+        formatDate(dateString) {
+            return new Date(dateString).toLocaleDateString('ru-RU');
+        }
+    }
+}
+</script>
+{% endblock %}

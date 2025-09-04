@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Каталог товаров{% endblock %}
+
+{% block content %}
+{% if not user %}
+<script>
+    window.location.href = '{{ url_for("login", next=request.path) }}';
+</script>
+{% else %}
+
+<!-- Заголовок с информацией о фильтре по операции -->
+{% include "catalog_new_blocks/header.html" %}
+
+<!-- Основной контент каталога -->
+{% include "catalog_new_blocks/main_content.html" %}
+
+<!-- Пагинация -->
+{% include "catalog_new_blocks/pagination.html" %}
+
+<!-- Состояние пустого результата -->
+{% include "catalog_new_blocks/empty_state.html" %}
+
+<!-- Слайдер фильтров -->
+{% include "catalog_new_blocks/filter_slider.html" %}
+
+<!-- Кнопка переключения фильтров -->
+{% include "catalog_new_blocks/filter_toggle.html" %}
+
+<!-- JavaScript код -->
+{% include "catalog_new_blocks/scripts.html" %}
+
+<!-- Модальное окно для изображений -->
+{% include "components/image_modal.html" %}
+
+{% endif %}
+{% endblock %}

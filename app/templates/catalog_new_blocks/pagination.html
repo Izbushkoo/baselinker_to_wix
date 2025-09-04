@@ -1,0 +1,37 @@
+<!-- Пагинация -->
+<div class="mt-8">
+    <nav class="flex justify-center" aria-label="Pagination">
+        <ul class="inline-flex items-center -space-x-px rounded-md shadow-sm">
+            {% if page > 1 %}
+            <li>
+                <a href="?page={{ page - 1 }}" 
+                   class="relative inline-flex items-center rounded-l-md px-3 py-2 text-sm font-medium text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0">
+                    <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    </svg>
+                </a>
+            </li>
+            {% endif %}
+
+            {% for p in range(1, total_pages + 1) %}
+            <li>
+                <a href="?page={{ p }}" 
+                   class="relative inline-flex items-center px-4 py-2 text-sm font-medium {% if p == page %}z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600{% else %}text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0{% endif %}">
+                    {{ p }}
+                </a>
+            </li>
+            {% endfor %}
+
+            {% if page < total_pages %}
+            <li>
+                <a href="?page={{ page + 1 }}" 
+                   class="relative inline-flex items-center rounded-r-md px-3 py-2 text-sm font-medium text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0">
+                    <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                    </svg>
+                </a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+</div>

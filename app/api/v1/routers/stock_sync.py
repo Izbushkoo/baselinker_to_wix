@@ -829,7 +829,7 @@ async def get_operation_details(
                 logs_data.append(log_data)
                 
                 # Извлекаем детали валидации если есть
-                if log.action == "stock_validation_failed" and "items_details" in log.details:
+                if log.action == "stock_validation_failed" and log.details and "items_details" in log.details:
                     validation_details = {
                         "total_items": log.details.get("total_items", 0),
                         "valid_items": log.details.get("valid_items", 0),
@@ -910,7 +910,7 @@ async def get_failed_operations(
             ).first()
             
             validation_summary = None
-            if last_validation_log and "items_details" in last_validation_log.details:
+            if last_validation_log and last_validation_log.details and "items_details" in last_validation_log.details:
                 items_details = last_validation_log.details["items_details"]
                 validation_summary = {
                     "total_items": len(items_details),
@@ -1107,7 +1107,7 @@ async def operation_details_page(
         validation_details = None
         for log in logs:
             try:
-                if log.action == "stock_validation_failed" and "items_details" in log.details:
+                if log.action == "stock_validation_failed" and log.details and "items_details" in log.details:
                     validation_details = log.details
                     break
             except Exception as log_error:
@@ -1241,7 +1241,7 @@ async def operation_details_by_order_page(
         validation_details = None
         for log in logs:
             try:
-                if log.action == "stock_validation_failed" and "items_details" in log.details:
+                if log.action == "stock_validation_failed" and log.details and "items_details" in log.details:
                     validation_details = log.details
                     break
             except Exception as log_error:

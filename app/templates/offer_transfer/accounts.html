@@ -1,0 +1,121 @@
+{% extends "offer_transfer/base.html" %}
+
+{% block page_title %}Выбор аккаунтов - Перенос офферов Allegro{% endblock %}
+
+{% block offer_transfer_content %}
+<div class="max-w-4xl mx-auto">
+    <!-- Заголовок -->
+    <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-4">Выбор аккаунтов Allegro</h1>
+        <p class="text-lg text-gray-600">Выберите исходный и целевой аккаунты для переноса офферов</p>
+    </div>
+
+    <!-- Форма выбора аккаунтов -->
+    <div class="bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 p-6" x-data="accountSelector()">
+        <h2 class="text-xl font-semibold text-gray-900 mb-6">Выбор аккаунтов</h2>
+        
+        <form hx-post="/api/v1/offer-transfer/compare-offers" 
+              hx-target="#offers-container" 
+              hx-indicator="#loading"
+              @submit.prevent="submitForm()">
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <!-- Исходный аккаунт -->
+                <div>
+                    <label for="source_account" class="block text-sm font-medium text-gray-700 mb-2">
+                        Исходный аккаунт
+                    </label>
+                    <select id="source_account" 
+                            name="source_account" 
+                            x-model="sourceAccount"
+                            @change="validateSelection()"
+                            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="">Выберите исходный аккаунт...</option>
+                        {% for account in accounts %}
+                        <option value="{{ account.id }}">{{ account.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <!-- Целевой аккаунт -->
+                <div>
+                    <label for="target_account" class="block text-sm font-medium text-gray-700 mb-2">
+                        Целевой аккаунт
+                    </label>
+                    <select id="target_account" 
+                            name="target_account" 
+                            x-model="targetAccount"
+                            @change="validateSelection()"
+                            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="">Выберите целевой аккаунт...</option>
+                        {% for account in accounts %}
+                        <option value="{{ account.id }}">{{ account.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Валидация выбора -->
+            <div x-show="validationError" 
+                 x-transition
+                 class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+                <p x-text="validationError"></p>
+            </div>
+            
+            <!-- Кнопка сравнения -->
+            <div class="text-center">
+                <button type="submit" 
+                        :disabled="!canProceed"
+                        :class="{ 'opacity-50 cursor-not-allowed': !canProceed }"
+                        class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-8 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    Сравнить офферы
+                </button>
+            </div>
+        </form>
+        
+        <!-- Индикатор загрузки -->
+        <div id="loading" class="htmx-indicator mt-6">
+            <div class="flex items-center justify-center py-8">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-allegro-orange"></div>
+                <span class="ml-2 text-gray-600">Загрузка...</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Контейнер для результатов -->
+    <div id="offers-container" class="mt-8">
+        <!-- Результаты сравнения офферов будут загружены сюда -->
+    </div>
+</div>
+
+<script>
+function accountSelector() {
+    return {
+        sourceAccount: '',
+        targetAccount: '',
+        validationError: '',
+        
+        get canProceed() {
+            return this.sourceAccount && this.targetAccount && this.sourceAccount !== this.targetAccount;
+        },
+        
+        validateSelection() {
+            this.validationError = '';
+            
+            if (this.sourceAccount && this.targetAccount) {
+                if (this.sourceAccount === this.targetAccount) {
+                    this.validationError = 'Исходный и целевой аккаунты не могут быть одинаковыми';
+                }
+            }
+        },
+        
+        submitForm() {
+            if (this.canProceed) {
+                // Отправляем форму через HTMX
+                htmx.trigger(document.querySelector('form'), 'submit');
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

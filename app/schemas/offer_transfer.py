@@ -1,240 +1,26 @@
-from typing import List, Dict, Any, Optional
-from uuid import UUID
+"""
+ * @file: offer_transfer.py
+ * @description: Схемы данных для системы переноса офферов Allegro
+ * @dependencies: pydantic, datetime, typing
+ * @created: 2024-12-19
+"""
+
+from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
-from pydantic import BaseModel, Field, RootModel
-
-# Orders microservice models
-class OrderStatistics(BaseModel):
-    period_days: int
-    total_orders: int
-    recent_orders: int
-    status_distribution: Dict[str, int]
-    financial: Dict[str, Any]
-    top_buyers: List[Dict[str, Any]]
-    generated_at: str
-
-class SyncResult(BaseModel):
-    success: bool
-    order_id: str
-    action: str
-    message: str
-
-class SyncHistory(BaseModel):
-    history: List[Dict[str, Any]]
-    total_records: int
-
-class DataQualityReport(BaseModel):
-    health_metrics: Dict[str, Any]
-    quality_report: Dict[str, Any]
-    generated_at: str
-
-class OrderEventsResponse(BaseModel):
-    events: List[Dict[str, Any]]
-    total_count: int
-    has_more: bool
-    error: Optional[str] = None
-
-class Pagination(BaseModel):
-    total: int
-    offset: int
-    limit: int
-
-class OrdersListResponse(BaseModel):
-    orders: List[Dict[str, Any]]
-    pagination: Pagination
-
-class OrderDetailResponse(BaseModel):
-    order: Dict[str, Any]
-
-class OrderTechnicalFlags(BaseModel):
-    order_id: str
-    technical_flags: Dict[str, Any]
-
-class TechnicalFlagsSummary(BaseModel):
-    token_id: str
-    summary: Dict[str, Any]
-    generated_at: str
-
-class OrderStatusUpdate(BaseModel):
-    success: bool
-    order_id: str
-    is_stock_updated: bool
-    updated_at: str
-    message: str
-
-class InvoiceStatusUpdate(BaseModel):
-    success: bool
-    order_id: str
-    has_invoice_created: bool
-    invoice_id: Optional[str] = None
-    updated_at: str
-    message: str
-
-# Sync microservice models
-class SyncTrigger(BaseModel):
-    token_id: UUID
-    sync_from_date: Optional[datetime]
-    force_full_sync: bool = False
-
-class SyncResponse(BaseModel):
-    id: UUID
-    token_id: UUID
-    sync_started_at: datetime
-    sync_completed_at: Optional[datetime]
-    sync_status: str
-    orders_processed: int
-    orders_added: int
-    orders_updated: int
-    error_message: Optional[str] = None
-    sync_from_date: Optional[datetime] = None
-    sync_to_date: Optional[datetime] = None
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-
-class SyncListResponse(BaseModel):
-    syncs: List[SyncResponse]
-    total: int
-    page: int
-    per_page: int
-
-class SyncStats(BaseModel):
-    total_syncs: int
-    successful_syncs: int
-    failed_syncs: int
-    running_syncs: int
-    total_orders_processed: int
-    total_orders_added: int
-    total_orders_updated: int
-    last_sync_date: Optional[datetime] = None
-    average_sync_duration: Optional[float] = None
-
-class SyncTaskResponse(BaseModel):
-    task_id: str
-    status: str
-    message: str
-    started_at: datetime
-
-class TaskHistoryRead(BaseModel):
-    id: UUID
-    task_id: str
-    user_id: str
-    task_type: str
-    status: str
-    params: Dict[str, Any]
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
-    started_at: datetime
-    finished_at: Optional[datetime] = None
-    updated_at: datetime
-    description: Optional[str] = None
-    progress: Optional[float] = None
-    parent_task_id: Optional[str] = None
-
-    class Config:
-        from_attributes = True
-
-class ActivateSyncRequest(BaseModel):
-    token_id: UUID
-    interval_minutes: int
-
-class DeactivateSyncRequest(BaseModel):
-    token_id: UUID
-
-class TokenSyncStatusResponse(BaseModel):
-    token_id: str
-    is_active: bool
-    interval_minutes: Optional[int] = None
-    status: Optional[str] = None
-    task_name: Optional[str] = None
-    last_run_at: Optional[datetime] = None
-    last_success_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-
-# Tokens microservice models
-class TokenCreate(BaseModel):
-    account_name: str
-    allegro_token: str
-    refresh_token: str
-    expires_at: datetime
-
-class TokenResponse(BaseModel):
-    id: UUID
-    user_id: str
-    account_name: str
-    expires_at: datetime
-    is_active: bool
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-
-class TokenUpdate(BaseModel):
-    account_name: Optional[str] = None
-    allegro_token: Optional[str] = None
-    refresh_token: Optional[str] = None
-    expires_at: Optional[datetime] = None
-    is_active: Optional[bool] = None
-
-class TokenListResponse(BaseModel):
-    tokens: List[TokenResponse]
-    total: int
-    page: int
-    per_page: int
-
-class AuthInitializeRequest(BaseModel):
-    account_name: str
-
-class AuthInitializeResponse(BaseModel):
-    device_code: str
-    user_code: str
-    verification_uri: str
-    verification_uri_complete: Optional[str] = None
-    expires_in: int
-    interval: int
-    task_id: str
-
-class AuthStatusRequest(BaseModel):
-    device_code: str
-    account_name: str
-
-class AuthStatusResponse(BaseModel):
-    status: str
-    message: Optional[str] = None
-
-class TaskStatusResponse(BaseModel):
-    task_id: str
-    status: str
-    result: Optional[Dict[str, Any]] = None
-    progress: Optional[Dict[str, Any]] = None
-
-# Offers microservice models
-class OfferListResponse(BaseModel):
-    offers: List[Dict[str, Any]]
-    total_count: Optional[int] = None
-    success: bool = True
-    error: Optional[str] = None
-
-class MicroserviceOfferResponse(BaseModel):
-    offer: Dict[str, Any]
-    success: bool = True
-    error: Optional[str] = None
-
-# Generic response models
-class GenericResponse(BaseModel):
-    data: Dict[str, Any]
-    success: bool = True
-    message: Optional[str] = None
-
-class GenericListResponse(BaseModel):
-    items: List[Dict[str, Any]]
-    total: Optional[int] = None
-    page: Optional[int] = None
-    per_page: Optional[int] = None
-    success: bool = True
+from pydantic import BaseModel, Field, validator
+from uuid import UUID
 
 
 # ===============================================
-# Offer Transfer microservice models
+# Базовые модели
 # ===============================================
+
+class StatusResponse(BaseModel):
+    """Базовый ответ с статусом операции."""
+    success: bool = Field(..., description="Успешность операции")
+    message: str = Field(..., description="Сообщение о результате")
+    details: Optional[Dict[str, Any]] = Field(None, description="Дополнительные детали")
+
 
 class MarketPricingRule(BaseModel):
     """Правило ценообразования для рынка."""
@@ -243,8 +29,12 @@ class MarketPricingRule(BaseModel):
     currency: Optional[str] = Field(None, description="Валюта для правила")
     description: Optional[str] = Field(None, description="Описание правила")
 
-    class Config:
-        from_attributes = True
+    @validator('type')
+    def validate_type(cls, v):
+        allowed_types = ['multiply', 'add', 'convert_with_markup', 'custom']
+        if v not in allowed_types:
+            raise ValueError(f'Тип правила должен быть одним из: {allowed_types}')
+        return v
 
 
 class PricingRuleDTO(BaseModel):
@@ -252,9 +42,10 @@ class PricingRuleDTO(BaseModel):
     market: str = Field(..., description="Код рынка")
     rule: MarketPricingRule = Field(..., description="Правило ценообразования")
 
-    class Config:
-        from_attributes = True
 
+# ===============================================
+# Модели для переноса офферов
+# ===============================================
 
 class OfferTransferRequest(BaseModel):
     """Запрос на перенос оффера."""
@@ -262,9 +53,6 @@ class OfferTransferRequest(BaseModel):
     source_token_id: int = Field(..., description="ID токена исходного аккаунта")
     target_token_id: int = Field(..., description="ID токена целевого аккаунта")
     pricing_rules: Optional[Dict[str, MarketPricingRule]] = Field(None, description="Правила ценообразования")
-
-    class Config:
-        from_attributes = True
 
 
 class MultipleOffersTransferRequest(BaseModel):
@@ -274,9 +62,6 @@ class MultipleOffersTransferRequest(BaseModel):
     target_token_id: int = Field(..., description="ID токена целевого аккаунта")
     pricing_rules: Optional[Dict[str, MarketPricingRule]] = Field(None, description="Правила ценообразования")
 
-    class Config:
-        from_attributes = True
-
 
 class TestTransferRequest(BaseModel):
     """Тестовый запрос на перенос оффера."""
@@ -284,9 +69,6 @@ class TestTransferRequest(BaseModel):
     offer_id: str = Field(..., description="ID оффера для переноса")
     source_token_id: int = Field(..., description="ID токена исходного аккаунта")
     target_token_id: int = Field(..., description="ID токена целевого аккаунта")
-
-    class Config:
-        from_attributes = True
 
 
 class OfferTransferResponse(BaseModel):
@@ -299,9 +81,6 @@ class OfferTransferResponse(BaseModel):
     error: Optional[str] = Field(None, description="Описание ошибки, если есть")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Время создания")
 
-    class Config:
-        from_attributes = True
-
 
 class MultipleOffersTransferResponse(BaseModel):
     """Ответ на запрос массового переноса офферов."""
@@ -311,9 +90,10 @@ class MultipleOffersTransferResponse(BaseModel):
     results: List[OfferTransferResponse] = Field(..., description="Результаты переноса")
     summary: Dict[str, Any] = Field(..., description="Общая сводка")
 
-    class Config:
-        from_attributes = True
 
+# ===============================================
+# Модели для сравнения офферов
+# ===============================================
 
 class CompareOffersRequest(BaseModel):
     """Запрос на сравнение офферов между аккаунтами."""
@@ -321,25 +101,19 @@ class CompareOffersRequest(BaseModel):
     target_token_id: int = Field(..., description="ID токена целевого аккаунта")
     filters: Optional[Dict[str, Any]] = Field(None, description="Фильтры для офферов")
 
-    class Config:
-        from_attributes = True
-
 
 class OfferInfo(BaseModel):
     """Информация об оффере."""
     id: str = Field(..., description="ID оффера")
     external_id: Optional[str] = Field(None, description="Внешний ID оффера")
-    name: Optional[str] = Field(None, description="Название оффера")
-    price: Dict[str, str] = Field(..., description="Цена оффера в формате {'amount': '34.3', 'currency': 'PLN'}")
-    currency: Optional[str] = Field(None, description="Валюта цены (извлекается из price.currency)")
-    stock: Optional[int] = Field(None, description="Доступный остаток")
+    name: str = Field(..., description="Название оффера")
+    price: float = Field(..., description="Цена оффера")
+    currency: str = Field(..., description="Валюта цены")
+    stock: int = Field(..., description="Доступный остаток")
     category: Optional[str] = Field(None, description="Категория оффера")
     images: List[str] = Field(default_factory=list, description="URL изображений")
-    status: Optional[str] = Field(None, description="Статус оффера")
+    status: str = Field(..., description="Статус оффера")
     created_at: Optional[datetime] = Field(None, description="Время создания")
-
-    class Config:
-        from_attributes = True
 
 
 class CompareOffersResponse(BaseModel):
@@ -350,9 +124,10 @@ class CompareOffersResponse(BaseModel):
     total_count: int = Field(..., description="Общее количество доступных офферов")
     comparison_completed_at: datetime = Field(default_factory=datetime.utcnow, description="Время завершения сравнения")
 
-    class Config:
-        from_attributes = True
 
+# ===============================================
+# Модели для сессий переноса
+# ===============================================
 
 class StartTransferRequest(BaseModel):
     """Запрос на запуск сессии переноса."""
@@ -363,9 +138,6 @@ class StartTransferRequest(BaseModel):
     markets: List[str] = Field(..., description="Целевые рынки")
     pricing_rules: Dict[str, MarketPricingRule] = Field(..., description="Правила ценообразования")
     template_name: Optional[str] = Field(None, description="Название использованного шаблона")
-
-    class Config:
-        from_attributes = True
 
 
 class TransferSessionResponse(BaseModel):
@@ -382,9 +154,10 @@ class TransferSessionResponse(BaseModel):
     started_at: Optional[datetime] = Field(None, description="Время запуска")
     completed_at: Optional[datetime] = Field(None, description="Время завершения")
 
-    class Config:
-        from_attributes = True
 
+# ===============================================
+# Модели для шаблонов
+# ===============================================
 
 class TransferTemplate(BaseModel):
     """Шаблон переноса офферов."""
@@ -402,9 +175,10 @@ class TransferTemplate(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.utcnow, description="Время обновления")
     last_used_at: Optional[datetime] = Field(None, description="Время последнего использования")
 
-    class Config:
-        from_attributes = True
 
+# ===============================================
+# Модели для метрик
+# ===============================================
 
 class TransferMetrics(BaseModel):
     """Метрики системы переноса офферов."""
@@ -415,22 +189,9 @@ class TransferMetrics(BaseModel):
     market_distribution: List[Dict[str, Any]] = Field(default_factory=list, description="Распределение по рынкам")
     top_errors: List[Dict[str, Any]] = Field(default_factory=list, description="Топ ошибок")
 
-    class Config:
-        from_attributes = True
-
-
-class StatusResponse(BaseModel):
-    """Базовый ответ с статусом операции."""
-    success: bool = Field(..., description="Успешность операции")
-    message: str = Field(..., description="Сообщение о результате")
-    details: Optional[Dict[str, Any]] = Field(None, description="Дополнительные детали")
-
-    class Config:
-        from_attributes = True
-
 
 # ===============================================
-# Markets microservice models
+# Модели для рынков и валют
 # ===============================================
 
 class MarketInfo(BaseModel):
@@ -438,19 +199,13 @@ class MarketInfo(BaseModel):
     code: str = Field(..., description="Код рынка")
     name: str = Field(..., description="Название рынка")
     currency: str = Field(..., description="Валюта рынка")
-    flag: Optional[str] = Field(None, description="Эмодзи флага")
+    flag: str = Field(..., description="Эмодзи флага")
     exchange_rate: Optional[float] = Field(None, description="Курс обмена к базовой валюте")
-
-    class Config:
-        from_attributes = True
 
 
 class MarketResponse(BaseModel):
     """Ответ со списком рынков."""
     markets: List[MarketInfo] = Field(..., description="Список доступных рынков")
-
-    class Config:
-        from_attributes = True
 
 
 class CurrencyRatesResponse(BaseModel):
@@ -459,18 +214,12 @@ class CurrencyRatesResponse(BaseModel):
     base_currency: str = Field(..., description="Базовая валюта")
     last_updated: datetime = Field(..., description="Время последнего обновления")
 
-    class Config:
-        from_attributes = True
-
 
 class PricingPreviewRequest(BaseModel):
     """Запрос на предварительный расчет цен."""
     offers: List[OfferInfo] = Field(..., description="Список офферов")
     markets: List[str] = Field(..., description="Целевые рынки")
     pricing_rules: Dict[str, MarketPricingRule] = Field(..., description="Правила ценообразования")
-
-    class Config:
-        from_attributes = True
 
 
 class PricingPreviewResponse(BaseModel):
@@ -479,12 +228,9 @@ class PricingPreviewResponse(BaseModel):
     total_offers: int = Field(..., description="Общее количество офферов")
     markets: List[str] = Field(..., description="Целевые рынки")
 
-    class Config:
-        from_attributes = True
-
 
 # ===============================================
-# Monitoring microservice models
+# Модели для мониторинга
 # ===============================================
 
 class MetricsResponse(BaseModel):
@@ -506,9 +252,6 @@ class MetricsResponse(BaseModel):
     avg_api_response_time_ms: float = Field(..., description="Среднее время ответа API (мс)")
     active_websocket_connections: int = Field(..., description="Активные WebSocket соединения")
 
-    class Config:
-        from_attributes = True
-
 
 class SessionStatisticsResponse(BaseModel):
     """Статистика сессий."""
@@ -519,18 +262,12 @@ class SessionStatisticsResponse(BaseModel):
     success_rate_percent: float = Field(..., description="Процент успешных сессий")
     completion_rate_percent: float = Field(..., description="Процент завершенных сессий")
 
-    class Config:
-        from_attributes = True
-
 
 class PerformanceStatisticsResponse(BaseModel):
     """Статистика производительности."""
     processing: Dict[str, Any] = Field(..., description="Статистика времени обработки")
     api: Dict[str, Any] = Field(..., description="Статистика API вызовов")
     offers_per_second: float = Field(..., description="Скорость обработки офферов")
-
-    class Config:
-        from_attributes = True
 
 
 class ErrorAnalysisResponse(BaseModel):
@@ -540,17 +277,11 @@ class ErrorAnalysisResponse(BaseModel):
     error_breakdown: List[Dict[str, Any]] = Field(..., description="Разбивка ошибок")
     unique_error_types: int = Field(..., description="Количество уникальных типов ошибок")
 
-    class Config:
-        from_attributes = True
-
 
 class MarketDistributionResponse(BaseModel):
     """Распределение по рынкам."""
     total_operations: int = Field(..., description="Общее количество операций")
     distribution: List[Dict[str, Any]] = Field(..., description="Распределение по рынкам")
-
-    class Config:
-        from_attributes = True
 
 
 class SystemHealthResponse(BaseModel):
@@ -560,5 +291,22 @@ class SystemHealthResponse(BaseModel):
     checks: Dict[str, Dict[str, Any]] = Field(..., description="Результаты проверок")
     overall_score: float = Field(..., description="Общая оценка здоровья (0-100)")
 
-    class Config:
-        from_attributes = True
+
+# ===============================================
+# Модели для WebSocket
+# ===============================================
+
+class WebSocketMessage(BaseModel):
+    """Сообщение WebSocket."""
+    type: str = Field(..., description="Тип сообщения")
+    data: Dict[str, Any] = Field(..., description="Данные сообщения")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Время отправки")
+
+
+class SessionUpdateMessage(BaseModel):
+    """Сообщение об обновлении сессии."""
+    session_id: str = Field(..., description="ID сессии")
+    status: str = Field(..., description="Новый статус")
+    progress: float = Field(..., description="Прогресс выполнения")
+    message: str = Field(..., description="Сообщение об обновлении")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Время обновления")

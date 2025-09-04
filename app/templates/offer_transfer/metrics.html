@@ -1,0 +1,126 @@
+{% extends "offer_transfer/base.html" %}
+
+{% block page_title %}Метрики - Перенос офферов Allegro{% endblock %}
+
+{% block offer_transfer_content %}
+<div class="max-w-6xl mx-auto">
+    <!-- Заголовок -->
+    <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-4">Системные метрики</h1>
+        <p class="text-lg text-gray-600">Мониторинг производительности и статистика системы переноса офферов</p>
+    </div>
+
+    <!-- Общая статистика -->
+    <div class="bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 p-6 mb-6">
+        <h2 class="text-xl font-semibold text-gray-900 mb-6">Общая статистика</h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div class="text-center">
+                <div class="text-3xl font-bold text-blue-500">{{ metrics.active_sessions }}</div>
+                <div class="text-sm text-gray-500">Активные сессии</div>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl font-bold text-green-500">{{ metrics.total_processed_offers }}</div>
+                <div class="text-sm text-gray-500">Обработано офферов</div>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl font-bold text-yellow-500">{{ metrics.success_rate }}%</div>
+                <div class="text-sm text-gray-500">Успешность</div>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl font-bold text-purple-500">{{ metrics.average_processing_time }}с</div>
+                <div class="text-sm text-gray-500">Среднее время</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Распределение по рынкам -->
+        <div class="bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 p-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Распределение по рынкам</h3>
+            
+            <div class="space-y-4">
+                {% for market_data in metrics.market_distribution %}
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <span class="text-sm font-medium text-gray-900 w-8">{{ market_data.market }}</span>
+                        <div class="flex-1">
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div class="bg-blue-500 h-2 rounded-full transition-all duration-300" 
+                                     style="width: {{ market_data.percentage }}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-sm font-semibold text-gray-900">{{ market_data.count }}</div>
+                        <div class="text-xs text-gray-500">{{ market_data.percentage }}%</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Топ ошибок -->
+        <div class="bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 p-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Топ ошибок</h3>
+            
+            <div class="space-y-4">
+                {% for error_data in metrics.top_errors %}
+                <div class="flex items-center justify-between">
+                    <div class="flex-1">
+                        <div class="text-sm font-medium text-gray-900">{{ error_data.error }}</div>
+                        <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                            <div class="bg-red-500 h-2 rounded-full transition-all duration-300" 
+                                 style="width: {{ error_data.percentage }}%"></div>
+                        </div>
+                    </div>
+                    <div class="text-right ml-4">
+                        <div class="text-sm font-semibold text-gray-900">{{ error_data.count }}</div>
+                        <div class="text-xs text-gray-500">{{ error_data.percentage }}%</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Автообновление -->
+    <div class="mt-6 text-center">
+        <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <p class="text-sm text-blue-700">
+                        Метрики автоматически обновляются каждые 30 секунд
+                        <span id="countdown" class="font-semibold"></span>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Автообновление метрик каждые 30 секунд
+let countdown = 30;
+const countdownElement = document.getElementById('countdown');
+
+function updateCountdown() {
+    countdownElement.textContent = `(обновление через ${countdown}с)`;
+    countdown--;
+    
+    if (countdown < 0) {
+        // Перезагружаем страницу для получения новых данных
+        window.location.reload();
+    }
+}
+
+// Запускаем обратный отсчет
+setInterval(updateCountdown, 1000);
+updateCountdown();
+</script>
+{% endblock %}

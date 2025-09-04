@@ -1,0 +1,525 @@
+<script>
+let searchTimeout;
+let currentFilters = {
+    search: '{{ filters.search }}',
+    stock_filter: {{ filters.stock_filter or 'null' }},
+    min_stock_filter: {{ filters.min_stock_filter or 'null' }},
+    brand_filter: '{{ filters.brand_filter }}',
+    sort_order: '{{ filters.sort_order }}',
+    page_size: {{ filters.page_size }}
+};
+
+// Функция для переключения слайдера фильтров
+function toggleFilterSlider() {
+    const slider = document.getElementById('filterSlider');
+    const toggleBtn = document.getElementById('filterToggleBtn');
+    
+    if (slider.classList.contains('translate-y-full')) {
+        // Открываем слайдер
+        slider.classList.remove('translate-y-full');
+        toggleBtn.classList.add('hidden');
+    } else {
+        // Закрываем слайдер
+        slider.classList.add('translate-y-full');
+        toggleBtn.classList.remove('hidden');
+    }
+}
+
+// Функция для сброса фильтров
+function resetFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('minStockFilter').value = '';
+    document.getElementById('stockFilter').value = '';
+    document.getElementById('brandFilter').value = '';
+    document.getElementById('sortOrder').value = '';
+    document.getElementById('pageSize').value = '50';
+    
+    // Обновляем текущие фильтры
+    currentFilters = {
+        search: '',
+        stock_filter: null,
+        min_stock_filter: null,
+        brand_filter: '',
+        sort_order: '',
+        page_size: 50
+    };
+}
+
+// Функция для применения фильтров
+function applyFilters() {
+    handleFilterChange();
+    toggleFilterSlider(); // Закрываем слайдер после применения
+}
+
+// Функция для обработки изменений фильтров
+async function handleFilterChange() {
+    clearTimeout(searchTimeout);
+    
+    searchTimeout = setTimeout(async () => {
+        try {
+            // Получаем значения фильтров
+            const search = document.getElementById('searchInput').value.trim();
+            const pageSize = document.getElementById('pageSize').value;
+            const stockFilterValue = document.getElementById('stockFilter').value.trim();
+            const minStockFilterValue = document.getElementById('minStockFilter').value.trim();
+            const brandFilter = document.getElementById('brandFilter').value;
+            const sortOrder = document.getElementById('sortOrder').value;
+            
+            // Обновляем текущие фильтры
+            currentFilters = {
+                search,
+                page_size: parseInt(pageSize),
+                stock_filter: stockFilterValue ? parseInt(stockFilterValue) : null,
+                min_stock_filter: minStockFilterValue ? parseInt(minStockFilterValue) : null,
+                brand_filter: brandFilter,
+                sort_order: sortOrder
+            };
+            
+            // Формируем параметры запроса
+            const params = new URLSearchParams();
+            
+            if (search) params.append('search', search);
+            if (pageSize) params.append('page_size', pageSize);
+            params.append('page', '1');
+            
+            if (stockFilterValue !== '' && !isNaN(parseInt(stockFilterValue))) {
+                params.append('stock_filter', parseInt(stockFilterValue).toString());
+            }
+            
+            if (minStockFilterValue !== '' && !isNaN(parseInt(minStockFilterValue))) {
+                params.append('min_stock_filter', parseInt(minStockFilterValue).toString());
+            }
+            
+            if (brandFilter) params.append('brand_filter', brandFilter);
+            if (sortOrder) params.append('sort_order', sortOrder);
+            
+            const queryString = params.toString();
+            console.log('Сформированный URL:', `/catalog/api/products?${queryString}`);
+            
+            // Отправляем запрос
+            const response = await fetch(`/catalog/api/products?${queryString}`, {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Ошибка при получении данных: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (!data || !Array.isArray(data.products)) {
+                throw new Error('Некорректный формат данных');
+            }
+            
+            // Обновляем список товаров
+            const productsList = document.getElementById('productsList');
+            if (productsList) {
+                productsList.innerHTML = data.products.map(item => item.html).join('');
+            }
+            
+            // Обновляем пагинацию
+            if (typeof data.page === 'number' && typeof data.total === 'number' && typeof data.page_size === 'number') {
+                updatePagination(data.page, Math.ceil(data.total / data.page_size));
+            }
+            
+            // Обновляем счетчик результатов
+            const resultsCount = document.getElementById('resultsCount');
+            if (resultsCount) {
+                resultsCount.textContent = data.total || 0;
+            }
+            
+            // Обновляем состояние пустого результата
+            const emptyState = document.getElementById('emptyState');
+            if (emptyState) {
+                if (!data.products || data.products.length === 0) {
+                    emptyState.classList.remove('hidden');
+                    productsList?.classList.add('hidden');
+                } else {
+                    emptyState.classList.add('hidden');
+                    productsList?.classList.remove('hidden');
+                }
+            }
+            
+            // Обновляем URL без перезагрузки страницы
+            const newUrl = `/catalog?${queryString}`;
+            window.history.pushState({}, '', newUrl);
+            
+        } catch (error) {
+            console.error('Ошибка при фильтрации:', error);
+            showNotification('Произошла ошибка при фильтрации товаров: ' + error.message, 'error');
+        }
+    }, 300);
+}
+
+// Функция для обновления пагинации
+function updatePagination(currentPage, totalPages) {
+    const nav = document.querySelector('[aria-label="Pagination"]');
+    if (!nav) return;
+    
+    let html = '<ul class="inline-flex items-center -space-x-px rounded-md shadow-sm">';
+    
+    // Кнопка "Назад"
+    if (currentPage > 1) {
+        html += `
+            <li>
+                <a href="javascript:void(0)" onclick="goToPage(${currentPage - 1})"
+                   class="relative inline-flex items-center rounded-l-md px-3 py-2 text-sm font-medium text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0">
+                    <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    </svg>
+                </a>
+            </li>`;
+    }
+    
+    // Номера страниц
+    for (let i = 1; i <= totalPages; i++) {
+        html += `
+            <li>
+                <a href="javascript:void(0)" onclick="goToPage(${i})"
+                   class="relative inline-flex items-center px-4 py-2 text-sm font-medium ${i === currentPage 
+                       ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
+                       : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'}">
+                    ${i}
+                </a>
+            </li>`;
+    }
+    
+    // Кнопка "Вперед"
+    if (currentPage < totalPages) {
+        html += `
+            <li>
+                <a href="javascript:void(0)" onclick="goToPage(${currentPage + 1})"
+                   class="relative inline-flex items-center rounded-r-md px-3 py-2 text-sm font-medium text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0">
+                    <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                    </svg>
+                </a>
+            </li>`;
+    }
+    
+    html += '</ul>';
+    nav.innerHTML = html;
+}
+
+// Функция для перехода на страницу
+async function goToPage(page) {
+    try {
+        const params = new URLSearchParams();
+        params.append('page', page);
+        
+        // Добавляем текущие фильтры
+        if (currentFilters.search) params.append('search', currentFilters.search);
+        if (currentFilters.page_size) params.append('page_size', currentFilters.page_size);
+        if (currentFilters.stock_filter) params.append('stock_filter', currentFilters.stock_filter);
+        if (currentFilters.min_stock_filter) params.append('min_stock_filter', currentFilters.min_stock_filter);
+        if (currentFilters.brand_filter) params.append('brand_filter', currentFilters.brand_filter);
+        if (currentFilters.sort_order) params.append('sort_order', currentFilters.sort_order);
+        
+        const response = await fetch(`/catalog/api/products?${params.toString()}`, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Ошибка при получении данных');
+        }
+        
+        const data = await response.json();
+        
+        if (!data || !Array.isArray(data.products)) {
+            throw new Error('Некорректный формат данных');
+        }
+        
+        // Обновляем список товаров
+        const productsList = document.getElementById('productsList');
+        if (productsList) {
+            productsList.innerHTML = data.products.map(item => item.html).join('');
+        }
+        
+        // Обновляем пагинацию
+        if (typeof data.page === 'number' && typeof data.total === 'number' && typeof data.page_size === 'number') {
+            updatePagination(data.page, Math.ceil(data.total / data.page_size));
+        }
+        
+        // Обновляем счетчик результатов
+        const resultsCount = document.getElementById('resultsCount');
+        if (resultsCount) {
+            resultsCount.textContent = data.total || 0;
+        }
+        
+        // Обновляем URL
+        const newUrl = `/catalog?${params.toString()}`;
+        window.history.pushState({}, '', newUrl);
+        
+    } catch (error) {
+        console.error('Ошибка при переходе на страницу:', error);
+        showNotification('Произошла ошибка при загрузке страницы: ' + error.message, 'error');
+    }
+}
+
+// Функция для обновления состояния кнопки экспорта
+function updateExportButton() {
+    const selectedProducts = document.querySelectorAll('input[name="selected_products"]:checked');
+    const exportButton = document.getElementById('exportSelected');
+    const exportCount = document.getElementById('exportCount');
+    
+    if (selectedProducts.length > 0) {
+        exportButton.disabled = false;
+        exportCount.textContent = `(${selectedProducts.length})`;
+        exportCount.classList.remove('hidden');
+    } else {
+        exportButton.disabled = true;
+        exportCount.classList.add('hidden');
+    }
+}
+
+// Функция выбора всех товаров
+function selectAllProducts() {
+    const checkboxes = document.querySelectorAll('input[name="selected_products"]');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = true;
+        const card = checkbox.closest('.product-card');
+        if (card) {
+            card.classList.add('selected');
+        }
+    });
+    updateExportButton();
+}
+
+// Функция снятия выделения со всех товаров
+function deselectAllProducts() {
+    const checkboxes = document.querySelectorAll('input[name="selected_products"]');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = false;
+        const card = checkbox.closest('.product-card');
+        if (card) {
+            card.classList.remove('selected');
+        }
+    });
+    updateExportButton();
+}
+
+// Функция для экспорта выбранных товаров
+async function exportSelectedProducts(event) {
+    if (event) {
+        event.preventDefault();
+    }
+    
+    const exportButton = document.getElementById('exportSelected');
+    if (exportButton.disabled) {
+        return;
+    }
+    
+    const selectedProducts = document.querySelectorAll('input[name="selected_products"]:checked');
+    const skus = Array.from(selectedProducts).map(checkbox => checkbox.value);
+    
+    if (skus.length === 0) {
+        showNotification('Выберите товары для экспорта', 'warning');
+        return;
+    }
+    
+    try {
+        exportButton.disabled = true;
+        
+        const queryParams = new URLSearchParams();
+        skus.forEach(sku => queryParams.append('skus', sku));
+        const response = await fetch(`/api/warehouse/export/stock-with-sales/?${queryParams.toString()}`, {
+            method: 'GET'
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка при экспорте товаров');
+        }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'products_export.xlsx';
+        
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        setTimeout(() => {
+            window.URL.revokeObjectURL(url);
+        }, 100);
+        
+        showNotification('Экспорт успешно завершен', 'success');
+    } catch (error) {
+        console.error('Ошибка при экспорте:', error);
+        showNotification('Произошла ошибка при экспорте товаров', 'error');
+    } finally {
+        exportButton.disabled = false;
+    }
+}
+
+// Функция для обработки изменения состояния чекбокса
+function handleCheckboxChange(checkbox) {
+    const card = checkbox.closest('.product-card');
+    if (card) {
+        if (checkbox.checked) {
+            card.classList.add('selected');
+        } else {
+            card.classList.remove('selected');
+        }
+    }
+    updateExportButton();
+}
+
+// Функция для загрузки списка брендов
+async function loadBrands() {
+    try {
+        const response = await fetch('/catalog/api/brands');
+        if (!response.ok) {
+            throw new Error('Ошибка при загрузке брендов');
+        }
+        
+        const data = await response.json();
+        const brands = data.brands || [];
+        
+        const brandSelect = document.getElementById('brandFilter');
+        if (brandSelect) {
+            // Очищаем текущие опции (кроме "Все бренды")
+            const defaultOption = brandSelect.querySelector('option[value=""]');
+            brandSelect.innerHTML = '';
+            if (defaultOption) {
+                brandSelect.appendChild(defaultOption);
+            } else {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'Все бренды';
+                brandSelect.appendChild(option);
+            }
+            
+            // Добавляем бренды
+            brands.forEach(brand => {
+                const option = document.createElement('option');
+                option.value = brand;
+                option.textContent = brand;
+                brandSelect.appendChild(option);
+            });
+            
+            // Устанавливаем выбранное значение если есть
+            if (currentFilters.brand_filter) {
+                brandSelect.value = currentFilters.brand_filter;
+            }
+        }
+    } catch (error) {
+        console.error('Ошибка при загрузке брендов:', error);
+    }
+}
+
+// Инициализация при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOMContentLoaded event fired');
+    
+    // Добавляем обработчики для кнопок выбора
+    const selectAllBtn = document.getElementById('selectAll');
+    const deselectAllBtn = document.getElementById('deselectAll');
+    const exportBtn = document.getElementById('exportSelected');
+    
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('click', selectAllProducts);
+    }
+    if (deselectAllBtn) {
+        deselectAllBtn.addEventListener('click', deselectAllProducts);
+    }
+    if (exportBtn) {
+        exportBtn.addEventListener('click', exportSelectedProducts);
+    }
+    
+    // Добавляем обработчики для чекбоксов
+    document.addEventListener('change', function(e) {
+        if (e.target.matches('input[name="selected_products"]')) {
+            handleCheckboxChange(e.target);
+        }
+    });
+    
+    // Инициализация состояния при загрузке
+    deselectAllProducts();
+    updateExportButton();
+    
+    // Загружаем список брендов
+    loadBrands();
+    
+    // Закрытие слайдера по клику вне его
+    document.addEventListener('click', function(e) {
+        const slider = document.getElementById('filterSlider');
+        const toggleBtn = document.getElementById('filterToggleBtn');
+        
+        if (!slider.contains(e.target) && !toggleBtn.contains(e.target)) {
+            if (!slider.classList.contains('translate-y-full')) {
+                slider.classList.add('translate-y-full');
+                toggleBtn.classList.remove('hidden');
+            }
+        }
+    });
+    
+    // Закрытие слайдера по нажатию Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            const slider = document.getElementById('filterSlider');
+            const toggleBtn = document.getElementById('filterToggleBtn');
+            
+            if (!slider.classList.contains('translate-y-full')) {
+                slider.classList.add('translate-y-full');
+                toggleBtn.classList.remove('hidden');
+            }
+        }
+    });
+});
+
+// Функция для показа уведомлений
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.textContent = message;
+    
+    let bgColor = 'bg-blue-600';
+    if (type === 'success') bgColor = 'bg-green-600';
+    if (type === 'error') bgColor = 'bg-red-600';
+    if (type === 'warning') bgColor = 'bg-yellow-600';
+    
+    notification.className = `fixed top-4 right-4 ${bgColor} text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-opacity duration-300`;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 300);
+    }, 3000);
+}
+
+// Добавляем стили для выделенных карточек товаров
+const style = document.createElement('style');
+style.textContent = `
+    .product-card.selected {
+        background-color: rgba(59, 130, 246, 0.1);
+        border-color: #3b82f6;
+    }
+    
+    /* Анимация для слайдера фильтров */
+    #filterSlider {
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    /* Стили для кнопки переключения */
+    #filterToggleBtn {
+        transition: all 0.3s ease;
+    }
+    
+    #filterToggleBtn:hover {
+        transform: scale(1.1);
+    }
+`;
+document.head.appendChild(style);
+</script>
