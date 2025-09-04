@@ -337,8 +337,15 @@ def validate_pending_operations(self, limit: int = 100):
                     if not operation.line_items:
                         continue
                     item = operation.line_items[0]
+                    if not item or not isinstance(item, dict):
+                        continue
                     sku = item.get("offer", {}).get("external", {}).get("id")
                     required_quantity = item.get("quantity")
+                    
+                    # Проверяем, что у нас есть необходимые данные
+                    if not sku or not required_quantity:
+                        continue
+                        
                     validation_result = validation_service.validate_stock_deduction(
                         sku=sku,
                         warehouse=operation.warehouse,
@@ -422,3 +429,85 @@ def register_stock_sync_tasks():
     }
     
     return STOCK_SYNC_SCHEDULE
+
+
+@celery.task(
+    bind=True,
+    name="app.services.stock_sync_tasks.fix_null_account_names"
+)
+def fix_null_account_names(self, limit: int = 100):
+    """
+    Исправляет Unknown значения account_name в существующих операциях.
+    
+    Args:
+        limit: Максимальное количество операций для обработки за раз
+        
+    Returns:
+        Dict: Результат обработки
+    """
+    try:
+        from app.models.stock_synchronization import PendingStockOperation
+        from sqlmodel import select
+        
+        with get_celery_session() as session:
+            # Создаем JWT токен для работы с микросервисом
+            jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
+            tokens_client = AllegroTokenMicroserviceClient(
+                jwt_token=jwt_token,
+                base_url=settings.MICRO_SERVICE_URL
+            )
+            
+            # Находим операции с Unknown account_name
+            statement = select(PendingStockOperation).where(
+                PendingStockOperation.account_name.like('Unknown(%')
+            ).limit(limit)
+            
+            operations = session.exec(statement).all()
+            
+            updated_count = 0
+            failed_count = 0
+            
+            for operation in operations:
+                try:
+                    # Получаем имя аккаунта из микросервиса
+                    token_response = tokens_client.get_token(UUID(operation.token_id))
+                    
+                    if token_response and hasattr(token_response, 'account_name') and token_response.account_name:
+                        account_name = token_response.account_name
+                    else:
+                        account_name = f"Unknown({operation.token_id})"
+                    
+                    # Обновляем операцию
+                    operation.account_name = account_name
+                    session.add(operation)
+                    updated_count += 1
+                    
+                    logger.info(f"Обновлена операция {operation.id}: account_name = '{account_name}'")
+                    
+                except Exception as e:
+                    failed_count += 1
+                    logger.error(f"Ошибка обновления операции {operation.id}: {e}")
+                    
+                    # Устанавливаем fallback значение
+                    operation.account_name = f"Unknown({operation.token_id})"
+                    session.add(operation)
+            
+            session.commit()
+            
+            logger.info(f"Исправлено {updated_count} операций, ошибок: {failed_count}")
+            
+            return {
+                "status": "success",
+                "updated_count": updated_count,
+                "failed_count": failed_count,
+                "total_processed": len(operations),
+                "task_id": self.request.id
+            }
+            
+    except Exception as e:
+        logger.error(f"Ошибка при исправлении account_names: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "task_id": self.request.id
+        }

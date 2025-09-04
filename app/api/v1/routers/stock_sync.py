@@ -627,6 +627,104 @@ async def validate_stock_availability(
         )
 
 
+@router.post("/operations/fix-account-names", summary="Исправление Unknown account_name")
+async def fix_null_account_names(
+    limit: int = Query(100, ge=1, le=500, description="Максимальное количество операций для обработки"),
+    dry_run: bool = Query(True, description="Режим предварительного просмотра"),
+    sync_service: StockSynchronizationService = Depends(get_sync_service),
+    current_user: User = Depends(get_current_user_optional)
+):
+    """
+    Исправляет Unknown значения account_name в существующих операциях.
+    
+    Returns:
+        Dict: Результат исправления
+    """
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required"
+        )
+    
+    try:
+        from app.models.stock_synchronization import PendingStockOperation
+        from sqlmodel import select
+        
+        # Находим операции с Unknown account_name
+        statement = select(PendingStockOperation).where(
+            PendingStockOperation.account_name.like('Unknown(%')
+        ).limit(limit)
+        
+        operations = sync_service.session.exec(statement).all()
+        
+        if not operations:
+            return {
+                "status": "success",
+                "message": "Нет операций с Unknown account_name",
+                "updated_count": 0,
+                "failed_count": 0,
+                "total_found": 0
+            }
+        
+        updated_count = 0
+        failed_count = 0
+        updates_preview = []
+        
+        for operation in operations:
+            try:
+                # Получаем имя аккаунта
+                account_name = sync_service._get_account_name_by_token_id(operation.token_id)
+                
+                update_info = {
+                    "operation_id": str(operation.id),
+                    "order_id": operation.order_id,
+                    "token_id": operation.token_id,
+                    "current_account_name": operation.account_name,
+                    "new_account_name": account_name
+                }
+                updates_preview.append(update_info)
+                
+                if not dry_run:
+                    # Обновляем операцию
+                    operation.account_name = account_name
+                    sync_service.session.add(operation)
+                
+                updated_count += 1
+                
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"Ошибка обработки операции {operation.id}: {e}")
+                
+                update_info = {
+                    "operation_id": str(operation.id),
+                    "order_id": operation.order_id,
+                    "token_id": operation.token_id,
+                    "current_account_name": operation.account_name,
+                    "error": str(e)
+                }
+                updates_preview.append(update_info)
+        
+        if not dry_run:
+            sync_service.session.commit()
+        
+        return {
+            "status": "success",
+            "dry_run": dry_run,
+            "updated_count": updated_count,
+            "failed_count": failed_count,
+            "total_found": len(operations),
+            "updates_preview": updates_preview[:10],  # Показываем только первые 10 для предварительного просмотра
+            "message": f"{'Предварительный просмотр' if dry_run else 'Обновлено'}: {updated_count} операций"
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка исправления account_names: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка исправления: {str(e)}"
+        )
+
+
 @router.get("/statistics", summary="Детальная статистика")
 async def get_detailed_statistics(
     days: int = Query(7, ge=1, le=90, description="Количество дней для статистики"),

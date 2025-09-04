@@ -66,10 +66,25 @@ class StockSynchronizationService:
     def _get_account_name_by_token_id(self, token_id: str) -> str:
         """Получение имени аккаунта по token_id из микросервиса."""
         try:
+            self.logger.debug(f"Getting account name for token_id: {token_id}")
             token_response = self.tokens_client.get_token(UUID(token_id))
-            if token_response and hasattr(token_response, 'account_name'):
-                return token_response.account_name
-            return f"Unknown({token_id})"
+            
+            if not token_response:
+                self.logger.warning(f"No token response for token_id: {token_id}")
+                return f"Unknown({token_id})"
+            
+            if not hasattr(token_response, 'account_name'):
+                self.logger.warning(f"Token response has no account_name attribute for token_id: {token_id}")
+                return f"Unknown({token_id})"
+            
+            account_name = token_response.account_name
+            if not account_name:
+                self.logger.warning(f"Empty account_name for token_id: {token_id}")
+                return f"Unknown({token_id})"
+            
+            self.logger.debug(f"Successfully got account name '{account_name}' for token_id: {token_id}")
+            return account_name
+            
         except Exception as e:
             self.logger.warning(f"Failed to get account name for token {token_id}: {e}")
             return f"Unknown({token_id})"
@@ -98,6 +113,11 @@ class StockSynchronizationService:
             
             # Берем первый заказ (должен быть только один)
             order_data = order_response.orders[0]
+            
+            # Проверяем, что order_data не None и является словарем
+            if not order_data or not isinstance(order_data, dict):
+                self.logger.warning(f"Некорректные данные заказа {order_id} в микросервисе")
+                return None
             
             # Извлекаем технические флаги
             technical_flags = order_data.get("technical_flags", {})
@@ -611,7 +631,10 @@ class StockSynchronizationService:
         account_name = self._get_account_name_by_token_id(operation.token_id)
         
         # Создаем поддельный order_data для валидации
-        order_data = {"lineItems": operation.line_items}
+        order_data = {
+            "id": operation.order_id,
+            "lineItems": operation.line_items
+        }
         
         # Логируем начало валидации
         self.standardized_logger.log_stock_validation_started(
@@ -732,6 +755,9 @@ class StockSynchronizationService:
             products_data = []
             
             for item in operation.line_items:
+                if not item or not isinstance(item, dict):
+                    continue
+                    
                 offer = item.get('offer', {})
                 external = offer.get('external', {})
                 sku = external.get('id')
@@ -849,7 +875,7 @@ class StockSynchronizationService:
         
         for operation in operations:
             result.processed += 1
-            account_name = self._get_account_name_by_token_id(operation.token_id)
+            account_name = operation.account_name or self._get_account_name_by_token_id(operation.token_id)
             
             # Увеличиваем счетчик попыток
             operation.retry_count += 1

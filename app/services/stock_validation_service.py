@@ -157,6 +157,9 @@ class StockValidationService:
         
         # Валидируем каждую позицию заказа
         for line_item in line_items:
+            if not line_item or not isinstance(line_item, dict):
+                continue
+                
             sku = line_item.get("offer", {}).get("external", {}).get("id")
             quantity = int(line_item.get("quantity", 1))
             offer_name = line_item.get("offer", {}).get("name", "")
