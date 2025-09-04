@@ -87,6 +87,12 @@ class StockSynchronizationService:
             
         except Exception as e:
             self.logger.warning(f"Failed to get account name for token {token_id}: {e}")
+            # Отправляем критическое уведомление если не можем получить имя аккаунта
+            self.notification_service.notify_custom_alert(
+                title="КРИТИЧНО: Ошибка получения имени аккаунта",
+                details=f"Не удалось получить имя аккаунта для token_id: {token_id}\nОшибка: {str(e)}\nМетод: _get_account_name_by_token_id",
+                priority="critical"
+            )
             return f"Unknown({token_id})"
     
     def _check_order_status_in_microservice(self, token_id: str, order_id: str) -> Dict[str, Any]:
@@ -874,11 +880,12 @@ class StockSynchronizationService:
         self.logger.info(f"Found {len(operations)} operations to process")
         
         for operation in operations:
-            result.processed += 1
-            account_name = operation.account_name or self._get_account_name_by_token_id(operation.token_id)
-            
-            # Увеличиваем счетчик попыток
-            operation.retry_count += 1
+            try:
+                result.processed += 1
+                account_name = operation.account_name or self._get_account_name_by_token_id(operation.token_id)
+                
+                # Увеличиваем счетчик попыток
+                operation.retry_count += 1
             
             # Если операция в PENDING - нужно выполнить списание
             if operation.status == OperationStatus.PENDING:
@@ -1312,6 +1319,70 @@ class StockSynchronizationService:
                 # Операция не в STOCK_DEDUCTED - просто коммитим изменения
                 operation.updated_at = datetime.utcnow()
                 self.session.commit()
+                
+            except Exception as e:
+                # Обработка критических ошибок при обработке операции
+                result.failed += 1
+                
+                try:
+                    # Пытаемся получить account_name для логирования
+                    account_name = operation.account_name or f"Unknown({operation.token_id})"
+                except:
+                    account_name = "Unknown"
+                
+                error_message = f"Критическая ошибка при обработке операции: {str(e)}"
+                
+                # Логируем ошибку
+                self.logger.error(f"Critical error processing operation {operation.id}: {e}", exc_info=True)
+                
+                try:
+                    # Пытаемся обновить операцию с информацией об ошибке
+                    operation.error_message = error_message
+                    operation.updated_at = datetime.utcnow()
+                    
+                    # Планируем повторную попытку если не достигнут лимит
+                    if operation.retry_count < self.config.max_retries:
+                        delay = min(
+                            self.config.retry_initial_delay * (self.config.retry_exponential_base ** operation.retry_count),
+                            self.config.retry_max_delay
+                        )
+                        operation.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
+                    else:
+                        operation.status = OperationStatus.FAILED
+                        result.max_retries_reached += 1
+                    
+                    self.session.commit()
+                    
+                    # Логируем через стандартизированный логгер
+                    self.standardized_logger.log_error_with_context(
+                        operation_id=operation.id,
+                        error=e,
+                        context={
+                            "method": "process_pending_operations",
+                            "operation_status": operation.status,
+                            "retry_count": operation.retry_count,
+                            "account_name": account_name
+                        }
+                    )
+                    
+                except Exception as commit_error:
+                    # Если даже коммит не удался, логируем это
+                    self.logger.error(f"Failed to commit error state for operation {operation.id}: {commit_error}")
+                
+                # Добавляем детали об ошибке в результат
+                result.details.append({
+                    "operation_id": str(operation.id),
+                    "account_name": account_name,
+                    "order_id": getattr(operation, 'order_id', 'unknown'),
+                    "retry_count": getattr(operation, 'retry_count', 0),
+                    "status": getattr(operation, 'status', 'unknown'),
+                    "success": False,
+                    "error_type": "critical_processing_error",
+                    "error_message": error_message
+                })
+                
+                # Продолжаем обработку следующих операций
+                continue
         
         self.logger.info(f"Processed {result.processed} operations: {result.succeeded} succeeded, {result.failed} failed, {result.max_retries_reached} max retries reached")
         return result

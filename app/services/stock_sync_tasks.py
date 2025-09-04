@@ -64,22 +64,43 @@ def process_pending_stock_operations(self, limit: int = 50):
             )
             
             # Обрабатываем pending операции
-            result = sync_service.process_pending_operations(limit=limit)
-            
-            # Отправляем уведомление о результате
-            if result.processed > 0:
-                stock_sync_notifications.notify_processing_summary(result)
-            
-            logger.info(f"Обработано {result.processed} операций: {result.succeeded} успешно, {result.failed} неудачно")
-            
-            return {
-                "status": "success",
-                "processed": result.processed,
-                "succeeded": result.succeeded,
-                "failed": result.failed,
-                "max_retries_reached": result.max_retries_reached,
-                "task_id": self.request.id
-            }
+            try:
+                result = sync_service.process_pending_operations(limit=limit)
+                
+                # Отправляем уведомление о результате
+                if result.processed > 0:
+                    stock_sync_notifications.notify_processing_summary(result)
+                
+                logger.info(f"Обработано {result.processed} операций: {result.succeeded} успешно, {result.failed} неудачно")
+                
+                return {
+                    "status": "success",
+                    "processed": result.processed,
+                    "succeeded": result.succeeded,
+                    "failed": result.failed,
+                    "max_retries_reached": result.max_retries_reached,
+                    "task_id": self.request.id
+                }
+                
+            except Exception as processing_error:
+                logger.error(f"Критическая ошибка в process_pending_operations: {processing_error}", exc_info=True)
+                
+                # Отправляем уведомление об ошибке
+                stock_sync_notifications.notify_custom_alert(
+                    title="Критическая ошибка обработки операций",
+                    details=f"Процесс обработки pending операций упал с ошибкой: {str(processing_error)}",
+                    priority="critical"
+                )
+                
+                return {
+                    "status": "error",
+                    "error": str(processing_error),
+                    "processed": 0,
+                    "succeeded": 0,
+                    "failed": 0,
+                    "max_retries_reached": 0,
+                    "task_id": self.request.id
+                }
             
     except Exception as e:
         logger.error(f"Ошибка при обработке pending операций: {e}")
