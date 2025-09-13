@@ -1,61 +1,67 @@
 <script>
-let searchTimeout;
-let currentFilters = {
-    search: '{{ filters.search }}',
-    stock_filter: {{ filters.stock_filter or 'null' }},
-    min_stock_filter: {{ filters.min_stock_filter or 'null' }},
-    brand_filter: '{{ filters.brand_filter }}',
-    sort_order: '{{ filters.sort_order }}',
-    page_size: {{ filters.page_size }}
-};
+    // Версия скрипта для принудительного обновления кэша
+    console.log('Catalog scripts loaded - version 2025-01-19-v12 - Simplified interaction');
 
-// Функция для переключения слайдера фильтров
-function toggleFilterSlider() {
-    const slider = document.getElementById('filterSlider');
-    const toggleBtn = document.getElementById('filterToggleBtn');
-    
-    if (slider.classList.contains('translate-y-full')) {
-        // Открываем слайдер
-        slider.classList.remove('translate-y-full');
-        toggleBtn.classList.add('hidden');
-    } else {
-        // Закрываем слайдер
-        slider.classList.add('translate-y-full');
-        toggleBtn.classList.remove('hidden');
-    }
-}
-
-// Функция для сброса фильтров
-function resetFilters() {
-    document.getElementById('searchInput').value = '';
-    document.getElementById('minStockFilter').value = '';
-    document.getElementById('stockFilter').value = '';
-    document.getElementById('brandFilter').value = '';
-    document.getElementById('sortOrder').value = '';
-    document.getElementById('pageSize').value = '50';
-    
-    // Обновляем текущие фильтры
-    currentFilters = {
-        search: '',
-        stock_filter: null,
-        min_stock_filter: null,
-        brand_filter: '',
-        sort_order: '',
-        page_size: 50
+    let searchTimeout;
+    let currentFilters = {
+        search: '{{ filters.search }}',
+        stock_filter: '{{ filters.stock_filter or "null" }}',
+        min_stock_filter: '{{ filters.min_stock_filter or "null" }}',
+        brand_filter: '{{ filters.brand_filter }}',
+        sort_order: '{{ filters.sort_order }}',
+        page_size: '{{ filters.page_size }}'
     };
-}
 
-// Функция для применения фильтров
-function applyFilters() {
-    handleFilterChange();
-    toggleFilterSlider(); // Закрываем слайдер после применения
-}
+    // Универсальная функция для переключения фильтров
+    function toggleUniversalFilters() {
+        // Всегда используем основные фильтры (они всплывают на всю страницу)
+        toggleFilterSlider();
+    }
 
-// Функция для обработки изменений фильтров
-async function handleFilterChange() {
-    clearTimeout(searchTimeout);
-    
-    searchTimeout = setTimeout(async () => {
+    // Функция для переключения слайдера фильтров
+    function toggleFilterSlider() {
+        const slider = document.getElementById('filterSlider');
+        const toggleBtn = document.getElementById('filterToggleBtn');
+
+        if (slider.classList.contains('translate-y-full')) {
+            // Открываем слайдер
+            slider.classList.remove('translate-y-full');
+            toggleBtn.classList.add('hidden');
+        } else {
+            // Закрываем слайдер
+            slider.classList.add('translate-y-full');
+            toggleBtn.classList.remove('hidden');
+        }
+    }
+
+    // Функция для сброса фильтров
+    function resetFilters() {
+        document.getElementById('searchInput').value = '';
+        document.getElementById('minStockFilter').value = '';
+        document.getElementById('stockFilter').value = '';
+        document.getElementById('brandFilter').value = '';
+        document.getElementById('sortOrder').value = '';
+        document.getElementById('pageSize').value = '50';
+
+        // Обновляем текущие фильтры
+        currentFilters = {
+            search: '',
+            stock_filter: null,
+            min_stock_filter: null,
+            brand_filter: '',
+            sort_order: '',
+            page_size: 50
+        };
+    }
+
+    // Функция для применения фильтров
+    function applyFilters() {
+        handleFilterChange();
+        toggleFilterSlider(); // Закрываем слайдер после применения
+    }
+
+    // Функция для обработки изменений фильтров
+    async function handleFilterChange() {
         try {
             // Получаем значения фильтров
             const search = document.getElementById('searchInput').value.trim();
@@ -64,7 +70,7 @@ async function handleFilterChange() {
             const minStockFilterValue = document.getElementById('minStockFilter').value.trim();
             const brandFilter = document.getElementById('brandFilter').value;
             const sortOrder = document.getElementById('sortOrder').value;
-            
+
             // Обновляем текущие фильтры
             currentFilters = {
                 search,
@@ -74,64 +80,90 @@ async function handleFilterChange() {
                 brand_filter: brandFilter,
                 sort_order: sortOrder
             };
-            
+
             // Формируем параметры запроса
             const params = new URLSearchParams();
-            
+
             if (search) params.append('search', search);
             if (pageSize) params.append('page_size', pageSize);
             params.append('page', '1');
-            
+
             if (stockFilterValue !== '' && !isNaN(parseInt(stockFilterValue))) {
                 params.append('stock_filter', parseInt(stockFilterValue).toString());
             }
-            
+
             if (minStockFilterValue !== '' && !isNaN(parseInt(minStockFilterValue))) {
                 params.append('min_stock_filter', parseInt(minStockFilterValue).toString());
             }
-            
+
             if (brandFilter) params.append('brand_filter', brandFilter);
             if (sortOrder) params.append('sort_order', sortOrder);
-            
+
             const queryString = params.toString();
-            console.log('Сформированный URL:', `/catalog/api/products?${queryString}`);
-            
+            console.log('Сформированный URL:', `/catalog_new/api/products?${queryString}`);
+
             // Отправляем запрос
-            const response = await fetch(`/catalog/api/products?${queryString}`, {
+            const response = await fetch(`/catalog_new/api/products?${queryString}`, {
                 method: 'GET',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest',
                     'Accept': 'application/json'
                 }
             });
-            
+
             if (!response.ok) {
                 throw new Error(`Ошибка при получении данных: ${response.status}`);
             }
-            
+
             const data = await response.json();
-            
+
             if (!data || !Array.isArray(data.products)) {
                 throw new Error('Некорректный формат данных');
             }
-            
+
             // Обновляем список товаров
             const productsList = document.getElementById('productsList');
-            if (productsList) {
+            const catalogPanel = document.getElementById('catalogPanel');
+
+            // Проверяем, открыт ли воркспейс
+            const workspaceContainer = document.getElementById('workspaceContainer');
+            const isWorkspaceOpen = workspaceContainer && !workspaceContainer.classList.contains('hidden');
+
+            if (isWorkspaceOpen && catalogPanel) {
+                // Если воркспейс открыт, обновляем только список товаров в правой панели
+                const productsContainer = catalogPanel.querySelector('#productsList');
+                if (productsContainer) {
+                    productsContainer.innerHTML = data.products.map(item => item.html).join('');
+                } else {
+                    // Если контейнер не найден, создаем его
+                    const productsDiv = document.createElement('div');
+                    productsDiv.id = 'productsList';
+                    productsDiv.className = 'grid grid-cols-1 gap-4 mb-8';
+                    productsDiv.innerHTML = data.products.map(item => item.html).join('');
+                    catalogPanel.appendChild(productsDiv);
+                }
+
+                // Переинициализируем обработчики для правой панели
+                initializeCatalogHandlers();
+            } else if (productsList) {
+                // Если воркспейс закрыт, обновляем основной список
                 productsList.innerHTML = data.products.map(item => item.html).join('');
+
+                // Переинициализируем обработчики drag & drop для новых карточек
+                initializeDragAndDrop();
             }
-            
+
             // Обновляем пагинацию
             if (typeof data.page === 'number' && typeof data.total === 'number' && typeof data.page_size === 'number') {
                 updatePagination(data.page, Math.ceil(data.total / data.page_size));
             }
-            
+
             // Обновляем счетчик результатов
             const resultsCount = document.getElementById('resultsCount');
             if (resultsCount) {
                 resultsCount.textContent = data.total || 0;
             }
-            
+
             // Обновляем состояние пустого результата
             const emptyState = document.getElementById('emptyState');
             if (emptyState) {
@@ -143,28 +175,27 @@ async function handleFilterChange() {
                     productsList?.classList.remove('hidden');
                 }
             }
-            
+
             // Обновляем URL без перезагрузки страницы
-            const newUrl = `/catalog?${queryString}`;
+            const newUrl = `/catalog_new?${queryString}`;
             window.history.pushState({}, '', newUrl);
-            
+
         } catch (error) {
             console.error('Ошибка при фильтрации:', error);
             showNotification('Произошла ошибка при фильтрации товаров: ' + error.message, 'error');
         }
-    }, 300);
-}
+    }
 
-// Функция для обновления пагинации
-function updatePagination(currentPage, totalPages) {
-    const nav = document.querySelector('[aria-label="Pagination"]');
-    if (!nav) return;
-    
-    let html = '<ul class="inline-flex items-center -space-x-px rounded-md shadow-sm">';
-    
-    // Кнопка "Назад"
-    if (currentPage > 1) {
-        html += `
+    // Функция для обновления пагинации
+    function updatePagination(currentPage, totalPages) {
+        const nav = document.querySelector('[aria-label="Pagination"]');
+        if (!nav) return;
+
+        let html = '<ul class="inline-flex items-center -space-x-px rounded-md shadow-sm">';
+
+        // Кнопка "Назад"
+        if (currentPage > 1) {
+            html += `
             <li>
                 <a href="javascript:void(0)" onclick="goToPage(${currentPage - 1})"
                    class="relative inline-flex items-center rounded-l-md px-3 py-2 text-sm font-medium text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0">
@@ -173,24 +204,24 @@ function updatePagination(currentPage, totalPages) {
                     </svg>
                 </a>
             </li>`;
-    }
-    
-    // Номера страниц
-    for (let i = 1; i <= totalPages; i++) {
-        html += `
+        }
+
+        // Номера страниц
+        for (let i = 1; i <= totalPages; i++) {
+            html += `
             <li>
                 <a href="javascript:void(0)" onclick="goToPage(${i})"
-                   class="relative inline-flex items-center px-4 py-2 text-sm font-medium ${i === currentPage 
-                       ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
-                       : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'}">
+                   class="relative inline-flex items-center px-4 py-2 text-sm font-medium ${i === currentPage
+                    ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
+                    : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'}">
                     ${i}
                 </a>
             </li>`;
-    }
-    
-    // Кнопка "Вперед"
-    if (currentPage < totalPages) {
-        html += `
+        }
+
+        // Кнопка "Вперед"
+        if (currentPage < totalPages) {
+            html += `
             <li>
                 <a href="javascript:void(0)" onclick="goToPage(${currentPage + 1})"
                    class="relative inline-flex items-center rounded-r-md px-3 py-2 text-sm font-medium text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0">
@@ -199,327 +230,738 @@ function updatePagination(currentPage, totalPages) {
                     </svg>
                 </a>
             </li>`;
-    }
-    
-    html += '</ul>';
-    nav.innerHTML = html;
-}
+        }
 
-// Функция для перехода на страницу
-async function goToPage(page) {
-    try {
-        const params = new URLSearchParams();
-        params.append('page', page);
+        html += '</ul>';
+        nav.innerHTML = html;
+    }
+
+    // Функция для перехода на страницу
+    async function goToPage(page) {
+        try {
+            const params = new URLSearchParams();
+            params.append('page', page);
+
+            // Добавляем текущие фильтры
+            if (currentFilters.search) params.append('search', currentFilters.search);
+            if (currentFilters.page_size) params.append('page_size', currentFilters.page_size);
+            if (currentFilters.stock_filter) params.append('stock_filter', currentFilters.stock_filter);
+            if (currentFilters.min_stock_filter) params.append('min_stock_filter', currentFilters.min_stock_filter);
+            if (currentFilters.brand_filter) params.append('brand_filter', currentFilters.brand_filter);
+            if (currentFilters.sort_order) params.append('sort_order', currentFilters.sort_order);
+
+            const response = await fetch(`/catalog_new/api/products?${params.toString()}`, {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Ошибка при получении данных');
+            }
+
+            const data = await response.json();
+
+            if (!data || !Array.isArray(data.products)) {
+                throw new Error('Некорректный формат данных');
+            }
+
+            // Обновляем список товаров
+            const productsList = document.getElementById('productsList');
+            const catalogPanel = document.getElementById('catalogPanel');
+
+            // Проверяем, открыт ли воркспейс
+            const workspaceContainer = document.getElementById('workspaceContainer');
+            const isWorkspaceOpen = workspaceContainer && !workspaceContainer.classList.contains('hidden');
+
+            if (isWorkspaceOpen && catalogPanel) {
+                // Если воркспейс открыт, обновляем только список товаров в правой панели
+                const productsContainer = catalogPanel.querySelector('#productsList');
+                if (productsContainer) {
+                    productsContainer.innerHTML = data.products.map(item => item.html).join('');
+                } else {
+                    // Если контейнер не найден, создаем его
+                    const productsDiv = document.createElement('div');
+                    productsDiv.id = 'productsList';
+                    productsDiv.className = 'grid grid-cols-1 gap-4 mb-8';
+                    productsDiv.innerHTML = data.products.map(item => item.html).join('');
+                    catalogPanel.appendChild(productsDiv);
+                }
+
+                // Переинициализируем обработчики для правой панели
+                initializeCatalogHandlers();
+            } else if (productsList) {
+                // Если воркспейс закрыт, обновляем основной список
+                productsList.innerHTML = data.products.map(item => item.html).join('');
+
+                // Переинициализируем обработчики drag & drop для новых карточек
+                initializeDragAndDrop();
+            }
+
+            // Обновляем пагинацию
+            if (typeof data.page === 'number' && typeof data.total === 'number' && typeof data.page_size === 'number') {
+                updatePagination(data.page, Math.ceil(data.total / data.page_size));
+            }
+
+            // Обновляем счетчик результатов
+            const resultsCount = document.getElementById('resultsCount');
+            if (resultsCount) {
+                resultsCount.textContent = data.total || 0;
+            }
+
+            // Обновляем URL
+            const newUrl = `/catalog_new?${params.toString()}`;
+            window.history.pushState({}, '', newUrl);
+
+        } catch (error) {
+            console.error('Ошибка при переходе на страницу:', error);
+            showNotification('Произошла ошибка при загрузке страницы: ' + error.message, 'error');
+        }
+    }
+
+
+    // Функция выбора всех товаров (добавляет все в воркспейс)
+    function selectAllProducts() {
+        // Функция больше не нужна, так как выделение карточек убрано
+    }
+
+    // Функция снятия выделения со всех товаров (больше не нужна)
+    function deselectAllProducts() {
+        // Функция больше не нужна, так как выделение карточек убрано
+    }
+
+    // Функция получения данных товаров из каталога
+    function getCatalogProducts() {
+        const products = [];
+        const productCards = document.querySelectorAll('#productsList .product-card, #mainContent .product-card');
         
-        // Добавляем текущие фильтры
-        if (currentFilters.search) params.append('search', currentFilters.search);
-        if (currentFilters.page_size) params.append('page_size', currentFilters.page_size);
-        if (currentFilters.stock_filter) params.append('stock_filter', currentFilters.stock_filter);
-        if (currentFilters.min_stock_filter) params.append('min_stock_filter', currentFilters.min_stock_filter);
-        if (currentFilters.brand_filter) params.append('brand_filter', currentFilters.brand_filter);
-        if (currentFilters.sort_order) params.append('sort_order', currentFilters.sort_order);
-        
-        const response = await fetch(`/catalog/api/products?${params.toString()}`, {
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest',
-                'Accept': 'application/json'
+        productCards.forEach(card => {
+            const productData = extractProductDataFromCard(card);
+            if (productData && productData.sku) {
+                products.push(productData);
             }
         });
-
-        if (!response.ok) {
-            throw new Error('Ошибка при получении данных');
-        }
         
-        const data = await response.json();
-        
-        if (!data || !Array.isArray(data.products)) {
-            throw new Error('Некорректный формат данных');
-        }
-        
-        // Обновляем список товаров
-        const productsList = document.getElementById('productsList');
-        if (productsList) {
-            productsList.innerHTML = data.products.map(item => item.html).join('');
-        }
-        
-        // Обновляем пагинацию
-        if (typeof data.page === 'number' && typeof data.total === 'number' && typeof data.page_size === 'number') {
-            updatePagination(data.page, Math.ceil(data.total / data.page_size));
-        }
-        
-        // Обновляем счетчик результатов
-        const resultsCount = document.getElementById('resultsCount');
-        if (resultsCount) {
-            resultsCount.textContent = data.total || 0;
-        }
-        
-        // Обновляем URL
-        const newUrl = `/catalog?${params.toString()}`;
-        window.history.pushState({}, '', newUrl);
-        
-    } catch (error) {
-        console.error('Ошибка при переходе на страницу:', error);
-        showNotification('Произошла ошибка при загрузке страницы: ' + error.message, 'error');
+        return products;
     }
-}
 
-// Функция для обновления состояния кнопки экспорта
-function updateExportButton() {
-    const selectedProducts = document.querySelectorAll('input[name="selected_products"]:checked');
-    const exportButton = document.getElementById('exportSelected');
-    const exportCount = document.getElementById('exportCount');
-    
-    if (selectedProducts.length > 0) {
-        exportButton.disabled = false;
-        exportCount.textContent = `(${selectedProducts.length})`;
-        exportCount.classList.remove('hidden');
-    } else {
-        exportButton.disabled = true;
-        exportCount.classList.add('hidden');
-    }
-}
 
-// Функция выбора всех товаров
-function selectAllProducts() {
-    const checkboxes = document.querySelectorAll('input[name="selected_products"]');
-    checkboxes.forEach(checkbox => {
-        checkbox.checked = true;
-        const card = checkbox.closest('.product-card');
-        if (card) {
-            card.classList.add('selected');
-        }
-    });
-    updateExportButton();
-}
 
-// Функция снятия выделения со всех товаров
-function deselectAllProducts() {
-    const checkboxes = document.querySelectorAll('input[name="selected_products"]');
-    checkboxes.forEach(checkbox => {
-        checkbox.checked = false;
-        const card = checkbox.closest('.product-card');
-        if (card) {
-            card.classList.remove('selected');
-        }
-    });
-    updateExportButton();
-}
 
-// Функция для экспорта выбранных товаров
-async function exportSelectedProducts(event) {
-    if (event) {
-        event.preventDefault();
-    }
-    
-    const exportButton = document.getElementById('exportSelected');
-    if (exportButton.disabled) {
-        return;
-    }
-    
-    const selectedProducts = document.querySelectorAll('input[name="selected_products"]:checked');
-    const skus = Array.from(selectedProducts).map(checkbox => checkbox.value);
-    
-    if (skus.length === 0) {
-        showNotification('Выберите товары для экспорта', 'warning');
-        return;
-    }
-    
-    try {
-        exportButton.disabled = true;
-        
-        const queryParams = new URLSearchParams();
-        skus.forEach(sku => queryParams.append('skus', sku));
-        const response = await fetch(`/api/warehouse/export/stock-with-sales/?${queryParams.toString()}`, {
-            method: 'GET'
-        });
-        
-        if (!response.ok) {
-            throw new Error('Ошибка при экспорте товаров');
-        }
-        
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'products_export.xlsx';
-        
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        
-        setTimeout(() => {
-            window.URL.revokeObjectURL(url);
-        }, 100);
-        
-        showNotification('Экспорт успешно завершен', 'success');
-    } catch (error) {
-        console.error('Ошибка при экспорте:', error);
-        showNotification('Произошла ошибка при экспорте товаров', 'error');
-    } finally {
-        exportButton.disabled = false;
-    }
-}
 
-// Функция для обработки изменения состояния чекбокса
-function handleCheckboxChange(checkbox) {
-    const card = checkbox.closest('.product-card');
-    if (card) {
-        if (checkbox.checked) {
-            card.classList.add('selected');
-        } else {
-            card.classList.remove('selected');
-        }
-    }
-    updateExportButton();
-}
 
-// Функция для загрузки списка брендов
-async function loadBrands() {
-    try {
-        const response = await fetch('/catalog/api/brands');
-        if (!response.ok) {
-            throw new Error('Ошибка при загрузке брендов');
-        }
-        
-        const data = await response.json();
-        const brands = data.brands || [];
-        
-        const brandSelect = document.getElementById('brandFilter');
-        if (brandSelect) {
-            // Очищаем текущие опции (кроме "Все бренды")
-            const defaultOption = brandSelect.querySelector('option[value=""]');
-            brandSelect.innerHTML = '';
-            if (defaultOption) {
-                brandSelect.appendChild(defaultOption);
-            } else {
-                const option = document.createElement('option');
-                option.value = '';
-                option.textContent = 'Все бренды';
-                brandSelect.appendChild(option);
+    // Функция для извлечения данных товара из карточки
+    function extractProductDataFromCard(card) {
+        try {
+            // Ищем SKU - более точный поиск
+            let sku = null;
+            
+            // Пробуем разные способы поиска SKU
+            const skuSelectors = [
+                '.sku-text',
+                '[data-sku]',
+                '.text-sm.text-gray-600',
+                'div:contains("SKU:")',
+                'span:contains("SKU:")'
+            ];
+            
+            for (const selector of skuSelectors) {
+                const element = card.querySelector(selector);
+                if (element) {
+                    if (element.hasAttribute('data-sku')) {
+                        sku = element.getAttribute('data-sku');
+                    } else {
+                        const text = element.textContent?.trim();
+                        if (text && text.includes('SKU:')) {
+                            sku = text.replace('SKU:', '').trim();
+                        } else if (text && !text.includes('Бренд:') && !text.includes('EAN:') && text.length > 5) {
+                            sku = text;
+                        }
+                    }
+                    if (sku && sku !== 'x' && sku.length > 3) break;
+                }
             }
             
-            // Добавляем бренды
-            brands.forEach(brand => {
-                const option = document.createElement('option');
-                option.value = brand;
-                option.textContent = brand;
-                brandSelect.appendChild(option);
+            // Если SKU не найден или некорректный, пропускаем товар
+            if (!sku || sku === 'x' || sku.length < 3) {
+                console.warn('SKU не найден или некорректный в карточке товара:', sku);
+                return null;
+            }
+            
+            // Ищем название товара
+            const nameElement = card.querySelector('.product-name') ||
+                               card.querySelector('h3') ||
+                               card.querySelector('.font-medium') ||
+                               card.querySelector('.text-lg.font-medium');
+            const name = nameElement?.textContent?.trim() || sku;
+            
+            // Ищем изображение
+            const imgElement = card.querySelector('img');
+            const imageUrl = imgElement?.src || imgElement?.getAttribute('data-src') || '';
+            
+            // Ищем бренд
+            const brandElement = card.querySelector('.brand-text') ||
+                               card.querySelector('.text-gray-500');
+            let brand = 'Не указан';
+            if (brandElement) {
+                const brandText = brandElement.textContent?.trim();
+                if (brandText && !brandText.includes('SKU:') && !brandText.includes('EAN:')) {
+                    brand = brandText.replace('Бренд:', '').trim() || 'Не указан';
+                }
+            }
+            
+            // Ищем EAN
+            const eanElement = card.querySelector('.ean-text') ||
+                              card.querySelector('.text-xs.text-gray-400');
+            let ean = '';
+            if (eanElement) {
+                const eanText = eanElement.textContent?.trim();
+                if (eanText && eanText.includes('EAN:')) {
+                    ean = eanText.replace('EAN:', '').trim();
+                }
+            }
+            
+            
+            return {
+                sku: sku,
+                name: name,
+                image: imageUrl,
+                brand: brand,
+                ean: ean,
+                addedAt: new Date().toISOString()
+            };
+        } catch (error) {
+            console.error('Ошибка при извлечении данных товара:', error);
+            return null;
+        }
+    }
+
+    // Функция принудительной синхронизации остатков всех аккаунтов
+    async function forceSyncAllStocks() {
+        const button = document.getElementById('forceSyncBtn');
+        const originalText = button.innerHTML;
+        
+        // Подтверждение действия
+        const confirmed = confirm(
+            'ВНИМАНИЕ! Принудительная синхронизация остатков:\n\n' +
+            '• Игнорирует флаги включения синхронизации остатков\n' +
+            '• Синхронизирует ВСЕ товары для всех аккаунтов\n' +
+            '• Может быть ресурсоемкой операцией\n' +
+            '• Предназначена для исключительных случаев\n\n' +
+            'Продолжить?'
+        );
+        
+        if (!confirmed) {
+            return;
+        }
+        
+        // Блокируем кнопку и показываем индикатор загрузки
+        button.disabled = true;
+        button.innerHTML = `
+            <svg class="w-5 h-5 mr-2 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            <span>Запуск синхронизации...</span>
+        `;
+        
+        try {
+            const response = await fetch('/api/products/sync-all-accounts/stocks/force', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
             });
             
-            // Устанавливаем выбранное значение если есть
-            if (currentFilters.brand_filter) {
-                brandSelect.value = currentFilters.brand_filter;
-            }
-        }
-    } catch (error) {
-        console.error('Ошибка при загрузке брендов:', error);
-    }
-}
-
-// Инициализация при загрузке страницы
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOMContentLoaded event fired');
-    
-    // Добавляем обработчики для кнопок выбора
-    const selectAllBtn = document.getElementById('selectAll');
-    const deselectAllBtn = document.getElementById('deselectAll');
-    const exportBtn = document.getElementById('exportSelected');
-    
-    if (selectAllBtn) {
-        selectAllBtn.addEventListener('click', selectAllProducts);
-    }
-    if (deselectAllBtn) {
-        deselectAllBtn.addEventListener('click', deselectAllProducts);
-    }
-    if (exportBtn) {
-        exportBtn.addEventListener('click', exportSelectedProducts);
-    }
-    
-    // Добавляем обработчики для чекбоксов
-    document.addEventListener('change', function(e) {
-        if (e.target.matches('input[name="selected_products"]')) {
-            handleCheckboxChange(e.target);
-        }
-    });
-    
-    // Инициализация состояния при загрузке
-    deselectAllProducts();
-    updateExportButton();
-    
-    // Загружаем список брендов
-    loadBrands();
-    
-    // Закрытие слайдера по клику вне его
-    document.addEventListener('click', function(e) {
-        const slider = document.getElementById('filterSlider');
-        const toggleBtn = document.getElementById('filterToggleBtn');
-        
-        if (!slider.contains(e.target) && !toggleBtn.contains(e.target)) {
-            if (!slider.classList.contains('translate-y-full')) {
-                slider.classList.add('translate-y-full');
-                toggleBtn.classList.remove('hidden');
-            }
-        }
-    });
-    
-    // Закрытие слайдера по нажатию Escape
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            const slider = document.getElementById('filterSlider');
-            const toggleBtn = document.getElementById('filterToggleBtn');
+            const data = await response.json();
             
-            if (!slider.classList.contains('translate-y-full')) {
-                slider.classList.add('translate-y-full');
-                toggleBtn.classList.remove('hidden');
+            if (data.success) {
+                showNotification(
+                    `Принудительная синхронизация запущена! Task ID: ${data.task_id}`, 
+                    'success'
+                );
+            } else {
+                showNotification(
+                    data.message || 'Ошибка при запуске принудительной синхронизации', 
+                    'error'
+                );
+            }
+            
+        } catch (error) {
+            console.error('Ошибка при запуске принудительной синхронизации:', error);
+            showNotification(
+                'Ошибка при запуске принудительной синхронизации: ' + error.message, 
+                'error'
+            );
+        } finally {
+            // Восстанавливаем кнопку
+            button.disabled = false;
+            button.innerHTML = originalText;
+        }
+    }
+
+
+    // Функция addToWorkspaceFromCard удалена - теперь товары добавляются только через drag & drop
+
+    // Функция handleCheckboxChange удалена - чекбоксы больше не используются
+
+    // // Простая инициализация выделения карточек
+    // function initializeCardSelection() {
+    //     console.log('Инициализация выделения карточек...');
+
+    //     // Убираем все атрибуты draggable
+    //     const allCards = document.querySelectorAll('.product-card');
+    //     allCards.forEach(card => {
+    //         card.removeAttribute('draggable');
+    //         card.style.cursor = 'pointer';
+    //     });
+    // }
+
+
+
+
+
+    // Функция для загрузки списка брендов
+    async function loadBrands() {
+        try {
+            const response = await fetch('/catalog_new/api/brands');
+            if (!response.ok) {
+                throw new Error('Ошибка при загрузке брендов');
+            }
+
+            const data = await response.json();
+            const brands = data.brands || [];
+
+            const brandSelect = document.getElementById('brandFilter');
+            if (brandSelect) {
+                // Очищаем текущие опции (кроме "Все бренды")
+                const defaultOption = brandSelect.querySelector('option[value=""]');
+                brandSelect.innerHTML = '';
+                if (defaultOption) {
+                    brandSelect.appendChild(defaultOption);
+                } else {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = 'Все бренды';
+                    brandSelect.appendChild(option);
+                }
+
+                // Добавляем бренды
+                brands.forEach(brand => {
+                    const option = document.createElement('option');
+                    option.value = brand;
+                    option.textContent = brand;
+                    brandSelect.appendChild(option);
+                });
+
+                // Устанавливаем выбранное значение если есть
+                if (currentFilters.brand_filter) {
+                    brandSelect.value = currentFilters.brand_filter;
+                }
+            }
+        } catch (error) {
+            console.error('Ошибка при загрузке брендов:', error);
+        }
+    }
+
+    // Инициализация при загрузке страницы
+    document.addEventListener('DOMContentLoaded', function () {
+        console.log('DOMContentLoaded event fired');
+
+        // Проверяем кнопку фильтров
+        const filterToggleBtn = document.getElementById('filterToggleBtn');
+        console.log('Кнопка фильтров найдена:', !!filterToggleBtn);
+        if (filterToggleBtn) {
+            console.log('Кнопка фильтров видна:', filterToggleBtn.offsetWidth > 0 && filterToggleBtn.offsetHeight > 0);
+            console.log('Стили кнопки:', window.getComputedStyle(filterToggleBtn).display);
+            console.log('Z-index кнопки:', window.getComputedStyle(filterToggleBtn).zIndex);
+        }
+
+        // Проверяем слайдер фильтров
+        const filterSlider = document.getElementById('filterSlider');
+        console.log('Слайдер фильтров найден:', !!filterSlider);
+
+        // Добавляем обработчики для кнопок выбора
+        const selectAllBtn = document.getElementById('selectAllBtn');
+        const deselectAllBtn = document.getElementById('deselectAllBtn');
+
+        if (selectAllBtn) {
+            selectAllBtn.addEventListener('click', selectAllProductsOnPage);
+        }
+        if (deselectAllBtn) {
+            deselectAllBtn.addEventListener('click', deselectAllProductsOnPage);
+        }
+
+        // Обработчики чекбоксов удалены - чекбоксы больше не используются
+
+        // Добавляем обработчик для кнопки "Применить фильтры"
+        const applyFiltersBtn = document.getElementById('applyFilters');
+        if (applyFiltersBtn) {
+            applyFiltersBtn.addEventListener('click', applyFilters);
+        }
+
+        // Добавляем обработчик для клавиши Enter в полях фильтров
+        const filterInputs = ['searchInput', 'stockFilter', 'minStockFilter'];
+        filterInputs.forEach(inputId => {
+            const input = document.getElementById(inputId);
+            if (input) {
+                input.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        applyFilters();
+                    }
+                });
+            }
+        });
+
+        // Добавляем обработчики для select элементов (они не нуждаются в Enter, но могут быть изменены)
+        const filterSelects = ['brandFilter', 'sortOrder', 'pageSize'];
+        filterSelects.forEach(selectId => {
+            const select = document.getElementById(selectId);
+            if (select) {
+                // Для select элементов можно оставить автоматическое применение или убрать
+                // Пока оставляем без автоматического применения
+            }
+        });
+
+        // Инициализация состояния при загрузке
+
+        // Загружаем список брендов
+        loadBrands();
+
+
+        // Закрытие слайдера по клику вне его - ОТКЛЮЧЕНО
+        // Слайдер теперь закрывается только при явном нажатии кнопки закрытия или кнопки "Применить"
+
+        // Закрытие слайдера по нажатию Escape
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                const slider = document.getElementById('filterSlider');
+                const toggleBtn = document.getElementById('filterToggleBtn');
+
+                if (!slider.classList.contains('translate-y-full')) {
+                    slider.classList.add('translate-y-full');
+                    toggleBtn.classList.remove('hidden');
+                }
+            }
+        });
+    });
+
+    // Функция для показа уведомлений
+    function showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.textContent = message;
+
+        let bgColor = 'bg-blue-600';
+        if (type === 'success') bgColor = 'bg-green-600';
+        if (type === 'error') bgColor = 'bg-red-600';
+        if (type === 'warning') bgColor = 'bg-yellow-600';
+
+        notification.className = `fixed bottom-4 left-4 ${bgColor} text-white px-3 py-2 rounded-md shadow-md z-50 transition-all duration-300 transform translate-y-full opacity-0 text-sm`;
+        notification.style.maxWidth = '250px';
+        notification.style.fontSize = '14px';
+
+        document.body.appendChild(notification);
+
+        // Анимация появления
+        requestAnimationFrame(() => {
+            notification.style.transform = 'translateY(0)';
+            notification.style.opacity = '1';
+        });
+
+        setTimeout(() => {
+            notification.style.transform = 'translateY(100%)';
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 5000);
+    }
+
+    // Добавляем стили для выделения карточек
+    const style = document.createElement('style');
+    style.textContent = `
+        /* Базовые стили карточки продукта */
+        .product-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 1.5rem;
+            background-color: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            transition: all 0.2s;
+            border: 1px solid #e5e7eb;
+            padding: 1rem;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .product-card:hover {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        /* Стили для выделенной карточки - синеватый фон и граница */
+        .product-card.workspace-selected {
+            background-color: #eff6ff !important; /* blue-50 */
+            border-color: #3b82f6 !important; /* blue-500 */
+            border-width: 2px !important;
+        }
+
+        /* Принудительное исправление позиционирования кнопок управления */
+        .product-card .absolute.bottom-4.left-4 {
+            position: absolute !important;
+            bottom: 1rem !important;
+            left: 1rem !important;
+            z-index: 20 !important;
+        }
+
+        .product-card .absolute.bottom-4.left-4 button {
+            position: relative !important;
+            z-index: 21 !important;
+        }
+
+        /* Защищаем все интерактивные элементы, но НЕ переопределяем абсолютное позиционирование */
+        .product-card button:not([class*="absolute"]),
+        .product-card input,
+        .product-card select,
+        .product-card a {
+            position: relative;
+            z-index: 2;
+        }
+
+        /* Кнопки с абсолютным позиционированием должны иметь высокий z-index */
+        .product-card button[class*="absolute"] {
+            z-index: 10;
+        }
+    `;
+    document.head.appendChild(style);
+
+    // Заглушки для недостающих функций
+    function initializeDragAndDrop() {
+        console.log('initializeDragAndDrop вызвана');
+    }
+
+    function initializeCatalogHandlers() {
+        console.log('initializeCatalogHandlers вызвана');
+    }
+
+    // Инициализация выделения при загрузке страницы
+    document.addEventListener('DOMContentLoaded', function () {
+        console.log('Инициализация выделения карточек при загрузке страницы');
+
+        // // Небольшая задержка для того, чтобы все элементы загрузились
+        // setTimeout(() => {
+        //     initializeCardSelection();
+        // }, 100);
+    });
+
+    // Универсальная функция для обновления карточек товаров
+    async function refreshProductCards(sku) {
+        try {
+            console.log('🚀 НОВАЯ ВЕРСИЯ refreshProductCards вызвана для SKU:', sku);
+            console.log('🔄 Обновление карточек товара:', sku);
+            console.log('🔍 Проверяем наличие карточек на странице...');
+            
+            // Проверяем, есть ли карточки на странице
+            const mainCards = document.querySelectorAll(`#mainContent [data-product-sku="${sku}"]`);
+            const workspaceCards = document.querySelectorAll(`#workspaceProductsList [data-product-sku="${sku}"]`);
+            const catalogPanelCards = document.querySelectorAll(`#catalogPanel [data-product-sku="${sku}"]`);
+            
+            console.log(`📊 Найдено карточек: основной каталог=${mainCards.length}, воркспейс=${workspaceCards.length}, панель каталога=${catalogPanelCards.length}`);
+            
+            // Проверяем, есть ли контейнер #mainContent
+            const mainContent = document.querySelector('#mainContent');
+            console.log('🏠 Контейнер #mainContent найден:', !!mainContent);
+            
+            if (mainCards.length > 0) {
+                console.log('📋 Найдены карточки в каталоге, обновляем...');
+                await refreshCatalogCard(sku);
+            } else {
+                console.log('⚠️ Карточки в каталоге не найдены, пропускаем обновление каталога');
+            }
+            
+            // Обновляем карточку в воркспейсе, если товар там есть
+            if (typeof workspaceManager !== 'undefined' && workspaceManager && workspaceManager.selectedProducts[sku]) {
+                console.log('💼 Обновляем карточку в воркспейсе...');
+                await refreshWorkspaceCard(sku);
+            } else {
+                console.log('💼 Товар не найден в воркспейсе, пропускаем обновление воркспейса');
+            }
+            
+            // Выделение восстанавливается локально в каждой функции обновления карточек
+            
+            console.log('✅ Карточки товара успешно обновлены');
+        } catch (error) {
+            console.error('❌ Ошибка при обновлении карточек товара:', error);
+            if (typeof showNotification === 'function') {
+                showNotification('Ошибка при обновлении данных товара', 'error');
             }
         }
-    });
-});
-
-// Функция для показа уведомлений
-function showNotification(message, type = 'info') {
-    const notification = document.createElement('div');
-    notification.textContent = message;
+    }
     
-    let bgColor = 'bg-blue-600';
-    if (type === 'success') bgColor = 'bg-green-600';
-    if (type === 'error') bgColor = 'bg-red-600';
-    if (type === 'warning') bgColor = 'bg-yellow-600';
-    
-    notification.className = `fixed top-4 right-4 ${bgColor} text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-opacity duration-300`;
-    document.body.appendChild(notification);
-    
-    setTimeout(() => {
-        notification.style.opacity = '0';
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.parentNode.removeChild(notification);
+    // Обновление карточки в каталоге
+    async function refreshCatalogCard(sku) {
+        try {
+            console.log('🚀 НОВАЯ ВЕРСИЯ refreshCatalogCard вызвана для SKU:', sku);
+            console.log('🌐 Запрашиваем обновленную карточку для SKU:', sku);
+            
+            // Сохраняем состояние выделения перед обновлением
+            console.log(`🔍 Ищем карточки для SKU: ${sku}`);
+            
+            // Ищем все возможные карточки
+            const allCardsWithSku = document.querySelectorAll(`[data-product-sku="${sku}"]`);
+            console.log(`📋 Всего найдено элементов с SKU ${sku}:`, allCardsWithSku.length);
+            image.png 
+            allCardsWithSku.forEach((element, index) => {
+                const productCard = element.closest('.product-card');
+                console.log(`📋 Элемент ${index + 1}:`, {
+                    element: element.tagName,
+                    hasProductCard: !!productCard,
+                    isSelected: productCard?.classList.contains('workspace-selected') || false,
+                    parentId: productCard?.closest('[id]')?.id || 'no-id'
+                });
+            });
+            
+            const mainCard = document.querySelector(`#mainContent [data-product-sku="${sku}"]`)?.closest('.product-card');
+            const catalogCard = document.querySelector(`#catalogPanel [data-product-sku="${sku}"]`)?.closest('.product-card');
+            
+            const wasMainCardSelected = mainCard?.classList.contains('workspace-selected') || false;
+            const wasCatalogCardSelected = catalogCard?.classList.contains('workspace-selected') || false;
+            
+            console.log('💾 Сохраняем состояние выделения:', { 
+                mainCard: wasMainCardSelected, 
+                catalogCard: wasCatalogCardSelected,
+                mainCardFound: !!mainCard,
+                catalogCardFound: !!catalogCard
+            });
+            
+            const url = `/catalog_new/api/products/${sku}/card?context=catalog`;
+            console.log('📡 URL запроса:', url);
+            
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+            
+            console.log('📡 Статус ответа:', response.status, response.statusText);
+            
+            if (!response.ok) {
+                throw new Error(`Ошибка при получении обновленных данных товара: ${response.status} ${response.statusText}`);
             }
-        }, 300);
-    }, 3000);
-}
-
-// Добавляем стили для выделенных карточек товаров
-const style = document.createElement('style');
-style.textContent = `
-    .product-card.selected {
-        background-color: rgba(59, 130, 246, 0.1);
-        border-color: #3b82f6;
+            
+            const data = await response.json();
+            console.log('📦 Получены данные карточки:', data);
+            
+            // Обновляем карточку в основном каталоге
+            console.log('🔍 Ищем карточку в основном каталоге...');
+            console.log('🎯 Найденная карточка в каталоге:', !!mainCard);
+            if (mainCard) {
+                console.log('🔄 Обновляем карточку в основном каталоге');
+                mainCard.outerHTML = data.html;
+                console.log('✅ Карточка в каталоге обновлена');
+                
+                // Восстанавливаем выделение если оно было
+                if (wasMainCardSelected) {
+                    const newMainCard = document.querySelector(`#mainContent [data-product-sku="${sku}"]`)?.closest('.product-card');
+                    if (newMainCard) {
+                        console.log('🎨 Восстанавливаем выделение для карточки в основном каталоге');
+                        newMainCard.classList.add('workspace-selected');
+                        console.log('✅ Класс добавлен, проверяем:', newMainCard.classList.contains('workspace-selected'));
+                    } else {
+                        console.log('❌ Не удалось найти обновленную карточку в основном каталоге');
+                    }
+                }
+            } else {
+                console.log('⚠️ Карточка в основном каталоге не найдена');
+            }
+            
+            // Обновляем карточку в правой панели воркспейса (если воркспейс открыт)
+            if (catalogCard) {
+                console.log('🔄 Обновляем карточку в правой панели воркспейса');
+                catalogCard.outerHTML = data.html;
+                console.log('✅ Карточка в правой панели воркспейса обновлена');
+                
+                // Восстанавливаем выделение если оно было
+                if (wasCatalogCardSelected) {
+                    const newCatalogCard = document.querySelector(`#catalogPanel [data-product-sku="${sku}"]`)?.closest('.product-card');
+                    if (newCatalogCard) {
+                        console.log('🎨 Восстанавливаем выделение для карточки в правой панели');
+                        newCatalogCard.classList.add('workspace-selected');
+                        console.log('✅ Класс добавлен в правой панели, проверяем:', newCatalogCard.classList.contains('workspace-selected'));
+                    } else {
+                        console.log('❌ Не удалось найти обновленную карточку в правой панели');
+                    }
+                }
+            } else {
+                console.log('⚠️ Карточка в правой панели воркспейса не найдена');
+            }
+            
+        } catch (error) {
+            console.error('❌ Ошибка при обновлении карточки каталога:', error);
+        }
     }
     
-    /* Анимация для слайдера фильтров */
-    #filterSlider {
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    // Обновление карточки в воркспейсе
+    async function refreshWorkspaceCard(sku) {
+        try {
+            console.log('💼 Запрашиваем обновленную карточку воркспейса для SKU:', sku);
+            
+            // Сохраняем состояние выделения перед обновлением
+            const workspaceCard = document.querySelector(`#workspaceProductsList [data-product-sku="${sku}"]`)?.closest('.product-card');
+            const wasWorkspaceCardSelected = workspaceCard?.classList.contains('workspace-selected') || false;
+            
+            console.log('💾 Сохраняем состояние выделения воркспейса:', wasWorkspaceCardSelected);
+            
+            const response = await fetch('/catalog_new/api/cards', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    skus: [sku],
+                    context: 'workspace'
+                })
+            });
+            
+            console.log('📡 Статус ответа воркспейса:', response.status, response.statusText);
+            
+            if (!response.ok) {
+                throw new Error(`Ошибка при получении обновленной карточки воркспейса: ${response.status} ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            console.log('📦 Получены данные карточки воркспейса:', data);
+            
+            // Обновляем карточку в воркспейсе
+            if (workspaceCard && data.html) {
+                console.log('🔄 Обновляем карточку в воркспейсе');
+                workspaceCard.outerHTML = data.html;
+                console.log('✅ Карточка в воркспейсе обновлена');
+                
+                // Восстанавливаем выделение если оно было
+                if (wasWorkspaceCardSelected) {
+                    const newWorkspaceCard = document.querySelector(`#workspaceProductsList [data-product-sku="${sku}"]`)?.closest('.product-card');
+                    if (newWorkspaceCard) {
+                        console.log('🎨 Восстанавливаем выделение для карточки в воркспейсе');
+                        newWorkspaceCard.classList.add('workspace-selected');
+                    }
+                }
+            } else {
+                console.log('⚠️ Карточка в воркспейсе не найдена или нет HTML данных');
+            }
+            
+        } catch (error) {
+            console.error('❌ Ошибка при обновлении карточки воркспейса:', error);
+        }
     }
     
-    /* Стили для кнопки переключения */
-    #filterToggleBtn {
-        transition: all 0.3s ease;
-    }
-    
-    #filterToggleBtn:hover {
-        transform: scale(1.1);
-    }
-`;
-document.head.appendChild(style);
+    // Делаем функцию глобально доступной
+    window.refreshProductCards = refreshProductCards;
 </script>

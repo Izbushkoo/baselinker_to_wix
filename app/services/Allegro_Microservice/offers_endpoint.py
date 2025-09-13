@@ -200,27 +200,33 @@ class AllegroOffersMicroserviceClient(BaseClient):
     def update_offer_stock(
         self,
         token_id: UUID,
-        offer_id: str,
+        external_id: str,
         stock: int
     ) -> MicroserviceOfferResponse:
         """
-        Обновить запас конкретного оффера.
+        Обновить запас конкретного оффера по external_id.
         
         Args:
             token_id: ID токена
-            offer_id: ID оффера
+            external_id: External ID оффера (SKU)
             stock: Новый запас
             
         Returns:
-            Dict: Результат обновления
+            MicroserviceOfferResponse: Результат обновления
         """
-        url = f"{self.base_url}/token/{token_id}/offer/{offer_id}/stock"
+        url = f"{self.base_url}/update-stock"
         
-        payload = {"stock": stock}
+        payload = {
+            "external_id": external_id,
+            "stock": stock
+        }
+        
+        params = {"token_ids": [str(token_id)]}
         
         response = requests.put(
             url,
             json=payload,
+            params=params,
             headers=self.headers,
             timeout=self.timeout
         )

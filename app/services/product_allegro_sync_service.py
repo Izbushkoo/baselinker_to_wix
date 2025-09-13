@@ -414,6 +414,9 @@ class ProductAllegroSyncService:
         Returns:
             True, если синхронизация включена, False - иначе
         """
+        import logging
+        logger = logging.getLogger("allegro.sync")
+        
         # Получаем настройки синхронизации
         query = select(ProductAllegroSyncSettings).where(
             ProductAllegroSyncSettings.product_sku == product_sku,
@@ -425,7 +428,10 @@ class ProductAllegroSyncService:
         
         if not settings:
             # Если настроек нет, по умолчанию синхронизация отключена
+            logger.info(f"[AllegroSync] Настройки синхронизации для SKU {product_sku} и аккаунта {account_name} НЕ НАЙДЕНЫ")
             return False
+        
+        logger.info(f"[AllegroSync] Настройки синхронизации для SKU {product_sku} и аккаунта {account_name}: stock_sync={settings.stock_sync_enabled}, price_sync={settings.price_sync_enabled}")
         
         if sync_type == "stock":
             return settings.stock_sync_enabled
@@ -471,6 +477,23 @@ class ProductAllegroSyncService:
         else:
             result = self.session.exec(query)
             
+        return result.all()
+
+    def get_all_account_settings_sync(self, account_name: str) -> List[ProductAllegroSyncSettings]:
+        """
+        Синхронная версия метода get_all_account_settings для использования в Celery задачах.
+        
+        Args:
+            account_name: Название аккаунта Allegro
+            
+        Returns:
+            Список всех настроек синхронизации для аккаунта
+        """
+        query = select(ProductAllegroSyncSettings).where(
+            ProductAllegroSyncSettings.allegro_account_name == account_name
+        )
+        
+        result = self.session.exec(query)
         return result.all()
 
     async def delete_account_settings(self, account_name: str) -> int:

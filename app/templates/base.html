@@ -54,12 +54,28 @@
                         <a href="/catalog" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Склад</a>
                         <a href="/operations" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Операции cклада</a>
                         <a href="/import-export" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Импорт/Экспорт</a>
-                        <a href="/offer-transfer/" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Перенос офферов</a>
+                        <!-- <a href="/offer-transfer/" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Перенос офферов</a> -->
                         {% if user and user.is_admin %}
                         <a href="/synchronization" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Синхронизация</a>
                         <a href="/stock-sync/monitor" class="text-gray-300 hover:bg-gray-700 hover:text-white rounded-md px-3 py-2 text-sm font-medium">Операции списания</a>
                         {% endif %}
                     </div>
+                    <!-- Кнопка воркспейса -->
+                    <div class="hidden md:flex md:items-center md:mr-4">
+                        {% if user %}
+                        <button onclick="toggleWorkspace()" 
+                                id="workspaceToggleBtn"
+                                class="relative flex items-center px-3 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                      d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                            </svg>
+                            <span>Воркспейс</span>
+                            <span id="workspaceCount" class="ml-2 bg-red-500 text-white text-xs rounded-full px-2 py-1 hidden">0</span>
+                        </button>
+                        {% endif %}
+                    </div>
+                    
                     <!-- Кнопки пользователя (скрыты на мобильных) -->
                     <div class="hidden md:flex md:items-center md:ml-6">
                         {% if not user %}
@@ -88,7 +104,7 @@
                     <a href="/catalog" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Склад</a>
                     <a href="/operations" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Операции</a>
                     <a href="/import-export" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Импорт/Экспорт</a>
-                    <a href="/offer-transfer/" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Перенос офферов</a>
+                    <!-- <a href="/offer-transfer/" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Перенос офферов</a> -->
                     {% if user and user.is_admin %}
                     <a href="/synchronization" class="text-gray-300 hover:bg-gray-700 hover:text-white block rounded-md px-3 py-2 text-base font-medium">Синхронизация</a>
                     {% endif %}
@@ -332,6 +348,10 @@
         
     <script src="{{ url_for('static', path='js/inventory.js').__str__().replace('http://', 'https://') }}"></script>
     <!-- <script src="{{ url_for('static', path='js/inventory.js') }}"></script> -->
+    
+    <!-- Воркспейс для всех страниц -->
+    {% include 'catalog_new_blocks/workspace.html' %}
+    
     {% block extra_js %}{% endblock %}
      
 </body>

@@ -1088,7 +1088,12 @@
     /**
      * Функция для пополнения товара на складе
      */
-    function addToStock(button) {
+    function addToStock(button, event) {
+        // Предотвращаем всплытие события, чтобы не сработал обработчик удаления из воркспейса
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
         const input = button.parentElement.querySelector('input[type="number"]');
         const quantity = parseInt(input.value);
         const warehouse = button.dataset.warehouse;
@@ -1154,6 +1159,11 @@
             
             // Сразу обновляем панель быстрого редактирования
             updateQuickEditPanelAfterStockChange();
+            
+            // Обновляем все карточки товара после успешной операции
+            if (typeof window.refreshProductCards === 'function') {
+                window.refreshProductCards(sku);
+            }
         })
         .catch(error => {
             showNotification('Ошибка при пополнении товара: ' + error.message, 'error');
@@ -1166,7 +1176,12 @@
     /**
      * Функция для списания товара со склада
      */
-    function removeFromStock(button) {
+    function removeFromStock(button, event) {
+        // Предотвращаем всплытие события, чтобы не сработал обработчик удаления из воркспейса
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
         const input = button.parentElement.querySelector('input[type="number"]');
         const quantity = parseInt(input.value);
         const warehouse = button.dataset.warehouse;
@@ -1239,6 +1254,11 @@
             
             // Сразу обновляем панель быстрого редактирования
             updateQuickEditPanelAfterStockChange();
+            
+            // Обновляем все карточки товара после успешной операции
+            if (typeof window.refreshProductCards === 'function') {
+                window.refreshProductCards(sku);
+            }
         })
         .catch(error => {
             showNotification('Ошибка при списании товара: ' + error.message, 'error');

@@ -1,5 +1,6 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query, HTTPException, Request, File, UploadFile, Form
+from fastapi import APIRouter, Depends, Query, HTTPException, Request, File, UploadFile, Form, Body
+from pydantic import BaseModel
 from sqlmodel import select, func
 from sqlmodel.ext.asyncio.session import AsyncSession
 from fastapi.responses import StreamingResponse, HTMLResponse, RedirectResponse, JSONResponse, Response
@@ -32,6 +33,42 @@ web_router = APIRouter()
 catalog_router = APIRouter()  # Отдельный роутер для каталога
 
 templates = Jinja2Templates(directory="app/templates")
+
+def modify_card_for_workspace(html: str, sku: str) -> str:
+    """
+    Модифицирует HTML карточки товара для отображения в воркспейсе:
+    1. Удаляет onclick="addToWorkspaceFromCard(event, this)" с главного div
+    2. Добавляет кнопку удаления (крестик) в левый верхний угол
+    """
+    import re
+    
+    # Удаляем onclick с главного div
+    html = re.sub(r'\s+onclick="addToWorkspaceFromCard\(event, this\)"', '', html)
+    
+    # Добавляем кнопку удаления после открывающего тега div
+    delete_button = f'''
+    <!-- Кнопка удаления из воркспейса (левый верхний угол) -->
+    <button type="button"
+            onclick="removeFromWorkspace(this)"
+            class="absolute top-2 left-2 z-30 p-1 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-md transition-colors duration-200"
+            title="Удалить из воркспейса">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+    </button>'''
+    
+    # Вставляем кнопку после открывающего тега div с классом product-card
+    html = re.sub(
+        r'(<div class="product-card[^"]*"[^>]*>)',
+        r'\1' + delete_button,
+        html
+    )
+    
+    return html
+
+# Модели для API
+class BulkDeleteRequest(BaseModel):
+    skus: List[str]
 
 @catalog_router.get("/catalog")
 async def catalog(
@@ -185,8 +222,9 @@ async def catalog(
             for product_data in products_with_stocks:
                 sku = product_data["sku"]
                 price_info = prices_data.get(sku)
-                if price_info:
-                    product_data["min_price"] = price_info.min_price
+                if price_info and price_info.min_price:
+                    # Конвертируем Decimal в float для JSON сериализации
+                    product_data["min_price"] = float(price_info.min_price)
                 else:
                     product_data["min_price"] = None
         except Exception as e:
@@ -326,7 +364,7 @@ async def quick_edit(
         for st in stocks:
             product_data["stocks"][st.warehouse] = st.quantity
         price_info = prices_service.get_price_by_sku(prod.sku)
-        product_data["min_price"] = price_info.min_price if price_info and price_info.min_price else None
+        product_data["min_price"] = float(price_info.min_price) if price_info and price_info.min_price else None
         products_with_stocks.append(product_data)
     
     # Check if this is a JSON request (from AJAX)
@@ -428,15 +466,130 @@ async def edit_product_form(
         }
     )
 
+@catalog_router.post("/workspace-cards")
+async def get_workspace_cards(
+    request: Request,
+    skus: List[str] = Body(...),
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Получение массива карточек товаров для воркспейса одним запросом
+    """
+    if not skus:
+        return JSONResponse(content={"html": "", "count": 0})
+    
+    try:
+        # Базовый запрос для товаров с подсчетом остатков (как в каталоге)
+        base_query = (
+            select(
+                Product,
+                func.sum(Stock.quantity).label('total_stock')
+            )
+            .outerjoin(Stock, Stock.sku == Product.sku)
+            .where(Product.sku.in_(skus))
+            .group_by(Product.sku)
+        )
+        
+        # Получаем товары с остатками
+        result = await db.exec(base_query)
+        products_with_stocks = result.all()
+        
+        if not products_with_stocks:
+            return JSONResponse(content={"html": "", "count": 0})
+        
+        # Создаем список продуктов с их остатками (как в каталоге)
+        products_data = []
+        for row in products_with_stocks:
+            product = row[0]  # Получаем объект Product
+            total_stock = row[1] or 0  # Получаем total_stock
+            
+            # Получаем остатки для продукта
+            stocks_query = select(Stock).where(Stock.sku == product.sku)
+            stocks_result = await db.exec(stocks_query)
+            stocks = stocks_result.all()
+            
+            # Создаем словарь с данными продукта (как в каталоге)
+            product_data = {
+                "id": product.sku,
+                "sku": product.sku,
+                "name": product.name,
+                "brand": product.brand,
+                "eans": product.eans,
+                "ean": product.eans[0] if product.eans else None,
+                "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
+                "total_stock": total_stock,
+                "stocks": {}
+            }
+            
+            # Инициализируем остатки для всех складов как 0
+            for warehouse in Warehouses:
+                product_data["stocks"][warehouse.value] = 0
+                
+            # Заполняем фактические остатки
+            for stock in stocks:
+                product_data["stocks"][stock.warehouse] = stock.quantity
+            
+            products_data.append(product_data)
+        
+        # Обогащаем данные о товарах ценами из удаленной БД (как в каталоге)
+        if prices_service.is_available() and products_data:
+            try:
+                # Получаем все SKU товаров
+                product_skus = [product["sku"] for product in products_data]
+                
+                # Получаем цены для всех SKU одним запросом
+                prices_data = prices_service.get_prices_by_skus(product_skus)
+                
+                # Добавляем цены к данным товаров
+                for product_data in products_data:
+                    sku = product_data["sku"]
+                    price_info = prices_data.get(sku)
+                    if price_info and price_info.min_price:
+                        # Конвертируем Decimal в float для JSON сериализации
+                        product_data["min_price"] = float(price_info.min_price)
+                    else:
+                        product_data["min_price"] = None
+            except Exception as e:
+                logger.error(f"Error getting prices: {str(e)}")
+                # Если не удалось получить цены, добавляем пустые значения
+                for product_data in products_data:
+                    product_data["min_price"] = None
+        
+        # Рендерим карточки для воркспейса используя унифицированный шаблон
+        cards_html = []
+        for product_data in products_data:
+            # Используем унифицированный шаблон
+            card_html = templates.get_template("catalog_new_blocks/product_card.html").render(
+                product=product_data,
+                selected_products=[],
+                current_user=current_user
+            )
+            # Модифицируем для воркспейса
+            card_html = modify_card_for_workspace(card_html, product_data['sku'])
+            cards_html.append(card_html)
+        
+        return JSONResponse(content={
+            "html": "".join(cards_html),
+            "count": len(cards_html)
+        })
+        
+    except Exception as e:
+        logger.error(f"Ошибка при получении карточек воркспейса: {e}")
+        return JSONResponse(content={"html": "", "count": 0})
+
 @catalog_router.get("/{sku}/card")
 async def get_product_card(
     request: Request,
     sku: str,
+    context: str = Query("catalog", description="Контекст отображения: catalog, workspace"),
     db: AsyncSession = Depends(deps.get_async_session),
     current_user: User = Depends(deps.get_current_user_optional)
 ):
     """
     Получить HTML карточки товара по SKU для обновления на странице
+    context: catalog - для каталога (с возможностью добавления в воркспейс)
+             workspace - для воркспейса (с кнопкой удаления)
     """
     if not current_user:
         raise HTTPException(status_code=401, detail="Необходима авторизация")
@@ -491,7 +644,7 @@ async def get_product_card(
     if prices_service.is_available():
         try:
             price_info = prices_service.get_price_by_sku(product.sku)
-            product_data["min_price"] = price_info.min_price if price_info and price_info.min_price else None
+            product_data["min_price"] = float(price_info.min_price) if price_info and price_info.min_price else None
         except Exception as e:
             logger.error(f"Ошибка получения цены для SKU {sku}: {str(e)}")
             product_data["min_price"] = None
@@ -499,16 +652,131 @@ async def get_product_card(
         product_data["min_price"] = None
     
     # Генерируем HTML карточки товара
-    html = templates.get_template("components/product_card.html").render(
+    html = templates.get_template("catalog_new_blocks/product_card.html").render(
         product=product_data,
         selected_products=[],
         current_user=current_user
     )
     
+    # Модифицируем HTML в зависимости от контекста
+    if context == "workspace":
+        # Для воркспейса: удаляем onclick и добавляем кнопку удаления
+        html = modify_card_for_workspace(html, sku)
+    # Для каталога оставляем как есть (с onclick для добавления в воркспейс)
+    
     return JSONResponse(content={
         "html": html,
         "data": product_data
     })
+
+@catalog_router.post("/cards")
+async def get_product_cards(
+    request: Request,
+    skus: List[str] = Body(...),
+    context: str = Body("catalog", description="Контекст отображения: catalog, workspace"),
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Получить HTML карточки товаров по массиву SKU для обновления на странице
+    context: catalog - для каталога (с возможностью добавления в воркспейс)
+             workspace - для воркспейса (с кнопкой удаления)
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Необходима авторизация")
+    
+    if not skus:
+        return JSONResponse(content={"html": "", "count": 0})
+    
+    try:
+        # Получаем товары с остатками
+        product_query = (
+            select(
+                Product,
+                func.sum(Stock.quantity).label('total_stock')
+            )
+            .outerjoin(Stock, Stock.sku == Product.sku)
+            .where(Product.sku.in_(skus))
+            .group_by(Product.sku)
+        )
+        
+        result = await db.exec(product_query)
+        products_with_stocks = result.all()
+        
+        if not products_with_stocks:
+            return JSONResponse(content={"html": "", "count": 0})
+        
+        # Создаем список продуктов с их остатками
+        products_data = []
+        for row in products_with_stocks:
+            product = row[0]
+            total_stock = row[1] or 0
+            
+            # Получаем остатки для продукта
+            stocks_query = select(Stock).where(Stock.sku == product.sku)
+            stocks_result = await db.exec(stocks_query)
+            stocks = stocks_result.all()
+            
+            # Создаем словарь с данными продукта
+            product_data = {
+                "id": product.sku,
+                "sku": product.sku,
+                "name": product.name,
+                "brand": product.brand,
+                "eans": product.eans,
+                "ean": product.eans[0] if product.eans else None,
+                "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
+                "total_stock": total_stock,
+                "stocks": {}
+            }
+            
+            # Инициализируем остатки для всех складов как 0
+            for warehouse in Warehouses:
+                product_data["stocks"][warehouse.value] = 0
+                
+            # Заполняем фактические остатки
+            for stock in stocks:
+                product_data["stocks"][stock.warehouse] = stock.quantity
+            
+            # Получаем цену если доступен сервис цен
+            if prices_service.is_available():
+                try:
+                    price_info = prices_service.get_price_by_sku(product.sku)
+                    product_data["min_price"] = float(price_info.min_price) if price_info and price_info.min_price else None
+                except Exception as e:
+                    logger.error(f"Ошибка получения цены для SKU {product.sku}: {str(e)}")
+                    product_data["min_price"] = None
+            else:
+                product_data["min_price"] = None
+            
+            products_data.append(product_data)
+        
+        # Рендерим карточки используя унифицированный шаблон
+        cards_html = []
+        for product_data in products_data:
+            # Используем унифицированный шаблон
+            card_html = templates.get_template("catalog_new_blocks/product_card.html").render(
+                product=product_data,
+                selected_products=[],
+                current_user=current_user
+            )
+            
+            # Модифицируем HTML в зависимости от контекста
+            if context == "workspace":
+                card_html = modify_card_for_workspace(card_html, product_data['sku'])
+            # Для каталога оставляем как есть (с onclick для добавления в воркспейс)
+            
+            cards_html.append(card_html)
+        
+        return JSONResponse(content={
+            "html": "".join(cards_html),
+            "count": len(cards_html),
+            "context": context
+        })
+        
+    except Exception as e:
+        logger.error(f"Ошибка при получении карточек товаров: {e}")
+        return JSONResponse(content={"html": "", "count": 0})
 
 @router.post("")
 async def create_product(
@@ -856,6 +1124,71 @@ async def update_product(
         )
 
 
+@router.post("/sync-settings/{account_name}/sync-stocks")
+async def sync_all_stocks_for_account(
+    account_name: str,
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Запустить синхронизацию остатков для всех товаров конкретного аккаунта Allegro.
+    Синхронизирует только товары с включенной синхронизацией остатков для данного аккаунта.
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется аутентификация")
+    
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Доступ запрещен. Требуются права администратора")
+    
+    # Получаем токены из микросервиса Allegro
+    try:
+        # Создаем JWT токен для аутентификации с микросервисом
+        jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
+        
+        # Получаем активные токены из микросервиса
+        token_client = AllegroTokenMicroserviceClient(
+            jwt_token=jwt_token
+        )
+        
+        tokens_response = token_client.get_tokens(per_page=100, active_only=True)
+        
+        if tokens_response.total == 0 or not tokens_response.items:
+            raise HTTPException(status_code=404, detail="Активные токены Allegro не найдены")
+        
+        # Ищем токен по имени аккаунта
+        target_token = None
+        for token in tokens_response.items:
+            if token['account_name'] == account_name:
+                target_token = token
+                break
+        
+        if not target_token:
+            raise HTTPException(status_code=404, detail=f"Аккаунт Allegro '{account_name}' не найден")
+        
+        # Запускаем задачу синхронизации остатков для всех товаров аккаунта
+        task = celery.send_task(
+            'app.services.allegro.sync_tasks.sync_allegro_stock_single_account',
+            args=[target_token['id'], []]  # Пустой список SKU означает синхронизацию всех товаров аккаунта
+        )
+        
+        return {
+            "success": True,
+            "message": f"Синхронизация остатков всех товаров для аккаунта {account_name} запущена",
+            "task_id": task.id,
+            "account_name": account_name,
+            "token_id": str(target_token['id'])
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ошибка при запуске синхронизации остатков для аккаунта {account_name}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при запуске синхронизации остатков: {str(e)}"
+        )
+
+
 @router.post("/sync-settings/{account_name}/sync-all")
 async def sync_all_offers_for_account(
     account_name: str,
@@ -874,13 +1207,39 @@ async def sync_all_offers_for_account(
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Доступ запрещен. Требуются права администратора")
     
-    # Проверяем существование аккаунта Allegro
-    token_query = select(AllegroToken).where(AllegroToken.account_name == account_name)
-    token_result = await db.exec(token_query)
-    token = token_result.first()
-    
-    if not token:
-        raise HTTPException(status_code=404, detail="Аккаунт Allegro не найден")
+    # Получаем токены из микросервиса Allegro для проверки существования аккаунта
+    try:
+        # Создаем JWT токен для аутентификации с микросервисом
+        jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
+        
+        # Получаем активные токены из микросервиса
+        token_client = AllegroTokenMicroserviceClient(
+            jwt_token=jwt_token
+        )
+        
+        tokens_response = token_client.get_tokens(per_page=100, active_only=True)
+        
+        if tokens_response.total == 0 or not tokens_response.items:
+            raise HTTPException(status_code=404, detail="Активные токены Allegro не найдены")
+        
+        # Ищем токен по имени аккаунта
+        target_token = None
+        for token in tokens_response.items:
+            if token['account_name'] == account_name:
+                target_token = token
+                break
+        
+        if not target_token:
+            raise HTTPException(status_code=404, detail=f"Аккаунт Allegro '{account_name}' не найден")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ошибка при получении токенов из микросервиса для аккаунта {account_name}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при проверке аккаунта Allegro: {str(e)}"
+        )
     
     # Получаем данные из запроса
     try:
@@ -907,9 +1266,9 @@ async def sync_all_offers_for_account(
             
             # Обновляем мультипликатор для всех найденных настроек
             updated_count = 0
-            for settings in all_settings:
-                settings.price_multiplier = custom_multiplier
-                settings.updated_at = datetime.utcnow()
+            for settings_item in all_settings:
+                settings_item.price_multiplier = custom_multiplier
+                settings_item.updated_at = datetime.utcnow()
                 updated_count += 1
             
             # Если есть товары без настроек синхронизации, создаём для них новые с кастомным мультипликатором
@@ -919,7 +1278,7 @@ async def sync_all_offers_for_account(
             all_products = products_result.all()
             
             # Получаем SKU товаров, которые уже имеют настройки для данного аккаунта
-            existing_skus = {settings.product_sku for settings in all_settings}
+            existing_skus = {settings_item.product_sku for settings_item in all_settings}
             
             # Создаём настройки для товаров без настроек
             created_count = 0
@@ -1001,13 +1360,39 @@ async def update_sync_settings(
     if not product:
         raise HTTPException(status_code=404, detail="Товар не найден")
     
-    # Проверяем существование аккаунта Allegro
-    token_query = select(AllegroToken).where(AllegroToken.account_name == account_name)
-    token_result = await db.exec(token_query)
-    token = token_result.first()
-    
-    if not token:
-        raise HTTPException(status_code=404, detail="Аккаунт Allegro не найден")
+    # Проверяем существование аккаунта Allegro через микросервис
+    try:
+        # Создаем JWT токен для аутентификации с микросервисом
+        jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
+        
+        # Получаем активные токены из микросервиса
+        token_client = AllegroTokenMicroserviceClient(
+            jwt_token=jwt_token
+        )
+        
+        tokens_response = token_client.get_tokens(per_page=100, active_only=True)
+        
+        if tokens_response.total == 0 or not tokens_response.items:
+            raise HTTPException(status_code=404, detail="Активные токены Allegro не найдены")
+        
+        # Ищем токен по имени аккаунта
+        target_token = None
+        for token in tokens_response.items:
+            if token['account_name'] == account_name:
+                target_token = token
+                break
+        
+        if not target_token:
+            raise HTTPException(status_code=404, detail=f"Аккаунт Allegro '{account_name}' не найден")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ошибка при получении токенов из микросервиса для аккаунта {account_name}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при проверке аккаунта Allegro: {str(e)}"
+        )
     
     # Получаем или создаем настройки синхронизации
     settings_query = select(ProductAllegroSyncSettings).where(
@@ -1318,13 +1703,39 @@ async def sync_price_single_product_account(
     if not product:
         raise HTTPException(status_code=404, detail="Товар не найден")
     
-    # Проверяем существование аккаунта Allegro
-    token_query = select(AllegroToken).where(AllegroToken.account_name == account_name)
-    token_result = await db.exec(token_query)
-    token = token_result.first()
-    
-    if not token:
-        raise HTTPException(status_code=404, detail="Аккаунт Allegro не найден")
+    # Проверяем существование аккаунта Allegro через микросервис
+    try:
+        # Создаем JWT токен для аутентификации с микросервисом
+        jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
+        
+        # Получаем активные токены из микросервиса
+        token_client = AllegroTokenMicroserviceClient(
+            jwt_token=jwt_token
+        )
+        
+        tokens_response = token_client.get_tokens(per_page=100, active_only=True)
+        
+        if tokens_response.total == 0 or not tokens_response.items:
+            raise HTTPException(status_code=404, detail="Активные токены Allegro не найдены")
+        
+        # Ищем токен по имени аккаунта
+        target_token = None
+        for token in tokens_response.items:
+            if token['account_name'] == account_name:
+                target_token = token
+                break
+        
+        if not target_token:
+            raise HTTPException(status_code=404, detail=f"Аккаунт Allegro '{account_name}' не найден")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ошибка при получении токенов из микросервиса для аккаунта {account_name}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при проверке аккаунта Allegro: {str(e)}"
+        )
     
     # Получаем настройки синхронизации (создаем если нет)
     settings_query = select(ProductAllegroSyncSettings).where(
@@ -1450,12 +1861,20 @@ async def manage_product(
     total_stock = sum(stock_by_warehouse.values())
 
     # Получаем все токены Allegro через микросервис
-    token_client = AllegroTokenMicroserviceClient(
-        jwt_token=create_access_token(user_id=settings.PROJECT_NAME),
-    )
-    tokens_response = token_client.get_tokens(per_page=50)
-    # Получаем данные из GenericListResponse.items
-    tokens = tokens_response.items
+    try:
+        jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
+        token_client = AllegroTokenMicroserviceClient(
+            jwt_token=jwt_token
+        )
+        tokens_response = token_client.get_tokens(per_page=100, active_only=True)
+        
+        if tokens_response.total == 0 or not tokens_response.items:
+            allegro_tokens = []
+        else:
+            allegro_tokens = tokens_response.items
+    except Exception as e:
+        logger.error(f"Ошибка при получении токенов из микросервиса: {str(e)}")
+        allegro_tokens = []
 
     
     # Получаем настройки синхронизации для товара
@@ -1486,8 +1905,8 @@ async def manage_product(
             logger.info(f"[MANAGE] Получаем цену для SKU: {sku}")
             price_info = prices_service.get_price_by_sku(sku)
             logger.info(f"[MANAGE] Полученная цена от сервиса: {price_info}")
-            if price_info:
-                product_data['min_price'] = price_info.min_price
+            if price_info and price_info.min_price:
+                product_data['min_price'] = float(price_info.min_price)
                 logger.info(f"[MANAGE] SKU {sku}: установлена min_price={price_info.min_price}")
             else:
                 product_data['min_price'] = None
@@ -1501,14 +1920,14 @@ async def manage_product(
     
     # Подготавливаем данные о токенах с настройками
     token_settings = []
-    for token in tokens:
-        account_name = token.get("account_name") or f"Account {token.get('id', 'unknown')[:8]}"
+    for token in allegro_tokens:
+        account_name = token.get('account_name') or f"Account {str(token.get('id', ''))[:8]}"
         
         # Получаем существующие настройки или создаем дефолтные
         sync_settings = settings_by_account.get(account_name)
         if sync_settings:
             token_data = {
-                'token_id': token.get("id"),
+                'token_id': str(token.get('id', '')),
                 'account_name': account_name,
                 'stock_sync_enabled': sync_settings.stock_sync_enabled,
                 'price_sync_enabled': sync_settings.price_sync_enabled,
@@ -1520,7 +1939,7 @@ async def manage_product(
         else:
             # Дефолтные настройки для токена без настроек
             token_data = {
-                'token_id': token.get("id"),
+                'token_id': str(token.get('id', '')),
                 'account_name': account_name,
                 'stock_sync_enabled': False,  # По умолчанию включено
                 'price_sync_enabled': False,  # По умолчанию выключено
@@ -1562,17 +1981,21 @@ async def get_product_offers(
         logger.info(f"[OFFERS] Запрос оферт для SKU {sku} в аккаунте {account_name}")
         
         # Получаем токен аккаунта через микросервис
+        jwt_token = create_access_token(user_id=settings.PROJECT_NAME)
         token_client = AllegroTokenMicroserviceClient(
-            jwt_token=create_access_token(user_id=settings.PROJECT_NAME),
+            jwt_token=jwt_token
         )
-        tokens_response = token_client.get_tokens(per_page=50)
-        # Получаем данные из GenericListResponse.items
+        tokens_response = token_client.get_tokens(per_page=100, active_only=True)
+        
+        if tokens_response.total == 0 or not tokens_response.items:
+            raise HTTPException(status_code=404, detail="Активные токены Allegro не найдены")
+        
         all_tokens = tokens_response.items
         
         # Ищем нужный токен по account_name
         token = None
         for t in all_tokens:
-            if t.get("account_name") == account_name:
+            if t['account_name'] == account_name:
                 token = t
                 break
 
@@ -1580,7 +2003,7 @@ async def get_product_offers(
             logger.error(f"[OFFERS] Токен для аккаунта {account_name} не найден")
             raise HTTPException(status_code=404, detail="Аккаунт Allegro не найден")
         
-        token_id = token.get("id")
+        token_id = token['id']
         if not token_id:
             logger.error(f"[OFFERS] ID токена отсутствует для аккаунта {account_name}")
             raise HTTPException(status_code=500, detail="Некорректные данные токена")
@@ -1600,7 +2023,7 @@ async def get_product_offers(
         
         # Создаем клиент микросервиса для работы с офферами
         offers_client = AllegroOffersMicroserviceClient(
-            jwt_token=create_access_token(user_id=settings.PROJECT_NAME),
+            jwt_token=jwt_token
         )
         
         # Получаем оферты через микросервис, используя SKU как external_id
@@ -1783,3 +2206,219 @@ async def check_product_exists(
         logger.error(f"Ошибка при проверке существования товара {sku}: {e}")
         # В случае ошибки возвращаем False для безопасности
         return {"exists": False, "sku": sku, "error": "Database error"}
+
+@router.post("/bulk-delete")
+async def bulk_delete_products(
+    request: BulkDeleteRequest,
+    db: AsyncSession = Depends(deps.get_async_session),
+    current_user: User = Depends(deps.get_current_user_optional),
+    operations_service: OperationsService = Depends(get_operations_service)
+):
+    """
+    Массовое удаление товаров по списку SKU
+    """
+    skus = request.skus
+    logger.info(f"Bulk delete request received. SKUs: {skus}")
+    logger.info(f"Current user: {current_user.email if current_user else 'None'}")
+    
+    # Проверяем права доступа
+    if not current_user:
+        logger.error("No current user found")
+        raise HTTPException(
+            status_code=401,
+            detail="Пользователь не авторизован"
+        )
+    
+    if not current_user.is_admin:
+        logger.error(f"User {current_user.email} is not admin")
+        raise HTTPException(
+            status_code=403,
+            detail="Недостаточно прав для удаления товаров"
+        )
+    
+    if not skus:
+        logger.error("Empty SKUs list received")
+        raise HTTPException(
+            status_code=400,
+            detail="Список SKU не может быть пустым"
+        )
+    
+    logger.info(f"Starting bulk delete for {len(skus)} products")
+    
+    try:
+        deleted_products = []
+        failed_deletions = []
+        
+        for sku in skus:
+            try:
+                # Проверяем существование товара
+                product_query = select(Product).where(Product.sku == sku)
+                product = await db.exec(product_query)
+                product = product.first()
+                
+                if not product:
+                    failed_deletions.append({"sku": sku, "error": "Товар не найден"})
+                    continue
+
+                # Получаем информацию о товаре перед удалением
+                product_info = {
+                    "sku": product.sku,
+                    "name": product.name,
+                    "eans": product.eans
+                }
+
+                # Сначала удаляем все связанные перемещения
+                transfer_query = select(Transfer).where(Transfer.sku == sku)
+                transfers = await db.exec(transfer_query)
+                for transfer in transfers:
+                    await db.delete(transfer)
+                
+                # Применяем удаление перемещений
+                await db.flush()
+
+                # Затем удаляем все связанные продажи
+                sales_query = select(Sale).where(Sale.sku == sku)
+                sales = await db.exec(sales_query)
+                for sale in sales:
+                    await db.delete(sale)
+                
+                # Применяем удаление продаж
+                await db.flush()
+
+                # Затем удаляем все связанные остатки
+                stocks_query = select(Stock).where(Stock.sku == sku)
+                stocks = await db.exec(stocks_query)
+                for stock in stocks:
+                    await db.delete(stock)
+                
+                # Применяем удаление остатков
+                await db.flush()
+                    
+                # В конце удаляем сам товар
+                await db.delete(product)
+                
+                # Создаем запись операции
+                operations_service.create_product_delete_operation(
+                    sku=sku,
+                    user_email=current_user.email
+                )
+                
+                deleted_products.append(product_info)
+                logger.info(f"Product deleted: SKU={sku}")
+                
+            except Exception as e:
+                logger.error(f"Error deleting product {sku}: {str(e)}")
+                failed_deletions.append({"sku": sku, "error": str(e)})
+                continue
+        
+        # Применяем все изменения
+        await db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Удалено товаров: {len(deleted_products)}, ошибок: {len(failed_deletions)}",
+            "deleted_products": deleted_products,
+            "failed_deletions": failed_deletions,
+            "total_requested": len(skus),
+            "total_deleted": len(deleted_products),
+            "total_failed": len(failed_deletions)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in bulk delete: {str(e)}")
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при массовом удалении товаров: {str(e)}"
+        )
+
+
+@router.post("/sync-all-accounts/stocks")
+async def sync_all_accounts_stocks(
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Запустить синхронизацию остатков для всех аккаунтов Allegro.
+    
+    Эта функция запускает массовую синхронизацию остатков по всем активным аккаунтам Allegro.
+    Для каждого аккаунта синхронизируются только те товары, для которых включена 
+    синхронизация остатков в настройках ProductAllegroSyncSettings.
+    
+    Returns:
+        Dict: Результат запуска задачи с информацией о количестве аккаунтов
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется аутентификация")
+    
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Доступ запрещен. Требуются права администратора")
+    
+    try:
+        # Запускаем задачу синхронизации остатков для всех аккаунтов
+        task = celery.send_task(
+            'app.services.allegro.sync_tasks.sync_allegro_stock_all_accounts'
+        )
+        
+        logger.info(f"Запущена массовая синхронизация остатков для всех аккаунтов. Task ID: {task.id}")
+        
+        return {
+            "success": True,
+            "message": "Синхронизация остатков для всех аккаунтов Allegro запущена",
+            "task_id": task.id,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка при запуске массовой синхронизации остатков: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при запуске синхронизации: {str(e)}"
+        )
+
+
+@router.post("/sync-all-accounts/stocks/force")
+async def sync_all_accounts_stocks_force(
+    current_user: User = Depends(deps.get_current_user_optional)
+):
+    """
+    Запустить ПРИНУДИТЕЛЬНУЮ синхронизацию остатков для всех аккаунтов Allegro.
+    
+    ВНИМАНИЕ: Эта функция ИГНОРИРУЕТ флаг включения синхронизации остатков в настройках
+    ProductAllegroSyncSettings и синхронизирует ВСЕ товары для всех активных аккаунтов.
+    
+    Эта функция может быть ресурсоемкой и должна использоваться только в исключительных случаях,
+    например, при восстановлении после сбоев или при необходимости полной пересинхронизации.
+    
+    Returns:
+        Dict: Результат запуска задачи с информацией о количестве аккаунтов
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Требуется аутентификация")
+    
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Доступ запрещен. Требуются права администратора")
+    
+    try:
+        # Запускаем принудительную задачу синхронизации остатков для всех аккаунтов
+        task = celery.send_task(
+            'app.services.allegro.sync_tasks.sync_allegro_stock_all_accounts_force'
+        )
+        
+        logger.warning(f"Запущена ПРИНУДИТЕЛЬНАЯ массовая синхронизация остатков для всех аккаунтов. Task ID: {task.id}")
+        logger.warning("ВНИМАНИЕ: Игнорируется флаг включения синхронизации остатков!")
+        
+        return {
+            "success": True,
+            "message": "ПРИНУДИТЕЛЬНАЯ синхронизация остатков для всех аккаунтов Allegro запущена",
+            "task_id": task.id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "force_mode": True,
+            "warning": "Игнорируется флаг включения синхронизации остатков"
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка при запуске принудительной массовой синхронизации остатков: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при запуске принудительной синхронизации: {str(e)}"
+        )

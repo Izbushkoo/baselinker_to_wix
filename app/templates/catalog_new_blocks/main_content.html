@@ -1,5 +1,5 @@
 <!-- Основной контент каталога -->
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+<div id="mainContent" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
     <!-- Заголовок и кнопки действий -->
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
         <div>
@@ -7,20 +7,21 @@
             <p class="text-sm text-gray-600 mt-1">Управление товарами и остатками</p>
         </div>
         <div class="flex flex-wrap gap-3 mt-4 sm:mt-0">
-            <button onclick="selectAllProducts(); return false;" 
-                    class="flex items-center px-4 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
+            
+            <!-- Кнопка принудительной синхронизации остатков -->
+            {% if user.is_admin %}
+            <button id="forceSyncBtn" 
+                    class="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                    onclick="forceSyncAllStocks()"
+                    title="Принудительная синхронизация остатков всех аккаунтов (игнорирует флаги включения)">
                 <svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
-                <span>Выбрать все</span>
+                <span>Принудительная синхронизация остатков</span>
             </button>
-            <button onclick="deselectAllProducts(); return false;" 
-                    class="flex items-center px-4 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
-                <svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-                <span>Отменить выбор</span>
-            </button>
+            {% endif %}
+            
+            <!-- Кнопка добавления товара -->
             <a href="/products/add" 
                class="flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors">
                 <svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -28,22 +29,13 @@
                 </svg>
                 <span>Добавить товар</span>
             </a>
-            <button onclick="exportSelectedProducts(event)" 
-                    id="exportSelected"
-                    class="flex items-center px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                <svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                </svg>
-                <span>Экспортировать</span>
-                <span class="ml-2 hidden" id="exportCount"></span>
-            </button>
         </div>
     </div>
 
     <!-- Основной список товаров -->
     <div id="productsList" class="grid grid-cols-1 gap-4 mb-8">
         {% for product in products %}
-        {% include "components/product_card.html" %}
+        {% include "catalog_new_blocks/product_card.html" %}
         {% endfor %}
     </div>
 </div>

@@ -100,7 +100,7 @@
                                         >
                                         <button 
                                             type="button"
-                                            onclick="removeFromStock(this)"
+                                            onclick="removeFromStock(this, event)"
                                             class="px-3 py-1 text-xs bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 hover:border-red-300 focus:outline-none focus:ring-2 focus:ring-red-200 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                                             {% if quantity == 0 %}disabled{% endif %}
                                             data-warehouse="{{ warehouse }}"
@@ -111,7 +111,7 @@
                                         </button>
                                         <button 
                                             type="button"
-                                            onclick="addToStock(this)"
+                                            onclick="addToStock(this, event)"
                                             class="px-3 py-1 text-xs bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 hover:border-green-300 focus:outline-none focus:ring-2 focus:ring-green-200 rounded-md transition-all duration-200"
                                             data-warehouse="{{ warehouse }}"
                                             data-sku="{{ product.sku }}"
@@ -239,9 +239,22 @@
                             {% endif %}
                         </p>
                         {% if token.last_stock_sync_at %}
-                        <p class="text-xs text-gray-400">
+                        <p class="text-xs text-gray-400 mb-3">
                             Последняя синхронизация: {{ token.last_stock_sync_at.strftime('%d.%m.%Y %H:%M') }}
                         </p>
+                        {% endif %}
+                        
+                        {% if user.is_admin %}
+                        <!-- Кнопка синхронизации остатков для всех товаров аккаунта -->
+                        <div class="border-t border-gray-200 pt-3 mt-3">
+                            <button type="button"
+                                    class="w-full px-3 py-2 bg-green-500 text-white border border-green-600 hover:bg-green-600 hover:border-green-700 focus:outline-none focus:ring-2 focus:ring-green-300 text-xs rounded-md transition-all duration-200"
+                                    onclick="syncAllAccountStocks('{{ token.account_name }}')"
+                                    title="Синхронизировать остатки всех товаров для данного аккаунта"
+                            >
+                                Синхронизировать остатки всех товаров
+                            </button>
+                        </div>
                         {% endif %}
                     </div>
 
@@ -275,6 +288,7 @@
                         {% endif %}
                         
                         {% if user.is_admin %}
+                        <!-- Полная синхронизация всех товаров -->
                         <!-- Полная синхронизация всех товаров -->
                         <div class="border-t border-gray-200 pt-3 mt-3">
                             <h5 class="text-xs font-medium text-gray-900 mb-3">Полная синхронизация цен аккаунта</h5>
@@ -824,6 +838,36 @@ function syncAllAccountProducts(accountName) {
     });
 }
 
+// Синхронизация остатков всех товаров для конкретного аккаунта
+function syncAllAccountStocks(accountName) {
+    const button = event.target;
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Синхронизируется...';
+    
+    fetch(`/api/products/sync-settings/${accountName}/sync-stocks`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message, 'success');
+        } else {
+            showNotification(data.message || 'Ошибка при запуске синхронизации остатков', 'error');
+        }
+    })
+    .catch(error => {
+        showNotification('Ошибка при запуске синхронизации остатков: ' + error.message, 'error');
+    })
+    .finally(() => {
+        button.disabled = false;
+        button.textContent = originalText;
+    });
+}
+
 // Синхронизация всех аккаунтов (старая функция - теперь информирует о новом способе)
 function syncAllAccounts() {
     showNotification('Теперь синхронизация работает по аккаунтам. Используйте кнопки "Синхронизировать цену всех товаров" для каждого аккаунта отдельно.', 'info');
@@ -985,7 +1029,12 @@ document.getElementById('errorCloseBtn').addEventListener('click', function() {
 });
 
 // Функция для списания товара со склада
-function removeFromStock(button) {
+function removeFromStock(button, event) {
+    // Предотвращаем всплытие события, чтобы не сработал обработчик удаления из воркспейса
+    if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+    }
     const input = button.parentElement.querySelector('input[type="number"]');
     const quantity = parseInt(input.value);
     const warehouse = button.dataset.warehouse;
@@ -1029,7 +1078,7 @@ function removeFromStock(button) {
         input.dataset.currentQuantity = newQuantity;
         
         // Обновляем также кнопку "Пополнить" для этого склада
-        const addButton = button.parentElement.querySelector('[onclick="addToStock(this)"]');
+        const addButton = button.parentElement.querySelector('[onclick="addToStock(this, event)"]');
         if (addButton) {
             addButton.dataset.currentQuantity = newQuantity;
         }
@@ -1055,6 +1104,11 @@ function removeFromStock(button) {
         showNotification('Товар успешно списан', 'success');
         // Триггерим событие обновления остатков для автообновления оферт
         document.dispatchEvent(new CustomEvent('stockUpdated'));
+        
+        // Обновляем все карточки товара после успешной операции
+        if (typeof window.refreshProductCards === 'function') {
+            window.refreshProductCards(sku);
+        }
     })
     .catch(error => {
         showErrorModal('Ошибка при списании товара: ' + error.message);
@@ -1067,7 +1121,12 @@ function removeFromStock(button) {
 }
 
 // Функция для пополнения товара на складе
-function addToStock(button) {
+function addToStock(button, event) {
+    // Предотвращаем всплытие события, чтобы не сработал обработчик удаления из воркспейса
+    if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+    }
     const input = button.parentElement.querySelector('input[type="number"]');
     const quantity = parseInt(input.value);
     const warehouse = button.dataset.warehouse;
@@ -1106,7 +1165,7 @@ function addToStock(button) {
         input.dataset.currentQuantity = newQuantity;
         
         // Обновляем также кнопку "Списать" для этого склада
-        const removeButton = button.parentElement.querySelector('[onclick="removeFromStock(this)"]');
+        const removeButton = button.parentElement.querySelector('[onclick="removeFromStock(this, event)"]');
         if (removeButton) {
             removeButton.dataset.currentQuantity = newQuantity;
             if (removeButton.disabled) {
@@ -1128,6 +1187,11 @@ function addToStock(button) {
         showNotification('Товар успешно пополнен', 'success');
         // Триггерим событие обновления остатков для автообновления оферт
         document.dispatchEvent(new CustomEvent('stockUpdated'));
+        
+        // Обновляем все карточки товара после успешной операции
+        if (typeof window.refreshProductCards === 'function') {
+            window.refreshProductCards(sku);
+        }
     })
     .catch(error => {
         showErrorModal('Ошибка при пополнении товара: ' + error.message);
@@ -1141,7 +1205,7 @@ function addToStock(button) {
 function updateTotalStock() {
     const totalStockElement = document.getElementById('total-stock');
     // Используем только кнопки "Списать" чтобы избежать дублирования
-    const removeButtons = document.querySelectorAll('button[onclick="removeFromStock(this)"]');
+    const removeButtons = document.querySelectorAll('button[onclick="removeFromStock(this, event)"]');
     
     let totalStock = 0;
     removeButtons.forEach(button => {

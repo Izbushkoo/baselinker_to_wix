@@ -20,7 +20,6 @@
                        id="searchInput"
                        placeholder="По названию, SKU, EAN"
                        value="{{ filters.search }}"
-                       oninput="handleFilterChange()"
                        class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
             </div>
             
@@ -31,7 +30,6 @@
                        id="minStockFilter"
                        placeholder="Мин."
                        value="{{ filters.min_stock_filter or '' }}"
-                       oninput="handleFilterChange()"
                        class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-center"
                        min="0"
                        max="999">
@@ -44,7 +42,6 @@
                        id="stockFilter"
                        placeholder="Макс."
                        value="{{ filters.stock_filter or '' }}"
-                       oninput="handleFilterChange()"
                        class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-center"
                        min="0"
                        max="999">

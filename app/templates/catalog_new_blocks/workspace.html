@@ -1,0 +1,1054 @@
+<!--
+ * @file: workspace.html
+ * @description: Простой воркспейс с кликами по карточкам
+ * @created: 2024-01-19
+-->
+
+<!-- Основной контейнер воркспейса -->
+<div id="workspaceContainer" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden">
+    <div class="flex h-full pt-16">
+        <!-- Левая панель - Воркспейс -->
+        <div id="workspacePanel" class="w-1/2 bg-white shadow-2xl flex flex-col">
+            <!-- Заголовок воркспейса -->
+            <div class="bg-gray-800 text-white p-4 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10">
+                        </path>
+                    </svg>
+                    <h2 class="text-xl font-semibold">Воркспейс</h2>
+                    <span id="workspacePanelCount"
+                        class="bg-blue-500 text-white text-sm rounded-full px-2 py-1">0</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <!-- Бургер-меню действий -->
+                    <div class="relative">
+                        <button id="workspaceActionsBtn" onclick="toggleActionsMenu()"
+                            class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm transition-colors flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                            </svg>
+                            Действия
+                        </button>
+                        
+                        <!-- Выпадающее меню действий -->
+                        <div id="workspaceActionsMenu" class="absolute right-0 top-full mt-1 w-80 bg-white rounded-lg shadow-lg border border-gray-200 hidden z-50">
+                            <div class="p-2">
+                                <!-- Экспорт -->
+                                <div class="mb-2">
+                                    <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-2">Экспорт</div>
+                                    <button onclick="exportWithImages()" 
+                                        class="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                        </svg>
+                                        Экспорт остатков с изображениями
+                                    </button>
+                                    <button onclick="exportWithoutImages()" 
+                                        class="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                        </svg>
+                                        Экспорт остатков без изображений
+                                    </button>
+                                </div>
+
+                                <!-- Синхронизация -->
+                                <div class="mb-2">
+                                    <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-2">Синхронизация</div>
+                                    <button onclick="enableSync()" 
+                                        class="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                        Включить синхронизацию остатков
+                                    </button>
+                                    <button onclick="disableSync()" 
+                                        class="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M7 7l.01.01M7 3h4a1 1 0 011 1v4M3 7v4a1 1 0 001 1h4"></path>
+                                        </svg>
+                                        Выключить синхронизацию остатков
+                                    </button>
+                                </div>
+
+                                <!-- Заявки на перемещение -->
+                                <div class="mb-2">
+                                    <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-2">Заявки на перемещение</div>
+                                    <button onclick="createTransferRequest()" 
+                                        class="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                        </svg>
+                                        Создать файл заявки для выбранных
+                                    </button>
+                                </div>
+
+                                <!-- Заявки поставщику -->
+                                <div class="mb-2">
+                                    <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-2">Заявки поставщику</div>
+                                    <button onclick="createSupplierRequest()" 
+                                        class="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                                        </svg>
+                                        Создать файл заявки поставщику
+                                    </button>
+                                </div>
+
+                                <!-- Управление товарами -->
+                                <div class="mb-2">
+                                    <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-2">Управление товарами</div>
+                                    <button onclick="deleteSelectedProducts()" 
+                                        class="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                        </svg>
+                                        Удалить выделенные товары из системы
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button onclick="clearWorkspace()"
+                        class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm transition-colors">
+                        Очистить
+                    </button>
+                    <button onclick="toggleWorkspace()"
+                        class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded text-sm transition-colors">
+                        ✕
+                    </button>
+                </div>
+            </div>
+
+            <!-- Поиск в воркспейсе -->
+            <div class="p-4 border-b">
+                <div class="relative">
+                    <input type="text" id="workspaceSearch" placeholder="Поиск в воркспейсе..."
+                        class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <svg class="absolute left-3 top-2.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor"
+                        viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Список товаров в воркспейсе -->
+            <div class="flex-1 overflow-y-auto p-4">
+                <div id="workspaceProductsList" class="space-y-3">
+                    <!-- Товары будут добавляться динамически -->
+                </div>
+
+                <!-- Пустое состояние воркспейса -->
+                <div id="workspaceEmptyState" class="text-center py-12">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10">
+                        </path>
+                    </svg>
+                    <h3 class="mt-2 text-sm font-medium text-gray-900">Воркспейс пуст</h3>
+                    <p class="mt-1 text-sm text-gray-500">Кликните по товарам в каталоге, чтобы добавить их сюда</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Правая панель - Каталог -->
+        <div id="catalogPanel" class="w-1/2 bg-gray-50 overflow-y-auto relative">
+            <!-- Контент каталога будет вставлен сюда -->
+        </div>
+    </div>
+</div>
+
+<script>
+    // Простой класс для управления воркспейсом
+    class SimpleWorkspaceManager {
+        constructor() {
+            this.storageKey = 'catalog_workspace';
+            this.selectedProducts = this.loadFromStorage();
+            this.isOpen = false;
+            this.init();
+        }
+
+        init() {
+            this.updateWorkspaceCount();
+            this.setupEventListeners();
+            this.highlightSelectedProducts();
+        }
+
+        // Загрузка из localStorage
+        loadFromStorage() {
+            try {
+                const data = localStorage.getItem(this.storageKey);
+                return data ? JSON.parse(data) : {};
+            } catch (error) {
+                console.error('Ошибка при загрузке воркспейса:', error);
+                return {};
+            }
+        }
+
+        // Сохранение в localStorage
+        saveToStorage() {
+            try {
+                localStorage.setItem(this.storageKey, JSON.stringify(this.selectedProducts));
+                this.updateWorkspaceCount();
+                this.highlightSelectedProducts();
+            } catch (error) {
+                console.error('Ошибка при сохранении воркспейса:', error);
+            }
+        }
+
+        // Добавление товара в воркспейс
+        addProduct(productData) {
+            this.selectedProducts[productData.sku] = {
+                ...productData,
+                addedAt: new Date().toISOString()
+            };
+            this.saveToStorage();
+            
+            // Принудительно скрываем состояние пустого воркспейса
+            const emptyState = document.getElementById('workspaceEmptyState');
+            if (emptyState) {
+                emptyState.classList.add('hidden');
+            }
+            
+            this.renderWorkspaceProducts();
+
+            // Принудительно обновляем подсветку с небольшой задержкой
+            setTimeout(() => {
+                this.highlightSelectedProducts();
+                // Принудительно обновляем счетчик
+                this.updateWorkspaceCount();
+            }, 100);
+
+            this.showNotification(`Товар "${productData.name}" добавлен в воркспейс`, 'success');
+        }
+
+        // Удаление товара из воркспейса
+        removeProduct(sku) {
+            if (this.selectedProducts[sku]) {
+                const productName = this.selectedProducts[sku].name;
+
+                delete this.selectedProducts[sku];
+                this.saveToStorage();
+                
+                // Принудительно очищаем контейнер если воркспейс пуст
+                if (Object.keys(this.selectedProducts).length === 0) {
+                    const container = document.getElementById('workspaceProductsList');
+                    if (container) {
+                        container.innerHTML = '';
+                    }
+                    const emptyState = document.getElementById('workspaceEmptyState');
+                    if (emptyState) {
+                        emptyState.classList.remove('hidden');
+                    }
+                }
+                
+                this.renderWorkspaceProducts();
+
+                // Принудительно обновляем подсветку с небольшой задержкой
+                setTimeout(() => {
+                    this.highlightSelectedProducts();
+                }, 100);
+
+                this.showNotification(`Товар "${productName}" удален из воркспейса`, 'info');
+            }
+        }
+
+        // Очистка воркспейса
+        clearWorkspace() {
+            if (Object.keys(this.selectedProducts).length === 0) {
+                this.showNotification('Воркспейс уже пуст', 'info');
+                return;
+            }
+
+            if (confirm('Вы уверены, что хотите очистить воркспейс?')) {
+                this.selectedProducts = {};
+                this.saveToStorage();
+                this.renderWorkspaceProducts();
+                this.highlightSelectedProducts(); // Обновляем визуальное выделение
+                this.showNotification('Воркспейс очищен', 'success');
+            }
+        }
+
+        // Получение количества товаров
+        getProductCount() {
+            return Object.keys(this.selectedProducts).length;
+        }
+
+        // Обновление счетчика
+        updateWorkspaceCount() {
+            const count = this.getProductCount();
+            const countElements = [
+                document.getElementById('workspaceCount'),
+                document.getElementById('workspacePanelCount')
+            ];
+
+            countElements.forEach(element => {
+                if (element) {
+                    if (count > 0) {
+                        element.textContent = count;
+                        element.classList.remove('hidden');
+                    } else {
+                        element.classList.add('hidden');
+                    }
+                }
+            });
+
+        }
+
+        // Подсветка выбранных товаров в каталоге
+        highlightSelectedProducts() {
+            console.log('🎨 highlightSelectedProducts вызвана');
+            console.log('📦 Товары в воркспейсе:', Object.keys(this.selectedProducts));
+            
+            // Убираем старую подсветку со всех карточек
+            const allCards = document.querySelectorAll('.product-card');
+            console.log('🧹 Убираем выделение с карточек:', allCards.length);
+            allCards.forEach(card => {
+                card.classList.remove('workspace-selected');
+            });
+
+            // Принудительно обновляем стили через небольшую задержку
+            setTimeout(() => {
+                console.log('⏰ Начинаем добавление выделения через setTimeout');
+                
+                // Добавляем подсветку выбранным товарам
+                Object.keys(this.selectedProducts).forEach(sku => {
+                    console.log(`🔍 Обрабатываем SKU: ${sku}`);
+                    
+                    // Ищем карточки в основном каталоге
+                    const mainCards = document.querySelectorAll(`#mainContent [data-product-sku="${sku}"]`);
+                    console.log(`📋 Найдено карточек в основном каталоге: ${mainCards.length}`);
+                    mainCards.forEach(card => {
+                        const productCard = card.closest('.product-card');
+                        if (productCard && !productCard.closest('#workspaceProductsList')) {
+                            console.log('✅ Добавляем выделение в основном каталоге');
+                            productCard.classList.add('workspace-selected');
+                            console.log('🔍 Проверяем класс после добавления:', productCard.classList.contains('workspace-selected'));
+                        } else {
+                            console.log('⚠️ Пропускаем карточку в воркспейсе');
+                        }
+                    });
+
+                    // Ищем карточки в правой панели воркспейса
+                    const catalogCards = document.querySelectorAll(`#catalogPanel [data-product-sku="${sku}"]`);
+                    console.log(`📋 Найдено карточек в правой панели: ${catalogCards.length}`);
+                    catalogCards.forEach(card => {
+                        const productCard = card.closest('.product-card');
+                        if (productCard && !productCard.closest('#workspaceProductsList')) {
+                            console.log('✅ Добавляем выделение в правой панели');
+                            productCard.classList.add('workspace-selected');
+                            console.log('🔍 Проверяем класс после добавления в правой панели:', productCard.classList.contains('workspace-selected'));
+                        } else {
+                            console.log('⚠️ Пропускаем карточку в воркспейсе');
+                        }
+                    });
+                });
+                
+                console.log('🎨 Завершено добавление выделения');
+            }, 10);
+        }
+
+
+
+        // Рендеринг товаров в воркспейсе
+        async renderWorkspaceProducts() {
+            const container = document.getElementById('workspaceProductsList');
+            const emptyState = document.getElementById('workspaceEmptyState');
+
+            if (!container) return;
+
+            const skus = Object.keys(this.selectedProducts);
+
+            if (skus.length === 0) {
+                container.innerHTML = '';
+                if (emptyState) emptyState.classList.remove('hidden');
+                return;
+            }
+
+            if (emptyState) emptyState.classList.add('hidden');
+
+            // Загружаем все карточки одним запросом
+            try {
+                const response = await fetch('/catalog_new/api/workspace-cards', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(skus)
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    container.innerHTML = data.html;
+                } else {
+                    // Fallback: показываем простые карточки
+                    container.innerHTML = skus.map(sku => this.generateFallbackCard(this.selectedProducts[sku])).join('');
+                }
+
+            } catch (error) {
+                console.error('Ошибка при загрузке карточек воркспейса:', error);
+                container.innerHTML = skus.map(sku => this.generateFallbackCard(this.selectedProducts[sku])).join('');
+            }
+        }
+
+        // Модификация карточки для воркспейса
+        modifyCardForWorkspace(html, sku) {
+            // Создаем временный элемент для парсинга HTML
+            const temp = document.createElement('div');
+            temp.innerHTML = html;
+
+            const card = temp.querySelector('.product-card');
+            if (card) {
+                // Убираем подсветку выбранности
+                card.classList.remove('workspace-selected');
+
+                // Добавляем кнопку удаления в левый верхний угол
+                const deleteButton = document.createElement('button');
+                deleteButton.className = 'absolute top-2 left-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg font-bold transition-colors z-10 shadow-lg';
+                deleteButton.innerHTML = '×';
+                deleteButton.setAttribute('data-sku', sku);
+                deleteButton.title = 'Удалить из воркспейса';
+
+                // Убеждаемся, что карточка имеет относительное позиционирование
+                card.style.position = 'relative';
+
+                card.appendChild(deleteButton);
+
+                // Убираем обработчики кликов и меняем курсор
+                card.onclick = null;
+                card.style.cursor = 'default';
+
+                // Убираем все data-атрибуты, чтобы избежать случайного выделения
+                card.removeAttribute('data-product-sku');
+                card.removeAttribute('data-product-name');
+            }
+
+            return temp.innerHTML;
+        }
+
+        // Fallback карточка
+        generateFallbackCard(product) {
+            return `
+            <div class="product-card bg-white rounded-lg shadow-sm border border-gray-200 p-4 relative">
+                <button class="absolute top-2 left-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg font-bold transition-colors z-10 shadow-lg"
+                        data-sku="${product.sku}"
+                        title="Удалить из воркспейса">×</button>
+                <div class="ml-10">
+                    <h3 class="font-bold text-gray-900">${product.name || 'Неизвестный товар'}</h3>
+                    <p class="text-sm text-gray-600">SKU: ${product.sku}</p>
+                    <p class="text-sm text-gray-600">Остаток: ${product.stock || 0} шт.</p>
+                </div>
+            </div>
+        `;
+        }
+
+        // Настройка обработчиков событий
+        setupEventListeners() {
+            // Поиск в воркспейсе
+            const searchInput = document.getElementById('workspaceSearch');
+            if (searchInput) {
+                searchInput.addEventListener('input', (e) => {
+                    this.filterWorkspaceProducts(e.target.value);
+                });
+            }
+        }
+
+        // Переключение товара в воркспейсе
+        toggleProduct(card) {
+            const sku = card.dataset.productSku;
+
+            if (this.selectedProducts[sku]) {
+                // Товар уже в воркспейсе - удаляем
+                this.removeProduct(sku);
+            } else {
+                // Товар не в воркспейсе - добавляем
+                const productData = this.extractProductData(card);
+                if (productData) {
+                    this.addProduct(productData);
+                }
+            }
+        }
+
+        // Извлечение данных товара из карточки
+        extractProductData(card) {
+            const sku = card.dataset.productSku;
+            if (!sku) return null;
+
+            return {
+                sku: sku,
+                name: card.dataset.productName || card.querySelector('h3')?.textContent?.trim() || 'Неизвестный товар',
+                brand: card.dataset.productBrand || '',
+                ean: card.dataset.productEan || '',
+                stock: parseInt(card.dataset.productStock) || 0,
+                price: parseFloat(card.dataset.productPrice) || 0,
+                category: card.dataset.productCategory || '',
+                id: card.dataset.productId || ''
+            };
+        }
+
+        // Фильтрация товаров в воркспейсе
+        filterWorkspaceProducts(searchTerm) {
+            const products = document.querySelectorAll('#workspaceProductsList .product-card');
+            const term = searchTerm.toLowerCase();
+
+            products.forEach(product => {
+                const name = product.querySelector('h3')?.textContent?.toLowerCase() || '';
+                const sku = product.querySelector('[data-sku]')?.dataset.sku?.toLowerCase() || '';
+
+                if (name.includes(term) || sku.includes(term)) {
+                    product.style.display = '';
+                } else {
+                    product.style.display = 'none';
+                }
+            });
+        }
+
+
+        // Показ уведомлений
+        showNotification(message, type = 'info') {
+            // Всегда используем глобальную функцию (теперь она показывает уведомления в левом нижнем углу)
+            if (typeof window.showNotification === 'function') {
+                window.showNotification(message, type);
+            } else {
+                console.log(`[${type.toUpperCase()}] ${message}`);
+            }
+        }
+
+        // Принудительное обновление подсветки (для вызова извне)
+        forceUpdateHighlight() {
+            // Сначала убираем все классы выделения
+            document.querySelectorAll('.product-card').forEach(card => {
+                card.classList.remove('workspace-selected');
+            });
+
+            // Принудительно перерисовываем страницу
+            document.body.offsetHeight;
+
+            setTimeout(() => {
+                // Затем применяем подсветку
+                this.highlightSelectedProducts();
+            }, 50);
+        }
+
+        // Дополнительная функция для полного сброса стилей (больше не нужна)
+        forceResetAllStyles() {
+            // Ничего не делаем - не трогаем стили кнопок
+        }
+
+    }
+
+    // Глобальные переменные
+    let workspaceManager = null;
+
+    // Глобальный обработчик кликов для работы с воркспейсом
+    document.addEventListener('click', function(e) {
+        // Проверяем, если это кнопка удаления из воркспейса (крестик)
+        // Ищем кнопку с классом, содержащим "bg-red-500" или "bg-red-600" (кнопка удаления)
+        if (e.target.closest('button') && 
+            e.target.closest('#workspaceProductsList') &&
+            (e.target.closest('button').classList.contains('bg-red-500') || 
+             e.target.closest('button').classList.contains('bg-red-600')) &&
+            e.target.closest('button').getAttribute('onclick') === 'removeFromWorkspace(this)') {
+            e.preventDefault();
+            e.stopPropagation();
+            const button = e.target.closest('button');
+            const card = button.closest('.product-card');
+            const sku = card ? card.dataset.productSku : null;
+            
+            if (sku) {
+                // Инициализируем воркспейс если нужно
+                initializeWorkspace();
+                if (workspaceManager) {
+                    workspaceManager.removeProduct(sku);
+                }
+            }
+            return;
+        }
+
+        // Клики по карточкам товаров в каталоге - УБРАНО
+        // Теперь используется только прямой обработчик onclick="handleProductCardClick(event, this)"
+        // на самих карточках товаров
+    });
+
+    // Переключение воркспейса (универсальная версия для всех страниц)
+    function toggleWorkspace() {
+        // Убеждаемся, что воркспейс инициализирован
+        initializeWorkspace();
+        
+        const container = document.getElementById('workspaceContainer');
+        const catalogPanel = document.getElementById('catalogPanel');
+        
+        // Ищем основной контент страницы - пробуем разные варианты
+        let mainContent = document.getElementById('mainContent') || 
+                         document.querySelector('main') || 
+                         document.querySelector('.main-content') ||
+                         document.querySelector('.content') ||
+                         document.body;
+
+        if (!container || !catalogPanel) {
+            console.error('Не найдены необходимые элементы для воркспейса');
+            return;
+        }
+
+        if (workspaceManager && workspaceManager.isOpen) {
+            // Закрываем воркспейс
+            container.classList.add('hidden');
+            catalogPanel.innerHTML = '';
+            if (mainContent && mainContent.id === 'mainContent') {
+                mainContent.classList.remove('hidden');
+            }
+            workspaceManager.isOpen = false;
+        } else {
+            // Открываем воркспейс
+            container.classList.remove('hidden');
+
+            // Копируем контент текущей страницы в правую панель
+            if (mainContent) {
+                catalogPanel.innerHTML = `
+                    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                        ${mainContent.innerHTML}
+                    </div>
+                `;
+                
+            } else {
+                catalogPanel.innerHTML = `
+                    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                        <p class="text-gray-500">Контент страницы не найден</p>
+                    </div>
+                `;
+            }
+
+            if (mainContent && mainContent.id === 'mainContent') {
+                mainContent.classList.add('hidden');
+            }
+
+            if (workspaceManager) {
+                workspaceManager.isOpen = true;
+                // Принудительно обновляем UI воркспейса
+                setTimeout(() => {
+                    workspaceManager.renderWorkspaceProducts();
+                    workspaceManager.highlightSelectedProducts();
+                    workspaceManager.updateWorkspaceCount();
+                }, 100);
+            }
+        }
+    }
+
+
+    // Глобальные функции
+    function clearWorkspace() {
+        initializeWorkspace();
+        if (workspaceManager) {
+            workspaceManager.clearWorkspace();
+        }
+    }
+
+    // Глобальная функция для принудительного обновления стилей
+    function forceUpdateStyles() {
+        initializeWorkspace();
+        if (workspaceManager) {
+            workspaceManager.forceUpdateHighlight();
+        }
+    }
+
+    // Управление меню действий
+    function toggleActionsMenu() {
+        const menu = document.getElementById('workspaceActionsMenu');
+        if (menu) {
+            menu.classList.toggle('hidden');
+        }
+    }
+
+    // Закрытие меню при клике вне его
+    document.addEventListener('click', function(e) {
+        const menu = document.getElementById('workspaceActionsMenu');
+        const button = document.getElementById('workspaceActionsBtn');
+        
+        if (menu && button && !menu.contains(e.target) && !button.contains(e.target)) {
+            menu.classList.add('hidden');
+        }
+    });
+
+
+    // Функции экспорта
+    async function exportWithImages() {
+        initializeWorkspace();
+        if (!workspaceManager || workspaceManager.getProductCount() === 0) {
+            showNotification('Воркспейс пуст. Добавьте товары для экспорта.', 'warning');
+            return;
+        }
+        
+        const skus = Object.keys(workspaceManager.selectedProducts);
+        
+        try {
+            showNotification(`Начинаем экспорт остатков с изображениями для ${skus.length} товаров...`, 'info');
+            
+            // Используем существующий endpoint из warehouse.py
+            const skusParam = skus.map(sku => `skus=${sku}`).join('&');
+            const url = `/api/warehouse/export/stock-with-sales/?${skusParam}`;
+            
+            // Создаем ссылку для скачивания
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `stock_report_with_images_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            showNotification(`Экспорт остатков с изображениями завершен для ${skus.length} товаров`, 'success');
+        } catch (error) {
+            console.error('Ошибка при экспорте с изображениями:', error);
+            showNotification('Ошибка при экспорте с изображениями', 'error');
+        }
+        
+        // Закрываем меню
+        document.getElementById('workspaceActionsMenu').classList.add('hidden');
+    }
+
+    async function exportWithoutImages() {
+        initializeWorkspace();
+        if (!workspaceManager || workspaceManager.getProductCount() === 0) {
+            showNotification('Воркспейс пуст. Добавьте товары для экспорта.', 'warning');
+            return;
+        }
+        
+        const skus = Object.keys(workspaceManager.selectedProducts);
+        
+        try {
+            showNotification(`Начинаем экспорт остатков без изображений для ${skus.length} товаров...`, 'info');
+            
+            // Используем существующий endpoint из warehouse.py
+            const skusParam = skus.map(sku => `skus=${sku}`).join('&');
+            const url = `/api/warehouse/export/stock-with-sales/no-images/?${skusParam}`;
+            
+            // Создаем ссылку для скачивания
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `stock_report_without_images_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            showNotification(`Экспорт остатков без изображений завершен для ${skus.length} товаров`, 'success');
+        } catch (error) {
+            console.error('Ошибка при экспорте без изображений:', error);
+            showNotification('Ошибка при экспорте без изображений', 'error');
+        }
+        
+        // Закрываем меню
+        document.getElementById('workspaceActionsMenu').classList.add('hidden');
+    }
+
+    // Функции синхронизации
+    async function enableSync() {
+        initializeWorkspace();
+        if (!workspaceManager || workspaceManager.getProductCount() === 0) {
+            showNotification('Воркспейс пуст. Добавьте товары для синхронизации.', 'warning');
+            return;
+        }
+        
+        const skus = Object.keys(workspaceManager.selectedProducts);
+        
+        try {
+            showNotification(`Включаем синхронизацию остатков для ${skus.length} товаров...`, 'info');
+            
+            const response = await fetch('/catalog_new/api/workspace/sync/enable', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(skus)
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                showNotification(result.message, 'success');
+            } else {
+                const errorData = await response.json();
+                showNotification(`Ошибка включения синхронизации: ${errorData.detail || 'Неизвестная ошибка'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка при включении синхронизации:', error);
+            showNotification('Ошибка при включении синхронизации', 'error');
+        }
+        
+        // Закрываем меню
+        document.getElementById('workspaceActionsMenu').classList.add('hidden');
+    }
+
+    async function disableSync() {
+        initializeWorkspace();
+        if (!workspaceManager || workspaceManager.getProductCount() === 0) {
+            showNotification('Воркспейс пуст. Добавьте товары для отключения синхронизации.', 'warning');
+            return;
+        }
+        
+        const skus = Object.keys(workspaceManager.selectedProducts);
+        
+        try {
+            showNotification(`Выключаем синхронизацию остатков для ${skus.length} товаров...`, 'info');
+            
+            const response = await fetch('/catalog_new/api/workspace/sync/disable', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(skus)
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                showNotification(result.message, 'info');
+            } else {
+                const errorData = await response.json();
+                showNotification(`Ошибка выключения синхронизации: ${errorData.detail || 'Неизвестная ошибка'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка при выключении синхронизации:', error);
+            showNotification('Ошибка при выключении синхронизации', 'error');
+        }
+        
+        // Закрываем меню
+        document.getElementById('workspaceActionsMenu').classList.add('hidden');
+    }
+
+    // Функции заявок
+    async function createTransferRequest() {
+        initializeWorkspace();
+        if (!workspaceManager || workspaceManager.getProductCount() === 0) {
+            showNotification('Воркспейс пуст. Добавьте товары для создания заявки.', 'warning');
+            return;
+        }
+        
+        const skus = Object.keys(workspaceManager.selectedProducts);
+        
+        try {
+            showNotification(`Создаем заявку на перемещение для ${skus.length} товаров...`, 'info');
+            
+            const response = await fetch('/catalog_new/api/workspace/transfer-request', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(skus)
+            });
+            
+            if (response.ok) {
+                // Скачиваем файл
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `transfer_request_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                
+                showNotification(`Заявка на перемещение создана для ${skus.length} товаров`, 'success');
+            } else {
+                const errorData = await response.json();
+                showNotification(`Ошибка создания заявки: ${errorData.detail || 'Неизвестная ошибка'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка при создании заявки на перемещение:', error);
+            showNotification('Ошибка при создании заявки на перемещение', 'error');
+        }
+        
+        // Закрываем меню
+        document.getElementById('workspaceActionsMenu').classList.add('hidden');
+    }
+
+    async function createSupplierRequest() {
+        initializeWorkspace();
+        if (!workspaceManager || workspaceManager.getProductCount() === 0) {
+            showNotification('Воркспейс пуст. Добавьте товары для создания заявки поставщику.', 'warning');
+            return;
+        }
+        
+        const skus = Object.keys(workspaceManager.selectedProducts);
+        
+        try {
+            showNotification(`Создаем заявку поставщику для ${skus.length} товаров...`, 'info');
+            
+            const response = await fetch('/catalog_new/api/workspace/supplier-request', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(skus)
+            });
+            
+            if (response.ok) {
+                // Скачиваем файл
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `supplier_request_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                
+                showNotification(`Заявка поставщику создана для ${skus.length} товаров`, 'success');
+            } else {
+                const errorData = await response.json();
+                showNotification(`Ошибка создания заявки: ${errorData.detail || 'Неизвестная ошибка'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка при создании заявки поставщику:', error);
+            showNotification('Ошибка при создании заявки поставщику', 'error');
+        }
+        
+        // Закрываем меню
+        document.getElementById('workspaceActionsMenu').classList.add('hidden');
+    }
+
+    async function deleteSelectedProducts() {
+        initializeWorkspace();
+        if (!workspaceManager || workspaceManager.getProductCount() === 0) {
+            showNotification('Воркспейс пуст. Добавьте товары для удаления.', 'warning');
+            return;
+        }
+        
+        const skus = Object.keys(workspaceManager.selectedProducts);
+        const productNames = Object.values(workspaceManager.selectedProducts).map(p => p.name);
+        
+        // Создаем детальное предупреждение
+        const productList = productNames.slice(0, 5).join(', ');
+        const moreText = productNames.length > 5 ? ` и еще ${productNames.length - 5} товаров` : '';
+        
+        const confirmMessage = `ВНИМАНИЕ! Вы собираетесь удалить ${skus.length} товаров из системы:\n\n${productList}${moreText}\n\nЭто действие НЕОБРАТИМО и удалит:\n• Все данные о товарах\n• Все остатки на складах\n• Все связанные операции\n• Все настройки синхронизации\n\nВы уверены, что хотите продолжить?`;
+        
+        if (!confirm(confirmMessage)) {
+            showNotification('Удаление отменено', 'info');
+            return;
+        }
+        
+        // Дополнительное подтверждение для большого количества товаров
+        if (skus.length > 10) {
+            const secondConfirm = confirm(`Вы действительно хотите удалить ${skus.length} товаров? Это действие нельзя отменить!`);
+            if (!secondConfirm) {
+                showNotification('Удаление отменено', 'info');
+                return;
+            }
+        }
+        
+        
+        try {
+            showNotification(`Начинаем удаление ${skus.length} товаров из системы...`, 'info');
+            
+            const response = await fetch('/api/products/bulk-delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ skus: skus })
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                
+                // Показываем детальный результат
+                if (result.total_failed === 0) {
+                    showNotification(`Успешно удалено ${result.total_deleted} товаров из системы`, 'success');
+                } else {
+                    showNotification(`Удалено ${result.total_deleted} товаров, ошибок: ${result.total_failed}`, 'warning');
+                    
+                    // Показываем детали ошибок
+                    if (result.failed_deletions && result.failed_deletions.length > 0) {
+                        console.error('Ошибки удаления:', result.failed_deletions);
+                        const errorDetails = result.failed_deletions.map(f => `${f.sku}: ${f.error}`).join('\n');
+                        alert(`Ошибки при удалении:\n${errorDetails}`);
+                    }
+                }
+                
+                // Очищаем воркспейс после успешного удаления
+                if (result.total_deleted > 0) {
+                    workspaceManager.clearWorkspace();
+                    showNotification('Воркспейс очищен после удаления товаров', 'info');
+                    
+                    // Перерисовываем каталог после удаления товаров
+                    if (typeof handleFilterChange === 'function') {
+                        handleFilterChange();
+                        
+                        // Прокручиваем каталог вверх после обновления
+                        setTimeout(() => {
+                            const catalogPanel = document.getElementById('catalogPanel');
+                            const productsList = document.getElementById('productsList');
+                            
+                            if (catalogPanel) {
+                                // Если воркспейс открыт, прокручиваем правую панель каталога
+                                catalogPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            } else if (productsList) {
+                                // Если воркспейс закрыт, прокручиваем основной список товаров
+                                productsList.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            } else {
+                                // Fallback - прокручиваем страницу вверх
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }
+                        }, 500); // Небольшая задержка для завершения обновления каталога
+                    } else {
+                        window.location.reload();
+                    }
+                }
+                
+            } else {
+                const errorData = await response.json();
+                showNotification(`Ошибка удаления товаров: ${errorData.detail || 'Неизвестная ошибка'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка при удалении товаров:', error);
+            showNotification('Ошибка при удалении товаров', 'error');
+        }
+        
+        // Закрываем меню
+        document.getElementById('workspaceActionsMenu').classList.add('hidden');
+    }
+
+
+    // Функция refreshProductCards перенесена в scripts.html
+    
+    // Функция refreshCatalogCard перенесена в scripts.html
+    
+    // Функция refreshWorkspaceCard перенесена в scripts.html
+
+    // Глобальная функция для инициализации воркспейса
+    function initializeWorkspace() {
+        if (!workspaceManager) {
+            try {
+                workspaceManager = new SimpleWorkspaceManager();
+                window.workspaceManager = workspaceManager;
+            } catch (error) {
+                console.error('Ошибка при инициализации SimpleWorkspaceManager:', error);
+            }
+        }
+        return workspaceManager;
+    }
+
+    // Инициализация при загрузке страницы
+    document.addEventListener('DOMContentLoaded', function () {
+
+        // Инициализируем воркспейс
+        initializeWorkspace();
+
+        // Обновляем подсветку после инициализации
+        setTimeout(() => {
+            if (workspaceManager) {
+                workspaceManager.highlightSelectedProducts();
+            }
+        }, 200);
+    });
+</script>
