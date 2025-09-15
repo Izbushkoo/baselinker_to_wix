@@ -39,6 +39,7 @@ def modify_card_for_workspace(html: str, sku: str) -> str:
     Модифицирует HTML карточки товара для отображения в воркспейсе:
     1. Удаляет onclick="addToWorkspaceFromCard(event, this)" с главного div
     2. Добавляет кнопку удаления (крестик) в левый верхний угол
+    3. Обеспечивает корректную работу поля "Количество в заявку"
     """
     import re
     
@@ -62,6 +63,17 @@ def modify_card_for_workspace(html: str, sku: str) -> str:
         r'(<div class="product-card[^"]*"[^>]*>)',
         r'\1' + delete_button,
         html
+    )
+    
+    # Убеждаемся, что поля "Количество в заявку" и "Комментарий" работают корректно в воркспейсе
+    # Добавляем обработчики для сохранения значений при изменении
+    html = html.replace(
+        'data-field="request_quantity"',
+        f'data-field="request_quantity" data-workspace-sku="{sku}" onchange="saveRequestQuantity(this)"'
+    )
+    html = html.replace(
+        'data-field="request_comment"',
+        f'data-field="request_comment" data-workspace-sku="{sku}" onchange="saveRequestComment(this)"'
     )
     
     return html
@@ -565,7 +577,8 @@ async def get_workspace_cards(
             card_html = templates.get_template("catalog_new_blocks/product_card.html").render(
                 product=product_data,
                 selected_products=[],
-                current_user=current_user
+                current_user=current_user,
+                context="workspace"
             )
             # Модифицируем для воркспейса
             card_html = modify_card_for_workspace(card_html, product_data['sku'])
@@ -658,7 +671,8 @@ async def get_product_card(
     html = templates.get_template("catalog_new_blocks/product_card.html").render(
         product=product_data,
         selected_products=[],
-        current_user=current_user
+        current_user=current_user,
+        context=context
     )
     
     # Модифицируем HTML в зависимости от контекста
@@ -762,7 +776,8 @@ async def get_product_cards(
             card_html = templates.get_template("catalog_new_blocks/product_card.html").render(
                 product=product_data,
                 selected_products=[],
-                current_user=current_user
+                current_user=current_user,
+                context=context
             )
             
             # Модифицируем HTML в зависимости от контекста

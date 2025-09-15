@@ -428,9 +428,29 @@
                             window.reinitializeDragAndDrop();
                         }, 100);
                     }
+                    
+                    // Восстанавливаем значения количества в заявку и комментарии
+                    setTimeout(() => {
+                        if (typeof window.restoreRequestQuantities === 'function') {
+                            window.restoreRequestQuantities();
+                        }
+                        if (typeof window.restoreRequestComments === 'function') {
+                            window.restoreRequestComments();
+                        }
+                    }, 200);
                 } else {
                     // Fallback: показываем простые карточки
                     container.innerHTML = skus.map(sku => this.generateFallbackCard(this.selectedProducts[sku])).join('');
+                    
+                    // Восстанавливаем значения количества в заявку и комментарии для fallback карточек
+                    setTimeout(() => {
+                        if (typeof window.restoreRequestQuantities === 'function') {
+                            window.restoreRequestQuantities();
+                        }
+                        if (typeof window.restoreRequestComments === 'function') {
+                            window.restoreRequestComments();
+                        }
+                    }, 200);
                 }
 
             } catch (error) {
@@ -443,6 +463,16 @@
                         window.reinitializeDragAndDrop();
                     }, 100);
                 }
+                
+                // Восстанавливаем значения количества в заявку и комментарии для fallback карточек
+                setTimeout(() => {
+                    if (typeof window.restoreRequestQuantities === 'function') {
+                        window.restoreRequestQuantities();
+                    }
+                    if (typeof window.restoreRequestComments === 'function') {
+                        window.restoreRequestComments();
+                    }
+                }, 200);
             }
         }
 
@@ -492,6 +522,33 @@
                     <h3 class="font-bold text-gray-900">${product.name || 'Неизвестный товар'}</h3>
                     <p class="text-sm text-gray-600">SKU: ${product.sku}</p>
                     <p class="text-sm text-gray-600">Остаток: ${product.stock || 0} шт.</p>
+                    
+                    <!-- Поле "Количество в заявку" -->
+                    <div class="mt-2 flex items-center gap-3">
+                        <div class="flex items-center gap-2">
+                            <label class="text-sm font-medium text-gray-700">Комментарий:</label>
+                            <input type="text" 
+                                   class="w-32 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="Комментарий"
+                                   data-sku="${product.sku}"
+                                   data-field="request_comment"
+                                   data-workspace-sku="${product.sku}"
+                                   onchange="saveRequestComment(this)"
+                                   title="Комментарий к товару в заявке">
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-sm font-medium text-gray-700">Количество в заявку:</label>
+                            <input type="number" 
+                                   class="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                   min="0"
+                                   placeholder="0"
+                                   data-sku="${product.sku}"
+                                   data-field="request_quantity"
+                                   data-workspace-sku="${product.sku}"
+                                   onchange="saveRequestQuantity(this)"
+                                   title="Количество товара для включения в заявку">
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
@@ -1132,5 +1189,140 @@
                 workspaceManager.highlightSelectedProducts();
             }
         }, 200);
+    });
+
+    // Глобальная функция для сохранения количества в заявку
+    function saveRequestQuantity(input) {
+        const sku = input.dataset.workspaceSku || input.dataset.sku;
+        const quantity = parseInt(input.value) || 0;
+        
+        if (!sku) {
+            console.error('SKU не найден для поля количества в заявку');
+            return;
+        }
+        
+        // Сохраняем в localStorage с уникальным ключом для пользователя
+        const userEmail = getUserEmail();
+        const storageKey = `request_quantities_${userEmail}`;
+        
+        try {
+            let quantities = JSON.parse(localStorage.getItem(storageKey) || '{}');
+            quantities[sku] = quantity;
+            localStorage.setItem(storageKey, JSON.stringify(quantities));
+            
+            console.log(`Сохранено количество в заявку для ${sku}: ${quantity}`);
+        } catch (error) {
+            console.error('Ошибка при сохранении количества в заявку:', error);
+        }
+    }
+    
+    // Функция для получения сохраненного количества в заявку
+    function getRequestQuantity(sku) {
+        const userEmail = getUserEmail();
+        const storageKey = `request_quantities_${userEmail}`;
+        
+        try {
+            const quantities = JSON.parse(localStorage.getItem(storageKey) || '{}');
+            return quantities[sku] || 0;
+        } catch (error) {
+            console.error('Ошибка при получении количества в заявку:', error);
+            return 0;
+        }
+    }
+    
+    // Функция для получения email пользователя (дублируем из SimpleWorkspaceManager)
+    function getUserEmail() {
+        const userDataEl = document.getElementById('user-data');
+        if (userDataEl) {
+            const email = userDataEl.dataset.userEmail;
+            if (email && email.trim() !== '') {
+                return email.replace(/[@.]/g, '_');
+            }
+        }
+        return 'anonymous';
+    }
+    
+    // Функция для восстановления значений количества в заявку при загрузке карточек
+    function restoreRequestQuantities() {
+        const inputs = document.querySelectorAll('input[data-field="request_quantity"]');
+        inputs.forEach(input => {
+            const sku = input.dataset.workspaceSku || input.dataset.sku;
+            if (sku) {
+                const savedQuantity = getRequestQuantity(sku);
+                if (savedQuantity > 0) {
+                    input.value = savedQuantity;
+                }
+            }
+        });
+    }
+    
+    // Глобальная функция для сохранения комментария к товару в заявке
+    function saveRequestComment(input) {
+        const sku = input.dataset.workspaceSku || input.dataset.sku;
+        const comment = input.value.trim();
+        
+        if (!sku) {
+            console.error('SKU не найден для поля комментария');
+            return;
+        }
+        
+        // Сохраняем в localStorage с уникальным ключом для пользователя
+        const userEmail = getUserEmail();
+        const storageKey = `request_comments_${userEmail}`;
+        
+        try {
+            let comments = JSON.parse(localStorage.getItem(storageKey) || '{}');
+            comments[sku] = comment;
+            localStorage.setItem(storageKey, JSON.stringify(comments));
+            
+            console.log(`Сохранен комментарий для ${sku}: ${comment}`);
+        } catch (error) {
+            console.error('Ошибка при сохранении комментария:', error);
+        }
+    }
+    
+    // Функция для получения сохраненного комментария
+    function getRequestComment(sku) {
+        const userEmail = getUserEmail();
+        const storageKey = `request_comments_${userEmail}`;
+        
+        try {
+            const comments = JSON.parse(localStorage.getItem(storageKey) || '{}');
+            return comments[sku] || '';
+        } catch (error) {
+            console.error('Ошибка при получении комментария:', error);
+            return '';
+        }
+    }
+    
+    // Функция для восстановления значений комментариев при загрузке карточек
+    function restoreRequestComments() {
+        const inputs = document.querySelectorAll('input[data-field="request_comment"]');
+        inputs.forEach(input => {
+            const sku = input.dataset.workspaceSku || input.dataset.sku;
+            if (sku) {
+                const savedComment = getRequestComment(sku);
+                if (savedComment) {
+                    input.value = savedComment;
+                }
+            }
+        });
+    }
+    
+    // Делаем функции глобальными для доступа из других частей кода
+    window.saveRequestQuantity = saveRequestQuantity;
+    window.getRequestQuantity = getRequestQuantity;
+    window.restoreRequestQuantities = restoreRequestQuantities;
+    window.saveRequestComment = saveRequestComment;
+    window.getRequestComment = getRequestComment;
+    window.restoreRequestComments = restoreRequestComments;
+    
+    // Восстанавливаем значения после загрузки карточек
+    document.addEventListener('DOMContentLoaded', function() {
+        // Добавляем небольшую задержку для загрузки карточек
+        setTimeout(() => {
+            restoreRequestQuantities();
+            restoreRequestComments();
+        }, 500);
     });
 </script>

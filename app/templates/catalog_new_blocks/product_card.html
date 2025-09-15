@@ -211,6 +211,40 @@
                     {% endfor %}
                 </div>
             </div>
+            
+            <!-- Поле "Количество в заявку" - только для воркспейса -->
+            {% if context == "workspace" %}
+            <div class="bg-blue-50 rounded-lg p-4">
+                <div class="flex items-center justify-end gap-3">
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm font-medium text-gray-700">Комментарий:</label>
+                        <input type="text" 
+                               class="w-32 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                               placeholder="Комментарий"
+                               data-sku="{{ product['sku'] }}"
+                               data-field="request_comment"
+                               onclick="event.stopPropagation()"
+                               onmousedown="event.stopPropagation()"
+                               onfocus="event.stopPropagation()"
+                               title="Комментарий к товару в заявке">
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm font-medium text-gray-700">Количество в заявку:</label>
+                        <input type="number" 
+                               class="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                               min="0"
+                               placeholder="0"
+                               data-sku="{{ product['sku'] }}"
+                               data-field="request_quantity"
+                               onclick="event.stopPropagation()"
+                               onmousedown="event.stopPropagation()"
+                               onfocus="event.stopPropagation()"
+                               title="Количество товара для включения в заявку">
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            
             {% if product['category'] %}
             <div class="flex items-center space-x-2">
                 <span class="font-medium text-gray-900">Категория:</span>
@@ -1399,7 +1433,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Делегирование событий для динамически загружаемых полей ввода
     document.addEventListener('focus', function(e) {
         if (e.target.type === 'number' && e.target.closest('.product-card')) {
-            e.target.value = '';
+            // Сбрасываем значение только если оно равно 0
+            if (e.target.value === '0' || e.target.value === '') {
+                e.target.value = '';
+            }
         }
     }, true); // Используем capture phase
     
@@ -1413,7 +1450,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     document.addEventListener('click', function(e) {
         if (e.target.type === 'number' && e.target.closest('.product-card')) {
-            e.target.value = '';
+            // Сбрасываем значение только если оно равно 0
+            if (e.target.value === '0' || e.target.value === '') {
+                e.target.value = '';
+            }
             e.target.focus();
         }
     }, true); // Используем capture phase
