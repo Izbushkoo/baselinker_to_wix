@@ -5,6 +5,13 @@
  * @created: 2024-01-15
 -->
 
+<!-- Скрытый элемент с данными пользователя для JavaScript -->
+<div id="user-data" 
+     data-is-admin="{{ 'true' if current_user and current_user.is_admin else 'false' }}"
+     data-user-email="{{ current_user.email if current_user else '' }}"
+     style="display: none;">
+</div>
+
 <!-- Обновлено: единая цветовая схема, версия 1.2.4 -->
 <div class="product-card flex items-start gap-6 bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 p-4 relative cursor-pointer" 
      data-product-sku="{{ product['sku'] }}"
@@ -852,6 +859,19 @@ function initializeTransferModal() {
 
 // Открытие модального окна перемещения
 function openTransferModal(fromData, toData) {
+    // Проверяем права доступа пользователя
+    const userDataEl = document.getElementById('user-data');
+    if (!userDataEl) {
+        showErrorModal('Ошибка: данные пользователя не найдены');
+        return;
+    }
+    
+    const isAdmin = userDataEl.dataset.isAdmin === 'true';
+    if (!isAdmin) {
+        showErrorModal('У вас нет прав для выполнения перемещения товаров между складами');
+        return;
+    }
+    
     // Создаем модальное окно динамически на уровне document.body
     createTransferModalIfNeeded();
     
@@ -963,9 +983,30 @@ function confirmTransfer() {
             quantity: quantity
         })
     })
-    .then(response => {
+    .then(async response => {
         if (!response.ok) {
-            throw new Error('Ошибка при перемещении товара');
+            // Пытаемся получить детальное сообщение об ошибке из ответа
+            let errorMessage = 'Ошибка при перемещении товара';
+            try {
+                const errorData = await response.json();
+                if (errorData.detail) {
+                    errorMessage = errorData.detail;
+                }
+            } catch (e) {
+                // Если не удалось распарсить JSON, используем статус код
+                if (response.status === 401) {
+                    errorMessage = 'Требуется авторизация для выполнения операции';
+                } else if (response.status === 403) {
+                    errorMessage = 'У вас нет прав для выполнения перемещения товаров между складами';
+                } else if (response.status === 404) {
+                    errorMessage = 'Товар не найден на указанном складе';
+                } else if (response.status === 400) {
+                    errorMessage = 'Некорректные данные для перемещения';
+                } else {
+                    errorMessage = `Ошибка сервера (${response.status})`;
+                }
+            }
+            throw new Error(errorMessage);
         }
         return response.json();
     })
@@ -995,7 +1036,7 @@ function confirmTransfer() {
         showSuccessMessage(`Товар успешно перемещен: ${quantity} шт. из склада "${transferData.from.warehouse}" в склад "${transferData.to.warehouse}"`);
     })
     .catch(error => {
-        showErrorModal('Ошибка при перемещении товара: ' + error.message);
+        showErrorModal(error.message);
     })
     .finally(() => {
         confirmBtn.disabled = false;
@@ -1048,6 +1089,19 @@ function removeFromStock(button, event) {
         event.preventDefault();
     }
     
+    // Проверяем права доступа пользователя
+    const userDataEl = document.getElementById('user-data');
+    if (!userDataEl) {
+        showErrorModal('Ошибка: данные пользователя не найдены');
+        return;
+    }
+    
+    const isAdmin = userDataEl.dataset.isAdmin === 'true';
+    if (!isAdmin) {
+        showErrorModal('У вас нет прав для выполнения операций со складом');
+        return;
+    }
+    
     const input = button.parentElement.querySelector('input');
     const quantity = parseInt(input.value);
     const warehouse = button.dataset.warehouse;
@@ -1079,9 +1133,30 @@ function removeFromStock(button, event) {
             quantity: quantity
         })
     })
-    .then(response => {
+    .then(async response => {
         if (!response.ok) {
-            throw new Error('Ошибка при списании');
+            // Пытаемся получить детальное сообщение об ошибке из ответа
+            let errorMessage = 'Ошибка при списании товара';
+            try {
+                const errorData = await response.json();
+                if (errorData.detail) {
+                    errorMessage = errorData.detail;
+                }
+            } catch (e) {
+                // Если не удалось распарсить JSON, используем статус код
+                if (response.status === 401) {
+                    errorMessage = 'Требуется авторизация для выполнения операции';
+                } else if (response.status === 403) {
+                    errorMessage = 'У вас нет прав для выполнения операций со складом';
+                } else if (response.status === 404) {
+                    errorMessage = 'Товар не найден на указанном складе';
+                } else if (response.status === 400) {
+                    errorMessage = 'Некорректные данные для списания';
+                } else {
+                    errorMessage = `Ошибка сервера (${response.status})`;
+                }
+            }
+            throw new Error(errorMessage);
         }
         return response.json();
     })
@@ -1111,6 +1186,19 @@ function addToStock(button, event) {
         event.preventDefault();
     }
     
+    // Проверяем права доступа пользователя
+    const userDataEl = document.getElementById('user-data');
+    if (!userDataEl) {
+        showErrorModal('Ошибка: данные пользователя не найдены');
+        return;
+    }
+    
+    const isAdmin = userDataEl.dataset.isAdmin === 'true';
+    if (!isAdmin) {
+        showErrorModal('У вас нет прав для выполнения операций со складом');
+        return;
+    }
+    
     const input = button.parentElement.querySelector('input');
     const quantity = parseInt(input.value);
     const warehouse = button.dataset.warehouse;
@@ -1135,9 +1223,30 @@ function addToStock(button, event) {
             quantity: quantity
         })
     })
-    .then(response => {
+    .then(async response => {
         if (!response.ok) {
-            throw new Error('Ошибка при пополнении');
+            // Пытаемся получить детальное сообщение об ошибке из ответа
+            let errorMessage = 'Ошибка при пополнении товара';
+            try {
+                const errorData = await response.json();
+                if (errorData.detail) {
+                    errorMessage = errorData.detail;
+                }
+            } catch (e) {
+                // Если не удалось распарсить JSON, используем статус код
+                if (response.status === 401) {
+                    errorMessage = 'Требуется авторизация для выполнения операции';
+                } else if (response.status === 403) {
+                    errorMessage = 'У вас нет прав для выполнения операций со складом';
+                } else if (response.status === 404) {
+                    errorMessage = 'Товар не найден на указанном складе';
+                } else if (response.status === 400) {
+                    errorMessage = 'Некорректные данные для пополнения';
+                } else {
+                    errorMessage = `Ошибка сервера (${response.status})`;
+                }
+            }
+            throw new Error(errorMessage);
         }
         return response.json();
     })
@@ -1358,6 +1467,19 @@ document.addEventListener('DOMContentLoaded', function() {
 // Глобальная функция удалена - используется только делегирование событий
 
 function deleteProduct(button) {
+    // Проверяем права доступа пользователя
+    const userDataEl = document.getElementById('user-data');
+    if (!userDataEl) {
+        showErrorModal('Ошибка: данные пользователя не найдены');
+        return;
+    }
+    
+    const isAdmin = userDataEl.dataset.isAdmin === 'true';
+    if (!isAdmin) {
+        showErrorModal('У вас нет прав для удаления товаров');
+        return;
+    }
+    
     const sku = button.dataset.productSku;
     const name = button.dataset.productName;
     
@@ -1374,9 +1496,30 @@ function deleteProduct(button) {
             'Content-Type': 'application/json',
         }
     })
-    .then(response => {
+    .then(async response => {
         if (!response.ok) {
-            throw new Error('Ошибка при удалении товара');
+            // Пытаемся получить детальное сообщение об ошибке из ответа
+            let errorMessage = 'Ошибка при удалении товара';
+            try {
+                const errorData = await response.json();
+                if (errorData.detail) {
+                    errorMessage = errorData.detail;
+                }
+            } catch (e) {
+                // Если не удалось распарсить JSON, используем статус код
+                if (response.status === 401) {
+                    errorMessage = 'Требуется авторизация для выполнения операции';
+                } else if (response.status === 403) {
+                    errorMessage = 'У вас нет прав для удаления товаров';
+                } else if (response.status === 404) {
+                    errorMessage = 'Товар не найден';
+                } else if (response.status === 400) {
+                    errorMessage = 'Некорректные данные для удаления';
+                } else {
+                    errorMessage = `Ошибка сервера (${response.status})`;
+                }
+            }
+            throw new Error(errorMessage);
         }
         return response.json();
     })

@@ -93,44 +93,21 @@ async def upload_incoming(
         raise HTTPException(status_code=400, detail='Неверный формат файла. Ожидается XLS/XLSX.')
     content = await file.read()
     try:
-        # Используем новую надежную функцию импорта
-        report_df, processed_products = manager.robust_import_incoming_from_excel(
-            content, warehouse.value, sku_col, qty_col, ean_col, name_col, image_col, header
-        )
+        processed_products = manager.import_incoming_from_excel(content, warehouse.value, sku_col, qty_col, ean_col, name_col, image_col, header)
         
-        # Создаем запись операции только для успешно обработанных товаров
-        if processed_products:
-            operations_service = get_operations_service()
-            operations_service.create_file_operation(
-                operation_type=OperationType.STOCK_IN_FILE,
-                warehouse_id=warehouse.value,
-                user_email=current_user.email,
-                file_name=file.filename,
-                products=processed_products
-            )
-        
-        # Генерируем отчет
-        report_output = manager.generate_import_report_excel(report_df, file.filename)
-        
-        # Формируем имя файла отчета на основе исходного файла
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        original_name = file.filename or "import_file"
-        # Убираем расширение из исходного имени и добавляем префикс
-        base_name = original_name.rsplit('.', 1)[0] if '.' in original_name else original_name
-        report_filename = f"{base_name}_report_{timestamp}.xlsx"
-        encoded_filename = quote(report_filename)
-        
-        # Возвращаем файл с отчетом
-        return StreamingResponse(
-            report_output,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={
-                "Content-Disposition": f"attachment; filename={encoded_filename}"
-            }
+        # Создаем запись операции
+        operations_service = get_operations_service()
+        operations_service.create_file_operation(
+            operation_type=OperationType.STOCK_IN_FILE,
+            warehouse_id=warehouse.value,
+            user_email=current_user.email,
+            file_name=file.filename,
+            products=processed_products
         )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    return JSONResponse({'status': 'success', 'file': file.filename, 'warehouse': warehouse.value})
 
 @router.post('/transfer/', summary='Импорт перемещения между складами')
 async def upload_transfer(
@@ -495,6 +472,10 @@ async def transfer_item(
     manager: manager.InventoryManager = Depends(manager.get_manager),
     current_user: User = Depends(deps.get_current_user_optional)
 ):
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="Не авторизован")
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Нет доступа для совершения перемещения")
     '''Перемещает указанное количество товара с одного склада на другой.'''
     try:
         # Проверяем и конвертируем значения складов

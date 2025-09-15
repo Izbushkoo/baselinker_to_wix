@@ -49,7 +49,7 @@ def modify_card_for_workspace(html: str, sku: str) -> str:
     delete_button = f'''
     <!-- Кнопка удаления из воркспейса (левый верхний угол) -->
     <button type="button"
-            onclick="removeFromWorkspace(this)"
+            data-sku="{sku}"
             class="absolute top-2 left-2 z-30 p-1 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-md transition-colors duration-200"
             title="Удалить из воркспейса">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
