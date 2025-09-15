@@ -1568,8 +1568,18 @@ function deleteProduct(button) {
         const productCard = button.closest('.flex.items-start.gap-6');
         productCard.remove();
         
+        // Удаляем товар из локального хранилища воркспейса
+        if (window.workspaceManager && typeof window.workspaceManager.removeProductFromStorage === 'function') {
+            window.workspaceManager.removeProductFromStorage(sku);
+        }
+        
+        // Обновляем воркспейс, если он открыт
+        if (window.workspaceManager && typeof window.workspaceManager.refreshWorkspace === 'function') {
+            window.workspaceManager.refreshWorkspace();
+        }
+        
         // Показываем сообщение об успехе
-        alert('Товар успешно удален');
+        showSuccessMessage(`Товар "${name}" (SKU: ${sku}) успешно удален из системы`);
     })
     .catch(error => {
         showErrorModal('Ошибка при удалении товара: ' + error.message);

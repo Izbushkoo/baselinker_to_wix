@@ -311,6 +311,23 @@
             }
         }
 
+        // Удаление товара из локального хранилища (для использования при удалении из системы)
+        removeProductFromStorage(sku) {
+            if (this.selectedProducts[sku]) {
+                delete this.selectedProducts[sku];
+                this.saveToStorage();
+                console.log(`Товар ${sku} удален из локального хранилища воркспейса`);
+            }
+        }
+
+        // Обновление воркспейса (для использования при удалении из системы)
+        refreshWorkspace() {
+            this.renderWorkspaceProducts();
+            this.highlightSelectedProducts();
+            this.updateWorkspaceCount();
+            console.log('Воркспейс обновлен после удаления товара из системы');
+        }
+
         // Очистка воркспейса
         clearWorkspace() {
             if (Object.keys(this.selectedProducts).length === 0) {
