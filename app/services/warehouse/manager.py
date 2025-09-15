@@ -383,6 +383,7 @@ class InventoryManager:
             bytes: Данные изображения или None в случае ошибки
         """
         if not url or not url.strip():
+            logging.warning("Пустой URL для скачивания изображения")
             return None
             
         try:
@@ -392,24 +393,29 @@ class InventoryManager:
                 logging.warning(f"Неверный URL: {url}")
                 return None
                 
+            logging.info(f"Начинаем скачивание изображения с URL: {url}")
+            
             # Скачиваем изображение
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
             
             response = requests.get(url.strip(), headers=headers, timeout=timeout)
+            logging.info(f"Получен ответ от сервера: статус {response.status_code}, размер {len(response.content)} байт")
             response.raise_for_status()
             
             # Проверяем, что это действительно изображение
             content_type = response.headers.get('content-type', '').lower()
+            logging.info(f"Content-Type ответа: {content_type}")
             if not content_type.startswith('image/'):
                 logging.warning(f"URL не содержит изображение (content-type: {content_type}): {url}")
                 return None
                 
+            logging.info(f"Успешно скачано изображение: {len(response.content)} байт")
             return response.content
             
         except requests.exceptions.RequestException as e:
-            logging.warning(f"Ошибка при скачивании изображения с URL {url}: {str(e)}")
+            logging.error(f"Ошибка при скачивании изображения с URL {url}: {str(e)}")
             return None
         except Exception as e:
             logging.error(f"Неожиданная ошибка при скачивании изображения с URL {url}: {str(e)}")
@@ -547,13 +553,15 @@ class InventoryManager:
                             # Скачиваем изображение по ссылке
                             downloaded_image_data = self.download_image_from_url(image_url_from_cell)
                             if downloaded_image_data:
-                                # Обрабатываем скачанное изображение
-                                compressed_image, original_image, _ = self.compress_image(downloaded_image_data, None, None)
+                                # Обрабатываем скачанное изображение с правильными параметрами
+                                compressed_image, original_image, image_url = self.compress_image(downloaded_image_data, sku, None)
                                 if compressed_image and original_image:
-                                    image_url = f"/api/products/{sku}/image/original"
                                     logging.info(f"Успешно обработано изображение из URL для SKU {sku}")
                                 else:
                                     logging.warning(f"Не удалось обработать скачанное изображение для SKU {sku}")
+                                    compressed_image = None
+                                    original_image = None
+                                    image_url = None
                             else:
                                 logging.warning(f"Не удалось скачать изображение по ссылке для SKU {sku}: {image_url_from_cell}")
                     
@@ -1132,3 +1140,380 @@ class InventoryManager:
             result = {sku: None for sku in skus}
         
         return result
+
+    def robust_import_incoming_from_excel(
+        self,
+        file_bytes: bytes,
+        warehouse: str,
+        sku_col: str = 'sku',
+        qty_col: str = 'Кол-во',
+        ean_col: str = 'EAN',
+        name_col: str = 'Name',
+        image_col: str = 'Foto',
+        header: int = None
+    ) -> Tuple[pd.DataFrame, List[Dict]]:
+        """
+        Надежный импорт прихода из Excel с полным отчетом по каждой позиции.
+        
+        Возвращает:
+        - DataFrame с отчетом по каждой строке файла
+        - Список успешно обработанных товаров
+        
+        Каждая строка файла будет обработана и включена в отчет с результатом:
+        - "УСПЕШНО" - товар создан/обновлен и остатки добавлены
+        - "ОШИБКА" - произошла ошибка с описанием
+        """
+        logging.info("Начало надежного импорта Excel файла")
+        
+        # Загружаем Excel файл
+        wb = openpyxl.load_workbook(BytesIO(file_bytes))
+        ws = wb.active
+        header_row = header + 1 if header is not None else 1
+        headers = [str(cell.value) for cell in ws[header_row]]
+        logging.info(f"Найдены заголовки: {headers}")
+        
+        # Проверяем наличие обязательных колонок
+        try:
+            col_indices = {
+                'sku': headers.index(sku_col),
+                'qty': headers.index(qty_col),
+            }
+        except ValueError as e:
+            raise ValueError(f"Не найдены обязательные колонки: {sku_col}, {qty_col}")
+        
+        # Проверяем наличие дополнительных колонок
+        has_ean = False
+        has_name = False
+        has_image = False
+        
+        try:
+            col_indices['ean'] = headers.index(ean_col)
+            has_ean = True
+        except ValueError:
+            logging.info("Колонка EAN не найдена")
+        
+        try:
+            col_indices['name'] = headers.index(name_col)
+            has_name = True
+        except ValueError:
+            logging.info("Колонка Name не найдена")
+        
+        try:
+            col_indices['image'] = headers.index(image_col)
+            has_image = True
+        except ValueError:
+            logging.info("Колонка Foto не найдена")
+        
+        # Создаем словарь изображений по номерам строк
+        images_by_row = {}
+        if has_image:
+            try:
+                for img in ws._images:
+                    coords = img.anchor._from
+                    row = coords.row + 1
+                    if row > (header + 1 if header is not None else 1):
+                        try:
+                            if hasattr(img.ref, 'getvalue'):
+                                image_data = img.ref.getvalue()
+                            elif hasattr(img.ref, '_data'):
+                                image_data = img.ref._data()
+                            elif hasattr(img.ref, 'content'):
+                                image_data = img.ref.content
+                            else:
+                                continue
+                                
+                            compressed_image, original_image, _ = self.compress_image(image_data, None, None)
+                            if compressed_image and original_image:
+                                images_by_row[row] = {
+                                    'compressed': compressed_image,
+                                    'original': original_image
+                                }
+                        except Exception:
+                            continue
+            except Exception as e:
+                logging.warning(f"Ошибка при обработке изображений: {e}")
+        
+        # Список для отчета
+        report_data = []
+        processed_products = []
+        
+        # Обрабатываем каждую строку данных
+        start_row = header + 2 if header is not None else 2
+        for row_idx, row in enumerate(ws.iter_rows(min_row=start_row), start=start_row):
+            # Инициализируем запись отчета
+            report_row = {
+                'Строка': row_idx,
+                'SKU': '',
+                'Количество': '',
+                'EAN': '',
+                'Название': '',
+                'Статус': '',
+                'Описание': '',
+                'Тип операции': ''
+            }
+            
+            try:
+                # Извлекаем данные из строки
+                sku_cell = row[col_indices['sku']].value
+                qty_cell = row[col_indices['qty']].value
+                
+                # Проверяем SKU
+                if not sku_cell or str(sku_cell).strip() == '' or str(sku_cell).lower() == 'none':
+                    report_row['Статус'] = 'ОШИБКА'
+                    report_row['Описание'] = 'SKU не указан или пустой'
+                    report_data.append(report_row)
+                    continue
+                
+                sku = str(sku_cell).strip()
+                report_row['SKU'] = sku
+                
+                # Проверяем количество
+                try:
+                    qty = int(qty_cell)
+                    if qty <= 0:
+                        report_row['Статус'] = 'ОШИБКА'
+                        report_row['Описание'] = 'Количество должно быть положительным числом'
+                        report_data.append(report_row)
+                        continue
+                    report_row['Количество'] = qty
+                except (ValueError, TypeError):
+                    report_row['Статус'] = 'ОШИБКА'
+                    report_row['Описание'] = f'Некорректное количество: {qty_cell}'
+                    report_data.append(report_row)
+                    continue
+                
+                # Извлекаем дополнительные данные
+                ean = ''
+                name = ''
+                if has_ean:
+                    ean_cell = row[col_indices['ean']].value
+                    ean = str(ean_cell).strip() if ean_cell else ''
+                    report_row['EAN'] = ean
+                
+                if has_name:
+                    name_cell = row[col_indices['name']].value
+                    name = str(name_cell).strip() if name_cell else ''
+                    report_row['Название'] = name
+                
+                # Проверяем существование товара в базе
+                with Session(self.engine) as session:
+                    existing_product = session.get(Product, sku)
+                    
+                    if existing_product:
+                        # Товар существует - только добавляем остатки
+                        try:
+                            self.restock(sku, warehouse, qty)
+                            report_row['Статус'] = 'УСПЕШНО'
+                            report_row['Описание'] = f'Добавлено {qty} шт. на склад {warehouse}'
+                            report_row['Тип операции'] = 'Пополнение остатков'
+                            
+                            processed_products.append({
+                                "sku": sku,
+                                "quantity": qty,
+                                "operation": "restock"
+                            })
+                            
+                        except Exception as e:
+                            report_row['Статус'] = 'ОШИБКА'
+                            report_row['Описание'] = f'Ошибка при добавлении остатков: {str(e)}'
+                            report_row['Тип операции'] = 'Пополнение остатков'
+                    
+                    else:
+                        # Товар не существует - создаем новый
+                        try:
+                            # Проверяем обязательные поля для создания товара
+                            if not name:
+                                report_row['Статус'] = 'ОШИБКА'
+                                report_row['Описание'] = 'Для создания нового товара обязательно указать название'
+                                report_data.append(report_row)
+                                continue
+                            
+                            # Обрабатываем изображения
+                            compressed_image = None
+                            original_image = None
+                            image_url = None
+                            
+                            # Проверяем встроенные изображения
+                            if row_idx in images_by_row:
+                                image_info = images_by_row[row_idx]
+                                compressed_image = image_info.get('compressed')
+                                original_image = image_info.get('original')
+                                image_url = f"/api/products/{sku}/image/original"
+                            
+                            # Проверяем ссылки на изображения
+                            elif has_image:
+                                image_url_cell = row[col_indices['image']].value
+                                if image_url_cell and str(image_url_cell).strip():
+                                    image_url_from_cell = str(image_url_cell).strip()
+                                    logging.info(f"Обнаружена ссылка на изображение для SKU {sku}: {image_url_from_cell}")
+                                    
+                                    # Проверяем, не обрезан ли URL (если заканчивается на "pr" или другие неполные части)
+                                    if image_url_from_cell.endswith('pr') or len(image_url_from_cell) < 20:
+                                        logging.warning(f"Возможно обрезанный URL для SKU {sku}: {image_url_from_cell}")
+                                    
+                                    try:
+                                        downloaded_image_data = self.download_image_from_url(image_url_from_cell)
+                                        if downloaded_image_data:
+                                            logging.info(f"Успешно скачано изображение для SKU {sku}, размер: {len(downloaded_image_data)} байт")
+                                            # Передаем SKU для правильной генерации URL
+                                            compressed_image, original_image, image_url = self.compress_image(downloaded_image_data, sku, None)
+                                            if compressed_image and original_image:
+                                                logging.info(f"Успешно обработано изображение для SKU {sku}")
+                                            else:
+                                                logging.warning(f"Не удалось обработать изображение для SKU {sku}")
+                                                compressed_image = None
+                                                original_image = None
+                                                image_url = None
+                                        else:
+                                            logging.warning(f"Не удалось скачать изображение для SKU {sku} по ссылке: {image_url_from_cell}")
+                                    except Exception as e:
+                                        logging.error(f"Ошибка при обработке изображения для SKU {sku}: {e}")
+                                        compressed_image = None
+                                        original_image = None
+                                        image_url = None
+                            
+                            # Создаем новый товар
+                            logging.info(f"Создаем новый товар SKU {sku} с изображением: compressed={bool(compressed_image)}, original={bool(original_image)}, url={image_url}")
+                            new_product = Product(
+                                sku=sku,
+                                eans=[ean] if ean else [],
+                                name=name,
+                                image=compressed_image,
+                                original_image=original_image,
+                                image_url=image_url
+                            )
+                            session.add(new_product)
+                            session.commit()
+                            logging.info(f"Товар SKU {sku} успешно сохранен в базе данных")
+                            
+                            # Добавляем остатки
+                            self.restock(sku, warehouse, qty)
+                            
+                            report_row['Статус'] = 'УСПЕШНО'
+                            report_row['Описание'] = f'Создан новый товар и добавлено {qty} шт. на склад {warehouse}'
+                            report_row['Тип операции'] = 'Создание товара'
+                            
+                            processed_products.append({
+                                "sku": sku,
+                                "quantity": qty,
+                                "ean": ean,
+                                "name": name,
+                                "operation": "create_product"
+                            })
+                            
+                        except Exception as e:
+                            report_row['Статус'] = 'ОШИБКА'
+                            report_row['Описание'] = f'Ошибка при создании товара: {str(e)}'
+                            report_row['Тип операции'] = 'Создание товара'
+                
+                report_data.append(report_row)
+                
+            except Exception as e:
+                # Общая ошибка обработки строки
+                report_row['Статус'] = 'ОШИБКА'
+                report_row['Описание'] = f'Общая ошибка обработки: {str(e)}'
+                report_row['Тип операции'] = 'Неизвестно'
+                report_data.append(report_row)
+                logging.warning(f"Ошибка при обработке строки {row_idx}: {str(e)}")
+        
+        # Создаем DataFrame с отчетом
+        report_df = pd.DataFrame(report_data)
+        
+        # Статистика
+        total_rows = len(report_data)
+        successful_rows = len(report_df[report_df['Статус'] == 'УСПЕШНО'])
+        error_rows = len(report_df[report_df['Статус'] == 'ОШИБКА'])
+        
+        logging.info(f"Импорт завершен. Обработано строк: {total_rows}, успешно: {successful_rows}, с ошибками: {error_rows}")
+        
+        return report_df, processed_products
+
+    def generate_import_report_excel(self, report_df: pd.DataFrame, original_filename: str) -> BytesIO:
+        """
+        Генерирует Excel файл с отчетом об импорте.
+        
+        Args:
+            report_df: DataFrame с результатами импорта
+            original_filename: Имя оригинального файла
+            
+        Returns:
+            BytesIO объект с Excel файлом отчета
+        """
+        output = BytesIO()
+        
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Основной лист с отчетом
+            report_df.to_excel(writer, sheet_name='Отчет импорта', index=False)
+            
+            # Получаем рабочий лист для форматирования
+            worksheet = writer.sheets['Отчет импорта']
+            
+            # Устанавливаем ширину колонок
+            column_widths = {
+                'A': 8,   # Строка
+                'B': 20,  # SKU
+                'C': 12,  # Количество
+                'D': 15,  # EAN
+                'E': 30,  # Название
+                'F': 12,  # Статус
+                'G': 50,  # Описание
+                'H': 20   # Тип операции
+            }
+            
+            for col, width in column_widths.items():
+                worksheet.column_dimensions[col].width = width
+            
+            # Форматируем заголовки
+            from openpyxl.styles import Font, PatternFill, Alignment
+            header_font = Font(bold=True, color='FFFFFF')
+            header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
+            
+            for cell in worksheet[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+            
+            # Форматируем строки по статусу
+            success_fill = PatternFill(start_color='C6EFCE', end_color='C6EFCE', fill_type='solid')
+            error_fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
+            
+            for row in worksheet.iter_rows(min_row=2):
+                status_cell = row[5]  # Колонка F (Статус)
+                if status_cell.value == 'УСПЕШНО':
+                    for cell in row:
+                        cell.fill = success_fill
+                elif status_cell.value == 'ОШИБКА':
+                    for cell in row:
+                        cell.fill = error_fill
+            
+            # Создаем лист со статистикой
+            stats_data = {
+                'Показатель': [
+                    'Всего строк обработано',
+                    'Успешно обработано',
+                    'Ошибок',
+                    'Процент успеха'
+                ],
+                'Значение': [
+                    len(report_df),
+                    len(report_df[report_df['Статус'] == 'УСПЕШНО']),
+                    len(report_df[report_df['Статус'] == 'ОШИБКА']),
+                    f"{len(report_df[report_df['Статус'] == 'УСПЕШНО']) / len(report_df) * 100:.1f}%" if len(report_df) > 0 else "0%"
+                ]
+            }
+            
+            stats_df = pd.DataFrame(stats_data)
+            stats_df.to_excel(writer, sheet_name='Статистика', index=False)
+            
+            # Форматируем лист статистики
+            stats_worksheet = writer.sheets['Статистика']
+            stats_worksheet.column_dimensions['A'].width = 25
+            stats_worksheet.column_dimensions['B'].width = 15
+            
+            for cell in stats_worksheet[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+        
+        output.seek(0)
+        return output

@@ -19,7 +19,7 @@
 
     <!-- Изображение -->
     <div class="relative w-32 h-32 flex-shrink-0">
-        {% if product['image'] %}
+        {% if product['has_image'] %}
         <img src="/api/products/{{ product['sku'] }}/image/original" 
              alt="{{ product['name'] }}"
              class="w-full h-full object-contain rounded-lg cursor-pointer hover:opacity-80 transition-opacity duration-200"

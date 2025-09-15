@@ -93,21 +93,41 @@ async def upload_incoming(
         raise HTTPException(status_code=400, detail='Неверный формат файла. Ожидается XLS/XLSX.')
     content = await file.read()
     try:
-        processed_products = manager.import_incoming_from_excel(content, warehouse.value, sku_col, qty_col, ean_col, name_col, image_col, header)
+        # Используем новую надежную функцию импорта
+        report_df, processed_products = manager.robust_import_incoming_from_excel(
+            content, warehouse.value, sku_col, qty_col, ean_col, name_col, image_col, header
+        )
         
-        # Создаем запись операции
-        operations_service = get_operations_service()
-        operations_service.create_file_operation(
-            operation_type=OperationType.STOCK_IN_FILE,
-            warehouse_id=warehouse.value,
-            user_email=current_user.email,
-            file_name=file.filename,
-            products=processed_products
+        # Создаем запись операции только для успешно обработанных товаров
+        if processed_products:
+            operations_service = get_operations_service()
+            operations_service.create_file_operation(
+                operation_type=OperationType.STOCK_IN_FILE,
+                warehouse_id=warehouse.value,
+                user_email=current_user.email,
+                file_name=file.filename,
+                products=processed_products
+            )
+        
+        # Генерируем отчет
+        report_output = manager.generate_import_report_excel(report_df, file.filename)
+        
+        # Формируем имя файла отчета
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_filename = f"import_report_{timestamp}.xlsx"
+        encoded_filename = quote(report_filename)
+        
+        # Возвращаем файл с отчетом
+        return StreamingResponse(
+            report_output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename={encoded_filename}"
+            }
         )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    return JSONResponse({'status': 'success', 'file': file.filename, 'warehouse': warehouse.value})
 
 @router.post('/transfer/', summary='Импорт перемещения между складами')
 async def upload_transfer(

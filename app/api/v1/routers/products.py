@@ -195,6 +195,7 @@ async def catalog(
             "eans": product.eans,
             "ean": product.eans[0] if product.eans else None,
             "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
+            "has_image": bool(product.original_image),  # Проверяем наличие оригинального изображения
             "total_stock": total_stock,
             "stocks": {}
         }
@@ -518,6 +519,7 @@ async def get_workspace_cards(
                 "eans": product.eans,
                 "ean": product.eans[0] if product.eans else None,
                 "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
+                "has_image": bool(product.original_image),  # Проверяем наличие оригинального изображения
                 "total_stock": total_stock,
                 "stocks": {}
             }
@@ -628,6 +630,7 @@ async def get_product_card(
         "eans": product.eans,
         "ean": product.eans[0] if product.eans else None,
         "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
+        "has_image": bool(product.original_image),  # Проверяем наличие оригинального изображения
         "total_stock": total_stock,
         "stocks": {}
     }
@@ -726,6 +729,7 @@ async def get_product_cards(
                 "eans": product.eans,
                 "ean": product.eans[0] if product.eans else None,
                 "image": base64.b64encode(product.image).decode('utf-8') if product.image else None,
+                "has_image": bool(product.original_image),  # Проверяем наличие оригинального изображения
                 "total_stock": total_stock,
                 "stocks": {}
             }
