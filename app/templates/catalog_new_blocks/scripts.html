@@ -740,7 +740,18 @@
 
     // Заглушки для недостающих функций
     function initializeDragAndDrop() {
-        console.log('initializeDragAndDrop вызвана');
+        console.log('initializeDragAndDrop вызвана (заглушка в scripts.html)');
+        
+        // Проверяем, есть ли наша функция в product_card.html
+        if (typeof window.reinitializeDragAndDrop === 'function' && !window.dragDropInitialized) {
+            console.log('🔄 Вызываем реальную функцию drag-and-drop из product_card.html');
+            window.dragDropInitialized = true; // Предотвращаем повторный вызов
+            window.reinitializeDragAndDrop();
+        } else if (window.dragDropInitialized) {
+            console.log('✅ Drag-and-drop уже инициализирован, пропускаем');
+        } else {
+            console.warn('⚠️ Функция reinitializeDragAndDrop не найдена в product_card.html');
+        }
     }
 
     function initializeCatalogHandlers() {
@@ -792,6 +803,14 @@
             
             // Выделение восстанавливается локально в каждой функции обновления карточек
             
+            // Переинициализируем drag-and-drop для новых элементов
+            if (typeof window.reinitializeDragAndDrop === 'function') {
+                console.log('🔄 Переинициализируем drag-and-drop после обновления карточек');
+                setTimeout(() => {
+                    window.reinitializeDragAndDrop();
+                }, 100);
+            }
+            
             console.log('✅ Карточки товара успешно обновлены');
         } catch (error) {
             console.error('❌ Ошибка при обновлении карточек товара:', error);
@@ -813,7 +832,7 @@
             // Ищем все возможные карточки
             const allCardsWithSku = document.querySelectorAll(`[data-product-sku="${sku}"]`);
             console.log(`📋 Всего найдено элементов с SKU ${sku}:`, allCardsWithSku.length);
-            image.png 
+            
             allCardsWithSku.forEach((element, index) => {
                 const productCard = element.closest('.product-card');
                 console.log(`📋 Элемент ${index + 1}:`, {
@@ -862,7 +881,7 @@
             console.log('🎯 Найденная карточка в каталоге:', !!mainCard);
             if (mainCard) {
                 console.log('🔄 Обновляем карточку в основном каталоге');
-                mainCard.outerHTML = data.html;
+                mainCard.innerHTML = data.html;
                 console.log('✅ Карточка в каталоге обновлена');
                 
                 // Восстанавливаем выделение если оно было
@@ -883,7 +902,7 @@
             // Обновляем карточку в правой панели воркспейса (если воркспейс открыт)
             if (catalogCard) {
                 console.log('🔄 Обновляем карточку в правой панели воркспейса');
-                catalogCard.outerHTML = data.html;
+                catalogCard.innerHTML = data.html;
                 console.log('✅ Карточка в правой панели воркспейса обновлена');
                 
                 // Восстанавливаем выделение если оно было
@@ -900,6 +919,17 @@
             } else {
                 console.log('⚠️ Карточка в правой панели воркспейса не найдена');
             }
+            
+            // Переинициализируем drag-and-drop для обновленных элементов
+            if (typeof window.reinitializeDragAndDrop === 'function') {
+                console.log('🔄 Переинициализируем drag-and-drop после обновления карточки каталога');
+                setTimeout(() => {
+                    window.reinitializeDragAndDrop();
+                }, 100);
+            }
+            
+            // Переинициализируем обработчики полей ввода после обновления карточек
+            // Обработчики полей ввода работают через делегирование событий
             
         } catch (error) {
             console.error('❌ Ошибка при обновлении карточки каталога:', error);
@@ -956,6 +986,16 @@
             } else {
                 console.log('⚠️ Карточка в воркспейсе не найдена или нет HTML данных');
             }
+            
+            // Переинициализируем drag-and-drop для обновленных элементов
+            if (typeof window.reinitializeDragAndDrop === 'function') {
+                console.log('🔄 Переинициализируем drag-and-drop после обновления карточки воркспейса');
+                setTimeout(() => {
+                    window.reinitializeDragAndDrop();
+                }, 100);
+            }
+            
+            // Обработчики полей ввода работают через делегирование событий
             
         } catch (error) {
             console.error('❌ Ошибка при обновлении карточки воркспейса:', error);

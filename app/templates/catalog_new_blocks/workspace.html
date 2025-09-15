@@ -386,6 +386,14 @@
                 if (response.ok) {
                     const data = await response.json();
                     container.innerHTML = data.html;
+                    
+                    // Переинициализируем drag-and-drop для новых карточек в воркспейсе
+                    if (typeof window.reinitializeDragAndDrop === 'function') {
+                        console.log('🔄 Переинициализируем drag-and-drop для карточек воркспейса');
+                        setTimeout(() => {
+                            window.reinitializeDragAndDrop();
+                        }, 100);
+                    }
                 } else {
                     // Fallback: показываем простые карточки
                     container.innerHTML = skus.map(sku => this.generateFallbackCard(this.selectedProducts[sku])).join('');
@@ -394,6 +402,14 @@
             } catch (error) {
                 console.error('Ошибка при загрузке карточек воркспейса:', error);
                 container.innerHTML = skus.map(sku => this.generateFallbackCard(this.selectedProducts[sku])).join('');
+                
+                // Переинициализируем drag-and-drop даже для fallback карточек
+                if (typeof window.reinitializeDragAndDrop === 'function') {
+                    console.log('🔄 Переинициализируем drag-and-drop для fallback карточек воркспейса');
+                    setTimeout(() => {
+                        window.reinitializeDragAndDrop();
+                    }, 100);
+                }
             }
         }
 
