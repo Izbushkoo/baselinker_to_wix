@@ -342,6 +342,15 @@ console.log('Product card loaded - version 2025-01-19-v18-drag-drop-reinit');
 
 // Предотвращаем выделение карточки при клике на интерактивные элементы
 document.addEventListener('DOMContentLoaded', function() {
+    // Защита от повторной инициализации
+    if (window.productCardInitialized) {
+        console.log('⚠️ Инициализация product_card уже выполнена, пропускаем повторную инициализацию');
+        return;
+    }
+    window.productCardInitialized = true;
+    
+    console.log('🚀 Начинаем инициализацию product_card (первый раз)');
+    
     // Добавляем обработчики для всех интерактивных элементов
     const interactiveElements = document.querySelectorAll(`
         input[type="number"],
@@ -372,7 +381,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setTimeout(() => {
         // initializeDragAndDrop(); // Удалено - теперь используется делегирование событий
         // initializeTransferModal(); // Удалено - модальное окно создается динамически
-        console.log('✅ Инициализация завершена (делегирование событий работает автоматически)');
+        console.log('✅ Инициализация product_card завершена (делегирование событий работает автоматически)');
     }, 100);
 });
 // Старая функция initializeDragAndDrop удалена - теперь используется делегирование событий
@@ -774,6 +783,13 @@ function createTransferModalIfNeeded() {
 
 // Инициализация модального окна ошибок
 function initializeErrorModal() {
+    // Защита от повторной инициализации
+    if (window.errorModalInitialized) {
+        console.log('⚠️ Модальное окно ошибок уже инициализировано, пропускаем повторную инициализацию');
+        return;
+    }
+    window.errorModalInitialized = true;
+    
     console.log('🔧 Инициализируем модальное окно ошибок');
     
     const wrapper = document.getElementById('errorModalWrapper');
@@ -817,6 +833,13 @@ function initializeErrorModal() {
 
 // Модальное окно для перемещения
 function initializeTransferModal() {
+    // Защита от повторной инициализации
+    if (window.transferModalInitialized) {
+        console.log('⚠️ Модальное окно перемещения уже инициализировано, пропускаем повторную инициализацию');
+        return;
+    }
+    window.transferModalInitialized = true;
+    
     console.log('🔧 Инициализируем модальное окно перемещения');
     
     // Проверяем, существует ли модальное окно
@@ -877,6 +900,10 @@ function initializeTransferModal() {
             if (transferModalWrapper && transferModalWrapper.parentNode) {
                 transferModalWrapper.parentNode.removeChild(transferModalWrapper);
                 console.log('🗑️ Модальное окно удалено из DOM');
+                
+                // Сбрасываем флаг инициализации для возможности повторного создания
+                window.transferModalInitialized = false;
+                console.log('🔄 Флаг инициализации модального окна сброшен');
             }
         }, 300); // Задержка для анимации закрытия
     };
@@ -1093,6 +1120,10 @@ function confirmTransfer() {
                 if (modalWrapper && modalWrapper.parentNode) {
                     modalWrapper.parentNode.removeChild(modalWrapper);
                     console.log('🗑️ Модальное окно удалено из DOM после успешного перемещения');
+                    
+                    // Сбрасываем флаг инициализации для возможности повторного создания
+                    window.transferModalInitialized = false;
+                    console.log('🔄 Флаг инициализации модального окна сброшен');
                 }
             }, 300);
         }
@@ -1153,8 +1184,11 @@ function copyToClipboard(element) {
 // Старая инициализация модального окна ошибок удалена - теперь используется динамическое создание
 
 function removeFromStock(button, event) {
+    console.log('🚀 Функция removeFromStock вызвана');
+    
     // Предотвращаем всплытие события, чтобы не сработал обработчик удаления из воркспейса
     if (event) {
+        console.log('🛑 Предотвращаем всплытие события');
         event.stopPropagation();
         event.preventDefault();
     }
@@ -1164,6 +1198,8 @@ function removeFromStock(button, event) {
     const warehouse = button.dataset.warehouse;
     const sku = button.dataset.sku;
     const currentQuantity = parseInt(input.dataset.currentQuantity);
+    
+    console.log('📊 Параметры списания:', { quantity, warehouse, sku, currentQuantity });
 
     if (isNaN(quantity) || quantity < 1) {
         showErrorModal('Пожалуйста, введите корректное количество (минимум 1)');
@@ -1197,47 +1233,22 @@ function removeFromStock(button, event) {
         return response.json();
     })
     .then(data => {
-        // Обновляем только необходимые элементы на странице
-        const productCard = button.closest('.flex.items-start.gap-6');
-        
-        // Обновляем количество на складе
-        const warehouseRow = button.closest('.flex.items-center.justify-between');
-        const warehouseQuantityElement = warehouseRow.querySelector('.inline-flex.items-center.rounded-full');
-        const newQuantity = currentQuantity - quantity;
-        warehouseQuantityElement.textContent = `${newQuantity} шт.`;
-        input.dataset.currentQuantity = newQuantity;
-        
-        // Если на складе не осталось товаров, отключаем кнопку списания
-        if (newQuantity === 0) {
-            button.disabled = true;
-        }
-        
-        // Обновляем общее количество
-        const totalStockElement = productCard.querySelector('.mt-1.text-lg.font-bold.text-gray-900');
-        const currentTotal = parseInt(totalStockElement.textContent);
-        const newTotalStock = currentTotal - quantity;
-        totalStockElement.textContent = `${newTotalStock} шт.`;
-        
-        // Обновляем статус наличия
-        const stockStatusElement = productCard.querySelector('.flex.items-center .inline-flex.items-center.rounded-full');
-        
-        if (newTotalStock === 0) {
-            stockStatusElement.className = 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-red-50 text-red-700';
-            stockStatusElement.textContent = 'Нет в наличии';
-        } else if (newTotalStock <= 5) {
-            stockStatusElement.className = 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-yellow-50 text-yellow-700';
-            stockStatusElement.textContent = 'Заканчивается';
-        }
+        console.log('✅ Списание успешно выполнено на сервере');
         
         // Сбрасываем значение input в 0
         input.value = 0;
         
         // Обновляем все карточки товара после успешной операции
+        console.log('🔄 Обновляем карточки после списания для SKU:', sku);
+        
         if (typeof window.refreshProductCards === 'function') {
+            console.log('✅ Функция refreshProductCards найдена, вызываем обновление');
             window.refreshProductCards(sku);
+        } else {
+            console.log('❌ Функция refreshProductCards не найдена!');
         }
         
-        // Обработчики полей ввода работают через делегирование событий
+        console.log('✅ Обновление завершено');
     })
     .catch(error => {
         showErrorModal('Ошибка при списании товара: ' + error.message);
@@ -1263,8 +1274,9 @@ function addToStock(button, event) {
     const quantity = parseInt(input.value);
     const warehouse = button.dataset.warehouse;
     const sku = button.dataset.sku;
+    const currentQuantity = parseInt(input.dataset.currentQuantity);
     
-    console.log('📊 Параметры пополнения:', { quantity, warehouse, sku });
+    console.log('📊 Параметры пополнения:', { quantity, warehouse, sku, currentQuantity });
 
     if (isNaN(quantity) || quantity < 1) {
         console.log('❌ Некорректное количество:', quantity);
@@ -1296,51 +1308,13 @@ function addToStock(button, event) {
         return response.json();
     })
     .then(data => {
-        // Обновляем только необходимые элементы на странице
-        const productCard = button.closest('.flex.items-start.gap-6');
-        
-        // Обновляем количество на складе
-        const warehouseRow = button.closest('.flex.items-center.justify-between');
-        const warehouseQuantityElement = warehouseRow.querySelector('.inline-flex.items-center.rounded-full');
-        const currentQuantity = parseInt(input.dataset.currentQuantity);
-        const newQuantity = currentQuantity + quantity;
-        
-        console.log('📦 Обновляем количество склада:', { currentQuantity, quantity, newQuantity });
-        warehouseQuantityElement.textContent = `${newQuantity} шт.`;
-        input.dataset.currentQuantity = newQuantity;
-        
-        // Обновляем общее количество
-        const totalStockElement = productCard.querySelector('.mt-1.text-lg.font-bold.text-gray-900');
-        const currentTotal = parseInt(totalStockElement.textContent);
-        const newTotalStock = currentTotal + quantity;
-        
-        console.log('📊 Обновляем общее количество:', { currentTotal, quantity, newTotalStock });
-        totalStockElement.textContent = `${newTotalStock} шт.`;
-        
-        // Обновляем статус наличия
-        const stockStatusElement = productCard.querySelector('.flex.items-center .inline-flex.items-center.rounded-full');
-        
-        if (newTotalStock > 5) {
-            stockStatusElement.className = 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-50 text-green-700';
-            stockStatusElement.textContent = 'В наличии';
-        } else if (newTotalStock > 0) {
-            stockStatusElement.className = 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-yellow-50 text-yellow-700';
-            stockStatusElement.textContent = 'Заканчивается';
-        }
-        
-        // Активируем кнопку "Списать" если она была неактивна
-        const removeButton = warehouseRow.querySelector('[onclick="removeFromStock(this, event)"]');
-        if (removeButton && removeButton.disabled) {
-            console.log('🔓 Активируем кнопку "Списать"');
-            removeButton.disabled = false;
-        }
+        console.log('✅ Пополнение успешно выполнено на сервере');
         
         // Сбрасываем значение input в 0
         input.value = 0;
         
         // Обновляем все карточки товара после успешной операции
-        console.log('🔄 Попытка обновления карточек после пополнения для SKU:', sku);
-        console.log('🔍 Проверяем доступность функции refreshProductCards:', typeof window.refreshProductCards);
+        console.log('🔄 Обновляем карточки после пополнения для SKU:', sku);
         
         if (typeof window.refreshProductCards === 'function') {
             console.log('✅ Функция refreshProductCards найдена, вызываем обновление');
@@ -1349,9 +1323,7 @@ function addToStock(button, event) {
             console.log('❌ Функция refreshProductCards не найдена!');
         }
         
-        // Обработчики полей ввода работают через делегирование событий
-        
-        console.log('✅ Локальное обновление завершено');
+        console.log('✅ Обновление завершено');
     })
     .catch(error => {
         console.error('❌ Ошибка при пополнении товара:', error);
@@ -1367,8 +1339,13 @@ function addToStock(button, event) {
 
 // Добавляем делегирование событий для полей ввода (работает с динамически загружаемыми элементами)
 document.addEventListener('DOMContentLoaded', function() {
+    // Защита от повторной инициализации делегированных обработчиков
+    if (window.delegatedHandlersInitialized) {
+        console.log('⚠️ Делегированные обработчики уже инициализированы, пропускаем повторную инициализацию');
+        return;
+    }
+    window.delegatedHandlersInitialized = true;
     
-    // Делегирование событий для drag-and-drop
     console.log('🔧 Настраиваем делегирование событий для drag-and-drop');
     
     // Обработчик dragstart для всех элементов склада
@@ -1542,8 +1519,53 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }, true); // Используем capture phase
     
-    // Предотвращаем клик по блокам складов и секции остатков для добавления в воркспейс
+    // Объединенный обработчик для кнопок управления остатками и предотвращения клика по складам
     document.addEventListener('click', function(e) {
+        // Отладочная информация для всех кликов
+        console.log('🖱️ Клик по элементу:', e.target.tagName, 'textContent:', `"${e.target.textContent}"`, 'className:', e.target.className);
+        
+        // ПРИОРИТЕТ 1: Обработчик для кнопки "Списать"
+        if ((e.target.textContent === 'Списать' || e.target.textContent.trim() === 'Списать') && e.target.closest('.product-card')) {
+            console.log('🔴 Делегированный клик по кнопке "Списать"');
+            e.stopPropagation();
+            e.preventDefault();
+            removeFromStock(e.target, e);
+            return; // Прерываем выполнение, чтобы не сработало предотвращение клика
+        }
+        
+        // ПРИОРИТЕТ 2: Обработчик для кнопки "Пополнить"
+        if ((e.target.textContent === 'Пополнить' || e.target.textContent.trim() === 'Пополнить') && e.target.closest('.product-card')) {
+            console.log('🟢 Делегированный клик по кнопке "Пополнить"');
+            e.stopPropagation();
+            e.preventDefault();
+            addToStock(e.target, e);
+            return; // Прерываем выполнение, чтобы не сработало предотвращение клика
+        }
+        
+        // Альтернативный способ определения кнопок через onclick атрибут
+        if (e.target.onclick && e.target.onclick.toString().includes('removeFromStock') && e.target.closest('.product-card')) {
+            console.log('🔴 Делегированный клик по кнопке "Списать" (через onclick)');
+            e.stopPropagation();
+            e.preventDefault();
+            removeFromStock(e.target, e);
+            return;
+        }
+        
+        if (e.target.onclick && e.target.onclick.toString().includes('addToStock') && e.target.closest('.product-card')) {
+            console.log('🟢 Делегированный клик по кнопке "Пополнить" (через onclick)');
+            e.stopPropagation();
+            e.preventDefault();
+            addToStock(e.target, e);
+            return;
+        }
+        
+        // ПРИОРИТЕТ 3: Разрешаем клик по полю ввода количества
+        if (e.target.type === 'number' && e.target.closest('.warehouse-item')) {
+            console.log('✅ Клик по полю ввода количества, разрешаем действие');
+            return; // Не предотвращаем клик по полям ввода
+        }
+        
+        // ПРИОРИТЕТ 4: Предотвращаем клик по блокам складов и секции остатков для добавления в воркспейс
         if (e.target.closest('.warehouse-item') || e.target.closest('.stocks-section')) {
             console.log('🚫 Делегированный клик по блоку склада или секции остатков, предотвращаем добавление в воркспейс');
             e.stopPropagation();
@@ -1551,7 +1573,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }, true); // Используем capture phase
     
-    console.log('✅ Делегирование событий для полей ввода настроено');
+    console.log('✅ Делегирование событий для полей ввода и кнопок управления остатками настроено');
 });
 
 // Глобальная функция удалена - используется только делегирование событий

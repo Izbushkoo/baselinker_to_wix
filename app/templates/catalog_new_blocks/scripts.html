@@ -771,7 +771,20 @@
     // Универсальная функция для обновления карточек товаров
     async function refreshProductCards(sku) {
         try {
-            console.log('🚀 НОВАЯ ВЕРСИЯ refreshProductCards вызвана для SKU:', sku);
+            // Счетчик вызовов для отладки
+            if (!window.refreshCallCount) window.refreshCallCount = {};
+            if (!window.refreshCallCount[sku]) window.refreshCallCount[sku] = 0;
+            window.refreshCallCount[sku]++;
+            
+            // Защита от множественных одновременных вызовов
+            if (!window.refreshInProgress) window.refreshInProgress = {};
+            if (window.refreshInProgress[sku]) {
+                console.log('⚠️ Обновление для SKU', sku, 'уже выполняется, пропускаем дублирующий вызов');
+                return;
+            }
+            window.refreshInProgress[sku] = true;
+            
+            console.log('🚀 НОВАЯ ВЕРСИЯ refreshProductCards вызвана для SKU:', sku, `(вызов #${window.refreshCallCount[sku]})`);
             console.log('🔄 Обновление карточек товара:', sku);
             console.log('🔍 Проверяем наличие карточек на странице...');
             
@@ -816,6 +829,12 @@
             console.error('❌ Ошибка при обновлении карточек товара:', error);
             if (typeof showNotification === 'function') {
                 showNotification('Ошибка при обновлении данных товара', 'error');
+            }
+        } finally {
+            // Очищаем флаг выполнения
+            if (window.refreshInProgress && window.refreshInProgress[sku]) {
+                delete window.refreshInProgress[sku];
+                console.log('🧹 Очищен флаг выполнения для SKU:', sku);
             }
         }
     }
@@ -881,7 +900,20 @@
             console.log('🎯 Найденная карточка в каталоге:', !!mainCard);
             if (mainCard) {
                 console.log('🔄 Обновляем карточку в основном каталоге');
-                mainCard.innerHTML = data.html;
+                
+                // Создаем временный элемент для извлечения содержимого
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = data.html;
+                const newCardContent = tempDiv.querySelector('.product-card');
+                
+                if (newCardContent) {
+                    // Заменяем только содержимое, а не всю карточку
+                    mainCard.innerHTML = newCardContent.innerHTML;
+                } else {
+                    // Если не удалось найти .product-card, используем весь HTML
+                    mainCard.innerHTML = data.html;
+                }
+                
                 console.log('✅ Карточка в каталоге обновлена');
                 
                 // Восстанавливаем выделение если оно было
