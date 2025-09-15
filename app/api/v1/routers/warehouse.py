@@ -349,6 +349,106 @@ async def download_incoming_template():
         }
     )
 
+@router.get('/template/transfer', summary='Скачивание шаблона для импорта перемещения')
+async def download_transfer_template():
+    '''Возвращает шаблон Excel для импорта перемещения между складами.'''
+    
+    # Создаем новый Excel файл
+    workbook = openpyxl.Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Шаблон перемещения"
+    
+    # Заголовки колонок
+    headers = [
+        'sku',          # Артикул товара (обязательно)
+        'Кол-во'        # Количество для перемещения (обязательно)
+    ]
+    
+    # Устанавливаем заголовки
+    for col_num, header in enumerate(headers, 1):
+        cell = worksheet.cell(row=1, column=col_num, value=header)
+        cell.font = openpyxl.styles.Font(bold=True)
+    
+    # Добавляем комментарий-объяснение в качестве второй строки
+    comment_row = [
+        'ОБЯЗАТЕЛЬНО - Артикул товара',
+        'ОБЯЗАТЕЛЬНО - Количество для перемещения'
+    ]
+    
+    for col_num, comment in enumerate(comment_row, 1):
+        cell = worksheet.cell(row=2, column=col_num, value=comment)
+        cell.font = openpyxl.styles.Font(italic=True, color='666666')
+    
+    # Добавляем пример данных
+    sample_data = [
+        ['EXAMPLE-SKU-001', 10],
+        ['EXAMPLE-SKU-002', 5],
+        ['EXAMPLE-SKU-003', 15]
+    ]
+    
+    for row_num, row_data in enumerate(sample_data, 3):  # Начинаем с 3-й строки, т.к. 2-я занята комментариями
+        for col_num, value in enumerate(row_data, 1):
+            worksheet.cell(row=row_num, column=col_num, value=value)
+    
+    # Настраиваем ширину колонок
+    worksheet.column_dimensions['A'].width = 20  # SKU
+    worksheet.column_dimensions['B'].width = 15  # Количество
+    
+    # Создаем лист с инструкциями
+    instructions_sheet = workbook.create_sheet("Инструкции")
+    
+    instructions = [
+        "ИНСТРУКЦИИ ПО ИСПОЛЬЗОВАНИЮ ШАБЛОНА ПЕРЕМЕЩЕНИЯ",
+        "",
+        "1. ЗАПОЛНЕНИЕ ДАННЫХ:",
+        "   - В колонке 'sku' укажите артикул товара",
+        "   - В колонке 'Кол-во' укажите количество для перемещения",
+        "",
+        "2. ТРЕБОВАНИЯ:",
+        "   - Артикул товара (sku) - ОБЯЗАТЕЛЬНО",
+        "   - Количество - ОБЯЗАТЕЛЬНО, должно быть положительным числом",
+        "",
+        "3. ПРИМЕРЫ ДАННЫХ:",
+        "   SKU: EXAMPLE-SKU-001, Кол-во: 10",
+        "   SKU: EXAMPLE-SKU-002, Кол-во: 5",
+        "",
+        "4. ПРОВЕРКА:",
+        "   - Убедитесь, что товар существует на складе-источнике",
+        "   - Проверьте достаточность остатков для перемещения",
+        "",
+        "5. ЗАГРУЗКА:",
+        "   - Сохраните файл в формате Excel (.xlsx)",
+        "   - Загрузите файл через форму на сайте",
+        "   - Выберите склады-источник и назначение"
+    ]
+    
+    for row_num, instruction in enumerate(instructions, 1):
+        cell = instructions_sheet.cell(row=row_num, column=1, value=instruction)
+        if row_num == 1:  # Заголовок
+            cell.font = openpyxl.styles.Font(bold=True, size=14)
+        else:
+            cell.font = openpyxl.styles.Font(size=10)
+    
+    # Устанавливаем ширину колонки для инструкций
+    instructions_sheet.column_dimensions['A'].width = 70
+    
+    # Сохраняем в BytesIO
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    
+    # Формируем имя файла
+    filename = "template_transfer.xlsx"
+    encoded_filename = quote(filename)
+    
+    return StreamingResponse(
+        BytesIO(output.read()),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename={encoded_filename}"
+        }
+    )
+
 @router.get('/stock/{sku}', summary='Проверка остатков по SKU')
 async def check_stock(
     sku: str,
