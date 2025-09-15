@@ -112,9 +112,12 @@ async def upload_incoming(
         # Генерируем отчет
         report_output = manager.generate_import_report_excel(report_df, file.filename)
         
-        # Формируем имя файла отчета
+        # Формируем имя файла отчета на основе исходного файла
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_filename = f"import_report_{timestamp}.xlsx"
+        original_name = file.filename or "import_file"
+        # Убираем расширение из исходного имени и добавляем префикс
+        base_name = original_name.rsplit('.', 1)[0] if '.' in original_name else original_name
+        report_filename = f"{base_name}_report_{timestamp}.xlsx"
         encoded_filename = quote(report_filename)
         
         # Возвращаем файл с отчетом
