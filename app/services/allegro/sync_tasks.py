@@ -129,14 +129,15 @@ def update_offer_stock_via_microservice(token_id: UUID, external_id: str, stock:
     Returns:
         bool: True если обновление успешно
     """
+    logger = logging.getLogger("allegro.sync")
     try:
         jwt_token = get_microservice_jwt_token()
         offers_client = AllegroOffersMicroserviceClient(jwt_token=jwt_token)
         
-        response = offers_client.update_offer_stock(token_id, external_id, stock)
+        response = offers_client.update_stock_single(token_id, external_id, stock)
+        logger.info(f"[AllegroSync] Response: {response}")
         return response.success
     except Exception as e:
-        logger = logging.getLogger("allegro.sync")
         logger.error(f"[AllegroSync] Ошибка обновления остатка оффера {external_id}: {e}")
         return False
 

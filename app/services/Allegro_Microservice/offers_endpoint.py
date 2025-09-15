@@ -3,7 +3,7 @@ from typing import Optional, List, Dict, Any
 from uuid import UUID
 from app.services.Allegro_Microservice.base import BaseClient
 from app.services.Allegro_Microservice.models import OfferListResponse, MicroserviceOfferResponse
-from app.models.offer import ExternalStockUpdateRequest
+from app.models.offer import ExternalStockUpdateRequest, SingleTokenStockUpdateRequest, SingleTokenStockUpdateResponse
 
 
 class AllegroOffersMicroserviceClient(BaseClient):
@@ -223,7 +223,7 @@ class AllegroOffersMicroserviceClient(BaseClient):
         
         params = {"token_ids": [str(token_id)]}
         
-        response = requests.put(
+        response = requests.post(
             url,
             json=payload,
             params=params,
@@ -269,3 +269,38 @@ class AllegroOffersMicroserviceClient(BaseClient):
         response.raise_for_status()
         data = response.json()
         return MicroserviceOfferResponse(offer=data)
+
+    def update_stock_single(
+        self,
+        token_id: UUID,
+        external_id: str,
+        stock: int
+    ) -> SingleTokenStockUpdateResponse:
+        """
+        Обновить запас оффера для конкретного токена.
+        
+        Args:
+            token_id: ID токена для обновления запаса
+            external_id: External ID оффера (SKU)
+            stock: Новый запас товара
+            
+        Returns:
+            SingleTokenStockUpdateResponse: Результат обновления с детальной информацией
+        """
+        url = f"{self.base_url}/update-stock-single"
+        
+        payload = SingleTokenStockUpdateRequest(
+            token_id=str(token_id),
+            external_id=external_id,
+            stock=stock
+        )
+        
+        response = requests.post(
+            url,
+            json=payload.model_dump(),
+            headers=self.headers,
+            timeout=self.timeout
+        )
+        response.raise_for_status()
+        data = response.json()
+        return SingleTokenStockUpdateResponse(**data)

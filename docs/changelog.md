@@ -1,3 +1,24 @@
+## [2025-01-19] - Исправление ошибки с атрибутом 'success' в синхронизации офферов
+
+### Исправлено
+- **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: Исправлена ошибка `'dict' object has no attribute 'success'` в `sync_tasks.py`
+- Проблема была в несоответствии между возвращаемым типом метода `update_stock_single` и ожидаемой структурой данных
+- Создана правильная модель ответа `SingleTokenStockUpdateResponse` для эндпоинта `/update-stock-single`
+
+### Добавлено
+- **Новая модель ответа**: `SingleTokenStockUpdateResponse` в `app/models/offer.py` с полями:
+  - `token_id`, `account_name`, `external_id`, `requested_stock`
+  - `offers` (список результатов обновления офферов)
+  - `total_offers`, `updated_offers`, `success`
+- **Модель результата**: `OfferUpdateResult` для детализации результатов обновления каждого оффера
+- **Обновленный метод**: `update_stock_single()` теперь возвращает `SingleTokenStockUpdateResponse` вместо `MicroserviceOfferResponse`
+
+### Технические детали
+- Метод корректно обрабатывает ответ от эндпоинта `/update-stock-single`
+- Код в `sync_tasks.py` теперь правильно получает атрибут `success` из ответа
+- Полная типизация с использованием Pydantic моделей
+- Поддержка детальной информации об обновлении каждого оффера
+
 ## [2025-01-19] - Исправление проблем с синхронизацией офферов Allegro
 
 ### Исправлено
