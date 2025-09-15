@@ -88,8 +88,8 @@
                                     </button>
                                 </div>
 
-                                <!-- Заявки поставщику -->
-                                <div class="mb-2">
+                                <!-- Заявки поставщику (только для админов) -->
+                                <div class="mb-2" id="supplierRequestsSection">
                                     <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-2">Заявки поставщику</div>
                                     <button onclick="createSupplierRequest()" 
                                         class="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded flex items-center gap-2">
@@ -100,8 +100,8 @@
                                     </button>
                                 </div>
 
-                                <!-- Управление товарами -->
-                                <div class="mb-2">
+                                <!-- Управление товарами (только для админов) -->
+                                <div class="mb-2" id="productManagementSection">
                                     <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-2">Управление товарами</div>
                                     <button onclick="deleteSelectedProducts()" 
                                         class="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded flex items-center gap-2">
@@ -1071,16 +1071,31 @@
     
     // Функция refreshWorkspaceCard перенесена в scripts.html
 
-    // Функция для скрытия блока синхронизации для неадминов
-    function hideSyncSectionForNonAdmins() {
+    // Функция для скрытия блоков только для админов
+    function hideAdminOnlySections() {
         const userDataEl = document.getElementById('user-data');
         if (userDataEl) {
             const isAdmin = userDataEl.dataset.isAdmin === 'true';
-            const syncSection = document.getElementById('syncSection');
             
+            // Скрываем блок синхронизации для неадминов
+            const syncSection = document.getElementById('syncSection');
             if (syncSection && !isAdmin) {
                 syncSection.style.display = 'none';
                 console.log('Блок синхронизации скрыт для неадмина');
+            }
+            
+            // Скрываем блок заявок поставщику для неадминов
+            const supplierRequestsSection = document.getElementById('supplierRequestsSection');
+            if (supplierRequestsSection && !isAdmin) {
+                supplierRequestsSection.style.display = 'none';
+                console.log('Блок заявок поставщику скрыт для неадмина');
+            }
+            
+            // Скрываем блок управления товарами для неадминов
+            const productManagementSection = document.getElementById('productManagementSection');
+            if (productManagementSection && !isAdmin) {
+                productManagementSection.style.display = 'none';
+                console.log('Блок управления товарами скрыт для неадмина');
             }
         }
     }
@@ -1096,8 +1111,8 @@
             }
         }
         
-        // Скрываем блок синхронизации для неадминов
-        hideSyncSectionForNonAdmins();
+        // Скрываем блоки только для админов
+        hideAdminOnlySections();
         
         return workspaceManager;
     }
@@ -1108,8 +1123,8 @@
         // Инициализируем воркспейс
         initializeWorkspace();
 
-        // Скрываем блок синхронизации для неадминов (дополнительная проверка)
-        hideSyncSectionForNonAdmins();
+        // Скрываем блоки только для админов (дополнительная проверка)
+        hideAdminOnlySections();
 
         // Обновляем подсветку после инициализации
         setTimeout(() => {
