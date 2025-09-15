@@ -901,18 +901,28 @@
             if (mainCard) {
                 console.log('🔄 Обновляем карточку в основном каталоге');
                 
+                console.log('🔍 Отладка обновления карточки:');
+                console.log('  - data.html длина:', data.html.length);
+                console.log('  - data.html начало:', data.html.substring(0, 200) + '...');
+                console.log('  - mainCard до обновления:', mainCard.outerHTML.substring(0, 200) + '...');
+                
                 // Создаем временный элемент для извлечения содержимого
                 const tempDiv = document.createElement('div');
                 tempDiv.innerHTML = data.html;
                 const newCardContent = tempDiv.querySelector('.product-card');
                 
                 if (newCardContent) {
-                    // Заменяем только содержимое, а не всю карточку
-                    mainCard.innerHTML = newCardContent.innerHTML;
+                    // Получаем только внутреннее содержимое карточки (без внешнего div.product-card)
+                    const innerContent = newCardContent.innerHTML;
+                    console.log('  - Используем innerHTML из найденной карточки (без внешнего div)');
+                    mainCard.innerHTML = innerContent;
                 } else {
-                    // Если не удалось найти .product-card, используем весь HTML
+                    // Если не удалось найти карточку, используем весь HTML
+                    console.log('  - Используем весь data.html (fallback)');
                     mainCard.innerHTML = data.html;
                 }
+                
+                console.log('  - mainCard после обновления:', mainCard.outerHTML.substring(0, 200) + '...');
                 
                 console.log('✅ Карточка в каталоге обновлена');
                 
@@ -934,7 +944,23 @@
             // Обновляем карточку в правой панели воркспейса (если воркспейс открыт)
             if (catalogCard) {
                 console.log('🔄 Обновляем карточку в правой панели воркспейса');
-                catalogCard.innerHTML = data.html;
+                
+                // Создаем временный элемент для извлечения содержимого
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = data.html;
+                const newCardContent = tempDiv.querySelector('.product-card');
+                
+                if (newCardContent) {
+                    // Получаем только внутреннее содержимое карточки (без внешнего div.product-card)
+                    const innerContent = newCardContent.innerHTML;
+                    console.log('  - Используем innerHTML из найденной карточки (без внешнего div) для правой панели');
+                    catalogCard.innerHTML = innerContent;
+                } else {
+                    // Если не удалось найти карточку, используем весь HTML
+                    console.log('  - Используем весь data.html (fallback) для правой панели');
+                    catalogCard.innerHTML = data.html;
+                }
+                
                 console.log('✅ Карточка в правой панели воркспейса обновлена');
                 
                 // Восстанавливаем выделение если оно было
