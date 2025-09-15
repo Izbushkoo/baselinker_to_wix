@@ -301,54 +301,34 @@
 
         // Подсветка выбранных товаров в каталоге
         highlightSelectedProducts() {
-            console.log('🎨 highlightSelectedProducts вызвана');
-            console.log('📦 Товары в воркспейсе:', Object.keys(this.selectedProducts));
-            
             // Убираем старую подсветку со всех карточек
             const allCards = document.querySelectorAll('.product-card');
-            console.log('🧹 Убираем выделение с карточек:', allCards.length);
             allCards.forEach(card => {
                 card.classList.remove('workspace-selected');
             });
 
             // Принудительно обновляем стили через небольшую задержку
             setTimeout(() => {
-                console.log('⏰ Начинаем добавление выделения через setTimeout');
-                
                 // Добавляем подсветку выбранным товарам
                 Object.keys(this.selectedProducts).forEach(sku => {
-                    console.log(`🔍 Обрабатываем SKU: ${sku}`);
-                    
                     // Ищем карточки в основном каталоге
                     const mainCards = document.querySelectorAll(`#mainContent [data-product-sku="${sku}"]`);
-                    console.log(`📋 Найдено карточек в основном каталоге: ${mainCards.length}`);
                     mainCards.forEach(card => {
                         const productCard = card.closest('.product-card');
                         if (productCard && !productCard.closest('#workspaceProductsList')) {
-                            console.log('✅ Добавляем выделение в основном каталоге');
                             productCard.classList.add('workspace-selected');
-                            console.log('🔍 Проверяем класс после добавления:', productCard.classList.contains('workspace-selected'));
-                        } else {
-                            console.log('⚠️ Пропускаем карточку в воркспейсе');
                         }
                     });
 
                     // Ищем карточки в правой панели воркспейса
                     const catalogCards = document.querySelectorAll(`#catalogPanel [data-product-sku="${sku}"]`);
-                    console.log(`📋 Найдено карточек в правой панели: ${catalogCards.length}`);
                     catalogCards.forEach(card => {
                         const productCard = card.closest('.product-card');
                         if (productCard && !productCard.closest('#workspaceProductsList')) {
-                            console.log('✅ Добавляем выделение в правой панели');
                             productCard.classList.add('workspace-selected');
-                            console.log('🔍 Проверяем класс после добавления в правой панели:', productCard.classList.contains('workspace-selected'));
-                        } else {
-                            console.log('⚠️ Пропускаем карточку в воркспейсе');
                         }
                     });
                 });
-                
-                console.log('🎨 Завершено добавление выделения');
             }, 10);
         }
 
@@ -389,7 +369,6 @@
                     
                     // Переинициализируем drag-and-drop для новых карточек в воркспейсе
                     if (typeof window.reinitializeDragAndDrop === 'function') {
-                        console.log('🔄 Переинициализируем drag-and-drop для карточек воркспейса');
                         setTimeout(() => {
                             window.reinitializeDragAndDrop();
                         }, 100);
@@ -405,7 +384,6 @@
                 
                 // Переинициализируем drag-and-drop даже для fallback карточек
                 if (typeof window.reinitializeDragAndDrop === 'function') {
-                    console.log('🔄 Переинициализируем drag-and-drop для fallback карточек воркспейса');
                     setTimeout(() => {
                         window.reinitializeDragAndDrop();
                     }, 100);
@@ -531,8 +509,6 @@
             // Всегда используем глобальную функцию (теперь она показывает уведомления в левом нижнем углу)
             if (typeof window.showNotification === 'function') {
                 window.showNotification(message, type);
-            } else {
-                console.log(`[${type.toUpperCase()}] ${message}`);
             }
         }
 

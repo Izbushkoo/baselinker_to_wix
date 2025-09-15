@@ -338,18 +338,14 @@ input[type="number"] {
 <!-- JavaScript для обработки функций карточки -->
 <script>
 // Версия карточки товара для принудительного обновления кэша
-console.log('Product card loaded - version 2025-01-19-v18-drag-drop-reinit');
 
 // Предотвращаем выделение карточки при клике на интерактивные элементы
 document.addEventListener('DOMContentLoaded', function() {
     // Защита от повторной инициализации
     if (window.productCardInitialized) {
-        console.log('⚠️ Инициализация product_card уже выполнена, пропускаем повторную инициализацию');
         return;
     }
     window.productCardInitialized = true;
-    
-    console.log('🚀 Начинаем инициализацию product_card (первый раз)');
     
     // Добавляем обработчики для всех интерактивных элементов
     const interactiveElements = document.querySelectorAll(`
@@ -371,34 +367,26 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Инициализируем модальное окно ошибок сразу при загрузке страницы
-    console.log('🚀 Инициализируем модальное окно ошибок');
     createErrorModalIfNeeded();
     
     // Инициализируем drag-and-drop функциональность
-    console.log('🚀 Начинаем инициализацию drag-and-drop функциональности');
-    
     // Добавляем задержку для динамически загружаемых элементов
     setTimeout(() => {
         // initializeDragAndDrop(); // Удалено - теперь используется делегирование событий
         // initializeTransferModal(); // Удалено - модальное окно создается динамически
-        console.log('✅ Инициализация product_card завершена (делегирование событий работает автоматически)');
     }, 100);
 });
 // Старая функция initializeDragAndDrop удалена - теперь используется делегирование событий
 
 // Настройка drag-and-drop для элементов
 function setupDragAndDropForItems(warehouseItems) {
-    console.log('🔧 Настраиваем drag-and-drop для', warehouseItems.length, 'элементов');
-    
     // Проверяем, открыт ли воркспейс
     const workspaceContainer = document.getElementById('workspaceContainer');
     const isWorkspaceOpen = workspaceContainer && !workspaceContainer.classList.contains('hidden');
-    console.log('🏢 Воркспейс открыт:', isWorkspaceOpen);
     
     warehouseItems.forEach((item, index) => {
         // Проверяем, не настроен ли уже drag-and-drop для этого элемента
         if (item.hasAttribute('data-drag-initialized')) {
-            console.log(`⏭️ Элемент склада ${index + 1} уже настроен, пропускаем`);
             return;
         }
         
@@ -409,24 +397,10 @@ function setupDragAndDropForItems(warehouseItems) {
         if (isWorkspaceOpen) {
             item.style.zIndex = '50';
             item.style.position = 'relative';
-            console.log('🔝 Подняли z-index элемента склада для работы в воркспейсе');
         }
-        
-        console.log(`🔧 Настраиваем элемент склада ${index + 1}:`, {
-            warehouse: item.dataset.warehouse,
-            quantity: item.dataset.quantity,
-            sku: item.dataset.sku,
-            isInWorkspace: isWorkspaceOpen
-        });
         
         // Предотвращаем перетаскивание при клике на интерактивные элементы
         item.addEventListener('dragstart', function(e) {
-            console.log('🚀 Drag start event triggered', {
-                workspaceOpen: isWorkspaceOpen,
-                target: e.target.tagName,
-                currentTarget: e.currentTarget.tagName
-            });
-            
             // Проверяем, не кликнули ли по интерактивному элементу
             const interactiveElements = item.querySelectorAll('input, button');
             const isInteractiveClick = Array.from(interactiveElements).some(el => 
@@ -434,17 +408,14 @@ function setupDragAndDropForItems(warehouseItems) {
             );
             
             if (isInteractiveClick) {
-                console.log('❌ Interactive element clicked, preventing drag');
                 e.preventDefault();
                 return;
             }
             
             // Проверяем, что на складе есть товары для перемещения
             const quantity = parseInt(item.dataset.quantity);
-            console.log('📦 Warehouse quantity:', quantity);
             
             if (quantity <= 0) {
-                console.log('❌ Empty warehouse, cannot drag');
                 e.preventDefault();
                 showErrorModal('Нельзя перемещать товары с пустого склада');
                 return;
@@ -460,16 +431,10 @@ function setupDragAndDropForItems(warehouseItems) {
                 productName: item.dataset.productName
             };
             
-            console.log('📦 Setting drag data:', dragData);
             const jsonString = JSON.stringify(dragData);
-            console.log('📋 JSON string to set:', jsonString);
             
             e.dataTransfer.setData('text/html', item.outerHTML);
             e.dataTransfer.setData('application/json', jsonString);
-            
-            // Проверяем, что данные установились
-            const checkData = e.dataTransfer.getData('application/json');
-            console.log('✅ Data verification:', checkData);
         });
         
         item.addEventListener('dragend', function(e) {
@@ -498,42 +463,27 @@ function setupDragAndDropForItems(warehouseItems) {
         });
         
         item.addEventListener('drop', function(e) {
-            console.log('🎯 Drop event triggered', {
-                workspaceOpen: isWorkspaceOpen,
-                target: e.target.tagName,
-                currentTarget: e.currentTarget.tagName
-            });
             e.preventDefault();
             item.classList.remove('drag-over');
             
             try {
                 // Проверяем, есть ли данные для парсинга
                 const jsonData = e.dataTransfer.getData('application/json');
-                console.log('📋 Полученные JSON данные в обычном обработчике:', jsonData);
                 
                 if (!jsonData || jsonData.trim() === '') {
-                    console.warn('⚠️ Пустые данные drag-and-drop в обычном обработчике, пропускаем');
                     return;
                 }
                 
                 const dragData = JSON.parse(jsonData);
                 const dropTarget = item;
                 
-                console.log('📦 Drag data:', dragData);
-                console.log('🎯 Drop target:', {
-                    warehouse: dropTarget.dataset.warehouse,
-                    quantity: dropTarget.dataset.quantity
-                });
-                
                 // Проверяем, что это не тот же самый склад
                 if (dragData.warehouse === dropTarget.dataset.warehouse) {
-                    console.log('❌ Same warehouse, cannot transfer');
                     showErrorModal('Нельзя перемещать товары в тот же склад');
                     return;
                 }
                 
                 // Открываем модальное окно для подтверждения перемещения
-                console.log('🚀 Opening transfer modal...');
                 openTransferModal(dragData, {
                     warehouse: dropTarget.dataset.warehouse,
                     quantity: dropTarget.dataset.quantity
@@ -541,7 +491,6 @@ function setupDragAndDropForItems(warehouseItems) {
                 
             } catch (error) {
                 console.error('❌ Ошибка при обработке drop:', error);
-                console.error('📋 Данные, которые вызвали ошибку:', e.dataTransfer.getData('application/json'));
                 showErrorModal('Ошибка при обработке перемещения: ' + error.message);
             }
         });
@@ -549,8 +498,6 @@ function setupDragAndDropForItems(warehouseItems) {
     
     // Добавляем глобальные обработчики для работы в контексте воркспейса
     if (isWorkspaceOpen) {
-        console.log('🌐 Добавляем глобальные обработчики drag-and-drop для воркспейса');
-        
         // Глобальный обработчик dragover
         document.addEventListener('dragover', function(e) {
             const warehouseItem = e.target.closest('.warehouse-item');
@@ -564,71 +511,55 @@ function setupDragAndDropForItems(warehouseItems) {
         document.addEventListener('drop', function(e) {
             const warehouseItem = e.target.closest('.warehouse-item');
             if (warehouseItem && warehouseItem.hasAttribute('data-drag-initialized')) {
-                console.log('🌐 Глобальный drop event для элемента склада');
                 e.preventDefault();
                 
                 try {
                     // Проверяем, есть ли данные для парсинга
                     const jsonData = e.dataTransfer.getData('application/json');
-                    console.log('📋 Полученные JSON данные:', jsonData);
                     
                     if (!jsonData || jsonData.trim() === '') {
-                        console.warn('⚠️ Пустые данные drag-and-drop, проверяем резервные данные');
-                        
                         // Пробуем получить данные из глобальной переменной как резерв
                         if (window.lastDragData) {
-                            console.log('💾 Используем резервные данные из window.lastDragData:', window.lastDragData);
                             const dragData = window.lastDragData;
                             
                             // Проверяем, что это не тот же самый склад
                             if (dragData.warehouse === dropTarget.dataset.warehouse) {
-                                console.log('❌ Same warehouse, cannot transfer');
                                 showErrorModal('Нельзя перемещать товары в тот же склад');
-                        return;
+                                return;
                             }
                             
-                    // Открываем модальное окно для подтверждения перемещения
-                    openTransferModal(dragData, {
-                        warehouse: dropTarget.dataset.warehouse,
-                        quantity: dropTarget.dataset.quantity,
-                        sku: dropTarget.dataset.sku,
-                        productName: dropTarget.dataset.productName
-                    });
-                    
-                    // Очищаем резервные данные после использования
-                    window.lastDragData = null;
+                            // Открываем модальное окно для подтверждения перемещения
+                            openTransferModal(dragData, {
+                                warehouse: dropTarget.dataset.warehouse,
+                                quantity: dropTarget.dataset.quantity,
+                                sku: dropTarget.dataset.sku,
+                                productName: dropTarget.dataset.productName
+                            });
+                            
+                            // Очищаем резервные данные после использования
+                            window.lastDragData = null;
                         } else {
-                            console.warn('⚠️ Нет резервных данных, пропускаем операцию');
                             return;
                         }
+                    } else {
+                        const dragData = JSON.parse(jsonData);
+                        const dropTarget = warehouseItem;
+                        
+                        // Проверяем, что это не тот же самый склад
+                        if (dragData.warehouse === dropTarget.dataset.warehouse) {
+                            showErrorModal('Нельзя перемещать товары в тот же склад');
+                            return;
+                        }
+                        
+                        // Открываем модальное окно для подтверждения перемещения
+                        openTransferModal(dragData, {
+                            warehouse: dropTarget.dataset.warehouse,
+                            quantity: dropTarget.dataset.quantity
+                        });
                     }
-                    
-                    const dragData = JSON.parse(jsonData);
-                    const dropTarget = warehouseItem;
-                    
-                    console.log('📦 Глобальный drag data:', dragData);
-                    console.log('🎯 Глобальный drop target:', {
-                        warehouse: dropTarget.dataset.warehouse,
-                        quantity: dropTarget.dataset.quantity
-                    });
-                    
-                    // Проверяем, что это не тот же самый склад
-                    if (dragData.warehouse === dropTarget.dataset.warehouse) {
-                        console.log('❌ Same warehouse, cannot transfer');
-                        showErrorModal('Нельзя перемещать товары в тот же склад');
-                        return;
-                    }
-                    
-                    // Открываем модальное окно для подтверждения перемещения
-                    console.log('🚀 Opening transfer modal from global handler...');
-                    openTransferModal(dragData, {
-                        warehouse: dropTarget.dataset.warehouse,
-                        quantity: dropTarget.dataset.quantity
-                    });
                     
                 } catch (error) {
                     console.error('❌ Ошибка при обработке глобального drop:', error);
-                    console.error('📋 Данные, которые вызвали ошибку:', e.dataTransfer.getData('application/json'));
                     showErrorModal('Ошибка при обработке перемещения: ' + error.message);
                 }
             }
@@ -638,17 +569,12 @@ function setupDragAndDropForItems(warehouseItems) {
 
 // Глобальная функция для повторной инициализации drag-and-drop (теперь не нужна - используется делегирование)
 window.reinitializeDragAndDrop = function() {
-    console.log('🔄 Повторная инициализация drag-and-drop (теперь не нужна - используется делегирование)');
-    
     // Проверяем, что делегирование событий настроено
     if (window.dragState) {
-        console.log('✅ Централизованное состояние drag-and-drop уже настроено');
-    } else {
-        console.warn('⚠️ Централизованное состояние drag-and-drop не найдено');
+        // Централизованное состояние drag-and-drop уже настроено
     }
     
     // Модальное окно создается динамически при первом использовании
-    console.log('✅ Инициализация завершена (делегирование событий работает автоматически)');
 };
 
 // Глобальные переменные для модального окна
@@ -668,9 +594,8 @@ function createErrorModalIfNeeded() {
     let existingModal = document.getElementById('errorModalWrapper');
     
     if (existingModal) {
-        console.log('✅ Модальное окно ошибок уже существует');
-            return;
-        }
+        return;
+    }
         
     // Создаем новое модальное окно ошибок на уровне document.body
     const modalHTML = `
@@ -697,8 +622,6 @@ function createErrorModalIfNeeded() {
     
     // Инициализируем обработчики событий
     initializeErrorModal();
-    
-    console.log('✅ Модальное окно ошибок создано на уровне document.body');
 }
 
 // Функция для создания модального окна на уровне document.body
@@ -777,20 +700,15 @@ function createTransferModalIfNeeded() {
     
     // Инициализируем обработчики событий
     initializeTransferModal();
-    
-    console.log('✅ Модальное окно создано на уровне document.body');
 }
 
 // Инициализация модального окна ошибок
 function initializeErrorModal() {
     // Защита от повторной инициализации
     if (window.errorModalInitialized) {
-        console.log('⚠️ Модальное окно ошибок уже инициализировано, пропускаем повторную инициализацию');
         return;
     }
     window.errorModalInitialized = true;
-    
-    console.log('🔧 Инициализируем модальное окно ошибок');
     
     const wrapper = document.getElementById('errorModalWrapper');
     const msgEl = document.getElementById('errorModalMessage');
@@ -803,7 +721,6 @@ function initializeErrorModal() {
     
     // Глобальная функция для показа ошибок
     window.showErrorModal = (message) => {
-        console.log('🚨 Показываем ошибку:', message);
         msgEl.textContent = message;
         wrapper.classList.remove('hidden');
     };
@@ -827,26 +744,20 @@ function initializeErrorModal() {
             closeModal();
         }
     });
-    
-    console.log('✅ Модальное окно ошибок инициализировано');
 }
 
 // Модальное окно для перемещения
 function initializeTransferModal() {
     // Защита от повторной инициализации
     if (window.transferModalInitialized) {
-        console.log('⚠️ Модальное окно перемещения уже инициализировано, пропускаем повторную инициализацию');
         return;
     }
     window.transferModalInitialized = true;
-    
-    console.log('🔧 Инициализируем модальное окно перемещения');
     
     // Проверяем, существует ли модальное окно
     transferModalWrapper = document.getElementById('transferModalWrapper');
     
     if (!transferModalWrapper) {
-        console.log('📝 Модальное окно не найдено, создаем его');
         createTransferModalIfNeeded();
         transferModalWrapper = document.getElementById('transferModalWrapper');
     }
@@ -854,7 +765,6 @@ function initializeTransferModal() {
     // Также создаем модальное окно ошибок, если его нет
     const errorModal = document.getElementById('errorModalWrapper');
     if (!errorModal) {
-        console.log('📝 Модальное окно ошибок не найдено, создаем его');
         createErrorModalIfNeeded();
     }
     
@@ -865,16 +775,9 @@ function initializeTransferModal() {
     
     // Проверяем, что все элементы найдены
     if (!transferModalWrapper || !transferCancelBtn || !transferConfirmBtn || !transferQuantityInput) {
-        console.error('❌ Transfer modal elements not found:', {
-            wrapper: !!transferModalWrapper,
-            cancelBtn: !!transferCancelBtn,
-            confirmBtn: !!transferConfirmBtn,
-            quantityInput: !!transferQuantityInput
-        });
+        console.error('❌ Transfer modal elements not found');
         return;
     }
-    
-    console.log('✅ Transfer modal elements found and initialized');
     
     // Удаляем старые обработчики событий, если они есть
     const oldCancelBtn = transferCancelBtn.cloneNode(true);
@@ -899,11 +802,9 @@ function initializeTransferModal() {
         setTimeout(() => {
             if (transferModalWrapper && transferModalWrapper.parentNode) {
                 transferModalWrapper.parentNode.removeChild(transferModalWrapper);
-                console.log('🗑️ Модальное окно удалено из DOM');
                 
                 // Сбрасываем флаг инициализации для возможности повторного создания
                 window.transferModalInitialized = false;
-                console.log('🔄 Флаг инициализации модального окна сброшен');
             }
         }, 300); // Задержка для анимации закрытия
     };
@@ -951,16 +852,14 @@ function initializeTransferModal() {
 
 // Открытие модального окна перемещения
 function openTransferModal(fromData, toData) {
-    console.log('🚀 Открываем модальное окно перемещения:', { fromData, toData });
-    
     // Создаем модальное окно динамически на уровне document.body
     createTransferModalIfNeeded();
     
     // Проверяем, что глобальные переменные инициализированы
     if (!transferModalWrapper) {
         console.error('❌ Transfer modal wrapper not initialized after creation');
-            showErrorModal('Ошибка: модальное окно не инициализировано');
-            return;
+        showErrorModal('Ошибка: модальное окно не инициализировано');
+        return;
     }
     
     const productNameEl = document.getElementById('transferProductName');
@@ -1001,13 +900,6 @@ function openTransferModal(fromData, toData) {
     };
     
     // Показываем модалку
-    console.log('🔍 Состояние модального окна перед показом:', {
-        hasHidden: transferModalWrapper.classList.contains('hidden'),
-        zIndex: window.getComputedStyle(transferModalWrapper).zIndex,
-        display: window.getComputedStyle(transferModalWrapper).display,
-        visibility: window.getComputedStyle(transferModalWrapper).visibility
-    });
-    
     // Принудительно устанавливаем z-index для корректного отображения поверх воркспейса
     transferModalWrapper.style.zIndex = '99999';
     transferModalWrapper.style.position = 'fixed';
@@ -1017,14 +909,6 @@ function openTransferModal(fromData, toData) {
     transferModalWrapper.style.height = '100vh';
     
     transferModalWrapper.classList.remove('hidden');
-    
-    console.log('🔍 Состояние модального окна после показа:', {
-        hasHidden: transferModalWrapper.classList.contains('hidden'),
-        zIndex: window.getComputedStyle(transferModalWrapper).zIndex,
-        display: window.getComputedStyle(transferModalWrapper).display,
-        visibility: window.getComputedStyle(transferModalWrapper).visibility,
-        position: window.getComputedStyle(transferModalWrapper).position
-    });
     
     transferQuantityInput.focus();
     
@@ -1037,30 +921,6 @@ function openTransferModal(fromData, toData) {
     };
     
     transferQuantityInput.addEventListener('keydown', handleKeydown);
-    
-    // Дополнительная проверка через небольшую задержку
-    setTimeout(() => {
-        console.log('🔍 Финальная проверка модального окна:', {
-            isHidden: transferModalWrapper.classList.contains('hidden'),
-            zIndex: transferModalWrapper.style.zIndex,
-            position: transferModalWrapper.style.position,
-            display: window.getComputedStyle(transferModalWrapper).display,
-            visibility: window.getComputedStyle(transferModalWrapper).visibility,
-            opacity: window.getComputedStyle(transferModalWrapper).opacity
-        });
-        
-        // Проверяем, видимо ли модальное окно
-        const rect = transferModalWrapper.getBoundingClientRect();
-        console.log('📐 Размеры и позиция модального окна:', {
-            width: rect.width,
-            height: rect.height,
-            top: rect.top,
-            left: rect.left,
-            visible: rect.width > 0 && rect.height > 0
-        });
-    }, 100);
-    
-    console.log('✅ Модальное окно открыто');
 }
 
 // Подтверждение перемещения
@@ -1119,11 +979,9 @@ function confirmTransfer() {
             setTimeout(() => {
                 if (modalWrapper && modalWrapper.parentNode) {
                     modalWrapper.parentNode.removeChild(modalWrapper);
-                    console.log('🗑️ Модальное окно удалено из DOM после успешного перемещения');
                     
                     // Сбрасываем флаг инициализации для возможности повторного создания
                     window.transferModalInitialized = false;
-                    console.log('🔄 Флаг инициализации модального окна сброшен');
                 }
             }, 300);
         }
@@ -1184,11 +1042,8 @@ function copyToClipboard(element) {
 // Старая инициализация модального окна ошибок удалена - теперь используется динамическое создание
 
 function removeFromStock(button, event) {
-    console.log('🚀 Функция removeFromStock вызвана');
-    
     // Предотвращаем всплытие события, чтобы не сработал обработчик удаления из воркспейса
     if (event) {
-        console.log('🛑 Предотвращаем всплытие события');
         event.stopPropagation();
         event.preventDefault();
     }
@@ -1198,8 +1053,6 @@ function removeFromStock(button, event) {
     const warehouse = button.dataset.warehouse;
     const sku = button.dataset.sku;
     const currentQuantity = parseInt(input.dataset.currentQuantity);
-    
-    console.log('📊 Параметры списания:', { quantity, warehouse, sku, currentQuantity });
 
     if (isNaN(quantity) || quantity < 1) {
         showErrorModal('Пожалуйста, введите корректное количество (минимум 1)');
@@ -1233,22 +1086,13 @@ function removeFromStock(button, event) {
         return response.json();
     })
     .then(data => {
-        console.log('✅ Списание успешно выполнено на сервере');
-        
         // Сбрасываем значение input в 0
         input.value = 0;
         
         // Обновляем все карточки товара после успешной операции
-        console.log('🔄 Обновляем карточки после списания для SKU:', sku);
-        
         if (typeof window.refreshProductCards === 'function') {
-            console.log('✅ Функция refreshProductCards найдена, вызываем обновление');
             window.refreshProductCards(sku);
-        } else {
-            console.log('❌ Функция refreshProductCards не найдена!');
         }
-        
-        console.log('✅ Обновление завершено');
     })
     .catch(error => {
         showErrorModal('Ошибка при списании товара: ' + error.message);
@@ -1261,11 +1105,8 @@ function removeFromStock(button, event) {
 }
 
 function addToStock(button, event) {
-    console.log('🚀 Функция addToStock вызвана (catalog_new_blocks/product_card.html)');
-    
     // Предотвращаем всплытие события, чтобы не сработал обработчик удаления из воркспейса
     if (event) {
-        console.log('🛑 Предотвращаем всплытие события');
         event.stopPropagation();
         event.preventDefault();
     }
@@ -1275,20 +1116,14 @@ function addToStock(button, event) {
     const warehouse = button.dataset.warehouse;
     const sku = button.dataset.sku;
     const currentQuantity = parseInt(input.dataset.currentQuantity);
-    
-    console.log('📊 Параметры пополнения:', { quantity, warehouse, sku, currentQuantity });
 
     if (isNaN(quantity) || quantity < 1) {
-        console.log('❌ Некорректное количество:', quantity);
         showErrorModal('Пожалуйста, введите корректное количество (минимум 1)');
         return;
     }
 
     // Отключаем кнопку на время запроса
-    console.log('🔒 Отключаем кнопку на время запроса');
     button.disabled = true;
-
-    console.log('📡 Отправляем запрос на пополнение...');
     fetch('/api/warehouse/add/', {
         method: 'POST',
         headers: {
@@ -1301,36 +1136,25 @@ function addToStock(button, event) {
         })
     })
     .then(response => {
-        console.log('📡 Получен ответ от сервера:', response.status, response.statusText);
         if (!response.ok) {
             throw new Error('Ошибка при пополнении');
         }
         return response.json();
     })
     .then(data => {
-        console.log('✅ Пополнение успешно выполнено на сервере');
-        
         // Сбрасываем значение input в 0
         input.value = 0;
         
         // Обновляем все карточки товара после успешной операции
-        console.log('🔄 Обновляем карточки после пополнения для SKU:', sku);
-        
         if (typeof window.refreshProductCards === 'function') {
-            console.log('✅ Функция refreshProductCards найдена, вызываем обновление');
             window.refreshProductCards(sku);
-        } else {
-            console.log('❌ Функция refreshProductCards не найдена!');
         }
-        
-        console.log('✅ Обновление завершено');
     })
     .catch(error => {
         console.error('❌ Ошибка при пополнении товара:', error);
         showErrorModal('Ошибка при пополнении товара: ' + error.message);
     })
     .finally(() => {
-        console.log('🔓 Восстанавливаем кнопку');
         button.disabled = false;
     });
 }
@@ -1341,18 +1165,13 @@ function addToStock(button, event) {
 document.addEventListener('DOMContentLoaded', function() {
     // Защита от повторной инициализации делегированных обработчиков
     if (window.delegatedHandlersInitialized) {
-        console.log('⚠️ Делегированные обработчики уже инициализированы, пропускаем повторную инициализацию');
         return;
     }
     window.delegatedHandlersInitialized = true;
     
-    console.log('🔧 Настраиваем делегирование событий для drag-and-drop');
-    
     // Обработчик dragstart для всех элементов склада
     document.addEventListener('dragstart', function(e) {
         if (e.target.classList.contains('warehouse-item')) {
-            console.log('🚀 Делегированный dragstart для элемента склада');
-            
             // Проверяем, не кликнули ли по интерактивному элементу
             const interactiveElements = e.target.querySelectorAll('input, button');
             const isInteractiveClick = Array.from(interactiveElements).some(el => 
@@ -1360,17 +1179,14 @@ document.addEventListener('DOMContentLoaded', function() {
             );
             
             if (isInteractiveClick) {
-                console.log('❌ Interactive element clicked, preventing drag');
                 e.preventDefault();
                 return;
             }
             
             // Проверяем, что на складе есть товары для перемещения
             const quantity = parseInt(e.target.dataset.quantity);
-            console.log('📦 Warehouse quantity:', quantity);
             
             if (quantity <= 0) {
-                console.log('❌ Empty warehouse, cannot drag');
                 e.preventDefault();
                 showErrorModal('Нельзя перемещать товары с пустого склада');
                 return;
@@ -1386,9 +1202,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 productName: e.target.dataset.productName
             };
             
-            console.log('📦 Setting drag data:', dragData);
             const jsonString = JSON.stringify(dragData);
-            console.log('📋 JSON string to set:', jsonString);
             
             e.dataTransfer.setData('text/html', e.target.outerHTML);
             e.dataTransfer.setData('application/json', jsonString);
@@ -1397,15 +1211,12 @@ document.addEventListener('DOMContentLoaded', function() {
             window.dragState.isDragging = true;
             window.dragState.dragData = dragData;
             window.dragState.sourceElement = e.target;
-            
-            console.log('💾 Сохранили данные в централизованном состоянии:', window.dragState);
         }
     }, true);
     
     // Обработчик dragend для всех элементов склада
     document.addEventListener('dragend', function(e) {
         if (e.target.classList.contains('warehouse-item')) {
-            console.log('🏁 Делегированный dragend для элемента склада');
             e.target.classList.remove('dragging');
             
             // Очищаем централизованное состояние
@@ -1413,8 +1224,6 @@ document.addEventListener('DOMContentLoaded', function() {
             window.dragState.dragData = null;
             window.dragState.sourceElement = null;
             window.dragState.targetElement = null;
-            
-            console.log('🧹 Очистили централизованное состояние');
         }
     }, true);
     
@@ -1437,24 +1246,18 @@ document.addEventListener('DOMContentLoaded', function() {
     // Обработчик drop для всех элементов склада
     document.addEventListener('drop', function(e) {
         if (e.target.classList.contains('warehouse-item')) {
-            console.log('🎯 Делегированный drop для элемента склада');
             e.preventDefault();
             e.target.classList.remove('drag-over');
             
             try {
                 // Проверяем, есть ли данные для парсинга
                 const jsonData = e.dataTransfer.getData('application/json');
-                console.log('📋 Полученные JSON данные:', jsonData);
                 
                 let dragData;
                 if (!jsonData || jsonData.trim() === '') {
-                    console.warn('⚠️ Пустые данные drag-and-drop, используем централизованное состояние');
-                    
                     if (window.dragState.dragData) {
                         dragData = window.dragState.dragData;
-                        console.log('💾 Используем данные из централизованного состояния:', dragData);
                     } else {
-                        console.warn('⚠️ Нет данных в централизованном состоянии, пропускаем операцию');
                         return;
                     }
                 } else {
@@ -1463,15 +1266,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 const dropTarget = e.target;
                 
-                console.log('📦 Drag data:', dragData);
-                console.log('🎯 Drop target:', {
-                    warehouse: dropTarget.dataset.warehouse,
-                    quantity: dropTarget.dataset.quantity
-                });
-                
                 // Проверяем, что это не тот же самый склад
                 if (dragData.warehouse === dropTarget.dataset.warehouse) {
-                    console.log('❌ Same warehouse, cannot transfer');
                     showErrorModal('Нельзя перемещать товары в тот же склад');
                     return;
                 }
@@ -1491,29 +1287,23 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }, true);
     
-    console.log('✅ Делегирование событий для drag-and-drop настроено');
-    
     // Делегирование событий для динамически загружаемых полей ввода
     document.addEventListener('focus', function(e) {
         if (e.target.type === 'number' && e.target.closest('.product-card')) {
-            console.log('🎯 Делегированный focus на поле ввода, очищаем значение');
             e.target.value = '';
         }
     }, true); // Используем capture phase
     
     document.addEventListener('blur', function(e) {
         if (e.target.type === 'number' && e.target.closest('.product-card')) {
-            console.log('👋 Делегированный blur на поле ввода, проверяем значение');
             if (e.target.value === '' || e.target.value === '0') {
                 e.target.value = '0';
-                console.log('🔄 Установлено значение 0 через делегирование');
             }
         }
     }, true); // Используем capture phase
     
     document.addEventListener('click', function(e) {
         if (e.target.type === 'number' && e.target.closest('.product-card')) {
-            console.log('🖱️ Делегированный клик по полю ввода, очищаем значение');
             e.target.value = '';
             e.target.focus();
         }
@@ -1521,12 +1311,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Объединенный обработчик для кнопок управления остатками и предотвращения клика по складам
     document.addEventListener('click', function(e) {
-        // Отладочная информация для всех кликов
-        console.log('🖱️ Клик по элементу:', e.target.tagName, 'textContent:', `"${e.target.textContent}"`, 'className:', e.target.className);
-        
         // ПРИОРИТЕТ 1: Обработчик для кнопки "Списать"
         if ((e.target.textContent === 'Списать' || e.target.textContent.trim() === 'Списать') && e.target.closest('.product-card')) {
-            console.log('🔴 Делегированный клик по кнопке "Списать"');
             e.stopPropagation();
             e.preventDefault();
             removeFromStock(e.target, e);
@@ -1535,7 +1321,6 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // ПРИОРИТЕТ 2: Обработчик для кнопки "Пополнить"
         if ((e.target.textContent === 'Пополнить' || e.target.textContent.trim() === 'Пополнить') && e.target.closest('.product-card')) {
-            console.log('🟢 Делегированный клик по кнопке "Пополнить"');
             e.stopPropagation();
             e.preventDefault();
             addToStock(e.target, e);
@@ -1544,7 +1329,6 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Альтернативный способ определения кнопок через onclick атрибут
         if (e.target.onclick && e.target.onclick.toString().includes('removeFromStock') && e.target.closest('.product-card')) {
-            console.log('🔴 Делегированный клик по кнопке "Списать" (через onclick)');
             e.stopPropagation();
             e.preventDefault();
             removeFromStock(e.target, e);
@@ -1552,7 +1336,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         if (e.target.onclick && e.target.onclick.toString().includes('addToStock') && e.target.closest('.product-card')) {
-            console.log('🟢 Делегированный клик по кнопке "Пополнить" (через onclick)');
             e.stopPropagation();
             e.preventDefault();
             addToStock(e.target, e);
@@ -1561,19 +1344,15 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // ПРИОРИТЕТ 3: Разрешаем клик по полю ввода количества
         if (e.target.type === 'number' && e.target.closest('.warehouse-item')) {
-            console.log('✅ Клик по полю ввода количества, разрешаем действие');
             return; // Не предотвращаем клик по полям ввода
         }
         
         // ПРИОРИТЕТ 4: Предотвращаем клик по блокам складов и секции остатков для добавления в воркспейс
         if (e.target.closest('.warehouse-item') || e.target.closest('.stocks-section')) {
-            console.log('🚫 Делегированный клик по блоку склада или секции остатков, предотвращаем добавление в воркспейс');
             e.stopPropagation();
             e.preventDefault();
         }
     }, true); // Используем capture phase
-    
-    console.log('✅ Делегирование событий для полей ввода и кнопок управления остатками настроено');
 });
 
 // Глобальная функция удалена - используется только делегирование событий
@@ -1661,13 +1440,11 @@ function addToWorkspaceFromCard(event, card) {
     
     // Проверяем, что это не клик по блоку склада (для drag-and-drop)
     if (event.target.closest('.warehouse-item')) {
-        console.log('🚫 Клик по блоку склада, предотвращаем добавление в воркспейс');
         return;
     }
     
     // Проверяем, что это не клик по секции "Остатки по складам"
     if (event.target.closest('.stocks-section')) {
-        console.log('🚫 Клик по секции "Остатки по складам", предотвращаем добавление в воркспейс');
         return;
     }
     

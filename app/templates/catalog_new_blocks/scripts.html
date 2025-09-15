@@ -1,6 +1,5 @@
 <script>
     // Версия скрипта для принудительного обновления кэша
-    console.log('Catalog scripts loaded - version 2025-01-19-v12 - Simplified interaction');
 
     let searchTimeout;
     let currentFilters = {
@@ -100,7 +99,6 @@
             if (sortOrder) params.append('sort_order', sortOrder);
 
             const queryString = params.toString();
-            console.log('Сформированный URL:', `/catalog_new/api/products?${queryString}`);
 
             // Отправляем запрос
             const response = await fetch(`/catalog_new/api/products?${queryString}`, {
@@ -566,20 +564,6 @@
 
     // Инициализация при загрузке страницы
     document.addEventListener('DOMContentLoaded', function () {
-        console.log('DOMContentLoaded event fired');
-
-        // Проверяем кнопку фильтров
-        const filterToggleBtn = document.getElementById('filterToggleBtn');
-        console.log('Кнопка фильтров найдена:', !!filterToggleBtn);
-        if (filterToggleBtn) {
-            console.log('Кнопка фильтров видна:', filterToggleBtn.offsetWidth > 0 && filterToggleBtn.offsetHeight > 0);
-            console.log('Стили кнопки:', window.getComputedStyle(filterToggleBtn).display);
-            console.log('Z-index кнопки:', window.getComputedStyle(filterToggleBtn).zIndex);
-        }
-
-        // Проверяем слайдер фильтров
-        const filterSlider = document.getElementById('filterSlider');
-        console.log('Слайдер фильтров найден:', !!filterSlider);
 
         // Добавляем обработчики для кнопок выбора
         const selectAllBtn = document.getElementById('selectAllBtn');
@@ -740,91 +724,52 @@
 
     // Заглушки для недостающих функций
     function initializeDragAndDrop() {
-        console.log('initializeDragAndDrop вызвана (заглушка в scripts.html)');
-        
         // Проверяем, есть ли наша функция в product_card.html
         if (typeof window.reinitializeDragAndDrop === 'function' && !window.dragDropInitialized) {
-            console.log('🔄 Вызываем реальную функцию drag-and-drop из product_card.html');
             window.dragDropInitialized = true; // Предотвращаем повторный вызов
             window.reinitializeDragAndDrop();
-        } else if (window.dragDropInitialized) {
-            console.log('✅ Drag-and-drop уже инициализирован, пропускаем');
-        } else {
-            console.warn('⚠️ Функция reinitializeDragAndDrop не найдена в product_card.html');
         }
     }
 
     function initializeCatalogHandlers() {
-        console.log('initializeCatalogHandlers вызвана');
+        // Обработчики каталога
     }
 
     // Инициализация выделения при загрузке страницы
     document.addEventListener('DOMContentLoaded', function () {
-        console.log('Инициализация выделения карточек при загрузке страницы');
-
-        // // Небольшая задержка для того, чтобы все элементы загрузились
-        // setTimeout(() => {
-        //     initializeCardSelection();
-        // }, 100);
+        // Инициализация завершена
     });
 
     // Универсальная функция для обновления карточек товаров
     async function refreshProductCards(sku) {
         try {
-            // Счетчик вызовов для отладки
-            if (!window.refreshCallCount) window.refreshCallCount = {};
-            if (!window.refreshCallCount[sku]) window.refreshCallCount[sku] = 0;
-            window.refreshCallCount[sku]++;
-            
             // Защита от множественных одновременных вызовов
             if (!window.refreshInProgress) window.refreshInProgress = {};
             if (window.refreshInProgress[sku]) {
-                console.log('⚠️ Обновление для SKU', sku, 'уже выполняется, пропускаем дублирующий вызов');
                 return;
             }
             window.refreshInProgress[sku] = true;
-            
-            console.log('🚀 НОВАЯ ВЕРСИЯ refreshProductCards вызвана для SKU:', sku, `(вызов #${window.refreshCallCount[sku]})`);
-            console.log('🔄 Обновление карточек товара:', sku);
-            console.log('🔍 Проверяем наличие карточек на странице...');
             
             // Проверяем, есть ли карточки на странице
             const mainCards = document.querySelectorAll(`#mainContent [data-product-sku="${sku}"]`);
             const workspaceCards = document.querySelectorAll(`#workspaceProductsList [data-product-sku="${sku}"]`);
             const catalogPanelCards = document.querySelectorAll(`#catalogPanel [data-product-sku="${sku}"]`);
             
-            console.log(`📊 Найдено карточек: основной каталог=${mainCards.length}, воркспейс=${workspaceCards.length}, панель каталога=${catalogPanelCards.length}`);
-            
-            // Проверяем, есть ли контейнер #mainContent
-            const mainContent = document.querySelector('#mainContent');
-            console.log('🏠 Контейнер #mainContent найден:', !!mainContent);
-            
             if (mainCards.length > 0) {
-                console.log('📋 Найдены карточки в каталоге, обновляем...');
                 await refreshCatalogCard(sku);
-            } else {
-                console.log('⚠️ Карточки в каталоге не найдены, пропускаем обновление каталога');
             }
             
             // Обновляем карточку в воркспейсе, если товар там есть
             if (typeof workspaceManager !== 'undefined' && workspaceManager && workspaceManager.selectedProducts[sku]) {
-                console.log('💼 Обновляем карточку в воркспейсе...');
                 await refreshWorkspaceCard(sku);
-            } else {
-                console.log('💼 Товар не найден в воркспейсе, пропускаем обновление воркспейса');
             }
-            
-            // Выделение восстанавливается локально в каждой функции обновления карточек
             
             // Переинициализируем drag-and-drop для новых элементов
             if (typeof window.reinitializeDragAndDrop === 'function') {
-                console.log('🔄 Переинициализируем drag-and-drop после обновления карточек');
                 setTimeout(() => {
                     window.reinitializeDragAndDrop();
                 }, 100);
             }
-            
-            console.log('✅ Карточки товара успешно обновлены');
         } catch (error) {
             console.error('❌ Ошибка при обновлении карточек товара:', error);
             if (typeof showNotification === 'function') {
@@ -834,7 +779,6 @@
             // Очищаем флаг выполнения
             if (window.refreshInProgress && window.refreshInProgress[sku]) {
                 delete window.refreshInProgress[sku];
-                console.log('🧹 Очищен флаг выполнения для SKU:', sku);
             }
         }
     }
@@ -842,41 +786,13 @@
     // Обновление карточки в каталоге
     async function refreshCatalogCard(sku) {
         try {
-            console.log('🚀 НОВАЯ ВЕРСИЯ refreshCatalogCard вызвана для SKU:', sku);
-            console.log('🌐 Запрашиваем обновленную карточку для SKU:', sku);
-            
-            // Сохраняем состояние выделения перед обновлением
-            console.log(`🔍 Ищем карточки для SKU: ${sku}`);
-            
-            // Ищем все возможные карточки
-            const allCardsWithSku = document.querySelectorAll(`[data-product-sku="${sku}"]`);
-            console.log(`📋 Всего найдено элементов с SKU ${sku}:`, allCardsWithSku.length);
-            
-            allCardsWithSku.forEach((element, index) => {
-                const productCard = element.closest('.product-card');
-                console.log(`📋 Элемент ${index + 1}:`, {
-                    element: element.tagName,
-                    hasProductCard: !!productCard,
-                    isSelected: productCard?.classList.contains('workspace-selected') || false,
-                    parentId: productCard?.closest('[id]')?.id || 'no-id'
-                });
-            });
-            
             const mainCard = document.querySelector(`#mainContent [data-product-sku="${sku}"]`)?.closest('.product-card');
             const catalogCard = document.querySelector(`#catalogPanel [data-product-sku="${sku}"]`)?.closest('.product-card');
             
             const wasMainCardSelected = mainCard?.classList.contains('workspace-selected') || false;
             const wasCatalogCardSelected = catalogCard?.classList.contains('workspace-selected') || false;
             
-            console.log('💾 Сохраняем состояние выделения:', { 
-                mainCard: wasMainCardSelected, 
-                catalogCard: wasCatalogCardSelected,
-                mainCardFound: !!mainCard,
-                catalogCardFound: !!catalogCard
-            });
-            
             const url = `/catalog_new/api/products/${sku}/card?context=catalog`;
-            console.log('📡 URL запроса:', url);
             
             const response = await fetch(url, {
                 method: 'GET',
@@ -886,26 +802,14 @@
                 }
             });
             
-            console.log('📡 Статус ответа:', response.status, response.statusText);
-            
             if (!response.ok) {
                 throw new Error(`Ошибка при получении обновленных данных товара: ${response.status} ${response.statusText}`);
             }
             
             const data = await response.json();
-            console.log('📦 Получены данные карточки:', data);
             
             // Обновляем карточку в основном каталоге
-            console.log('🔍 Ищем карточку в основном каталоге...');
-            console.log('🎯 Найденная карточка в каталоге:', !!mainCard);
             if (mainCard) {
-                console.log('🔄 Обновляем карточку в основном каталоге');
-                
-                console.log('🔍 Отладка обновления карточки:');
-                console.log('  - data.html длина:', data.html.length);
-                console.log('  - data.html начало:', data.html.substring(0, 200) + '...');
-                console.log('  - mainCard до обновления:', mainCard.outerHTML.substring(0, 200) + '...');
-                
                 // Создаем временный элемент для извлечения содержимого
                 const tempDiv = document.createElement('div');
                 tempDiv.innerHTML = data.html;
@@ -914,37 +818,23 @@
                 if (newCardContent) {
                     // Получаем только внутреннее содержимое карточки (без внешнего div.product-card)
                     const innerContent = newCardContent.innerHTML;
-                    console.log('  - Используем innerHTML из найденной карточки (без внешнего div)');
                     mainCard.innerHTML = innerContent;
                 } else {
                     // Если не удалось найти карточку, используем весь HTML
-                    console.log('  - Используем весь data.html (fallback)');
                     mainCard.innerHTML = data.html;
                 }
-                
-                console.log('  - mainCard после обновления:', mainCard.outerHTML.substring(0, 200) + '...');
-                
-                console.log('✅ Карточка в каталоге обновлена');
                 
                 // Восстанавливаем выделение если оно было
                 if (wasMainCardSelected) {
                     const newMainCard = document.querySelector(`#mainContent [data-product-sku="${sku}"]`)?.closest('.product-card');
                     if (newMainCard) {
-                        console.log('🎨 Восстанавливаем выделение для карточки в основном каталоге');
                         newMainCard.classList.add('workspace-selected');
-                        console.log('✅ Класс добавлен, проверяем:', newMainCard.classList.contains('workspace-selected'));
-                    } else {
-                        console.log('❌ Не удалось найти обновленную карточку в основном каталоге');
                     }
                 }
-            } else {
-                console.log('⚠️ Карточка в основном каталоге не найдена');
             }
             
             // Обновляем карточку в правой панели воркспейса (если воркспейс открыт)
             if (catalogCard) {
-                console.log('🔄 Обновляем карточку в правой панели воркспейса');
-                
                 // Создаем временный элемент для извлечения содержимого
                 const tempDiv = document.createElement('div');
                 tempDiv.innerHTML = data.html;
@@ -953,41 +843,27 @@
                 if (newCardContent) {
                     // Получаем только внутреннее содержимое карточки (без внешнего div.product-card)
                     const innerContent = newCardContent.innerHTML;
-                    console.log('  - Используем innerHTML из найденной карточки (без внешнего div) для правой панели');
                     catalogCard.innerHTML = innerContent;
                 } else {
                     // Если не удалось найти карточку, используем весь HTML
-                    console.log('  - Используем весь data.html (fallback) для правой панели');
                     catalogCard.innerHTML = data.html;
                 }
-                
-                console.log('✅ Карточка в правой панели воркспейса обновлена');
                 
                 // Восстанавливаем выделение если оно было
                 if (wasCatalogCardSelected) {
                     const newCatalogCard = document.querySelector(`#catalogPanel [data-product-sku="${sku}"]`)?.closest('.product-card');
                     if (newCatalogCard) {
-                        console.log('🎨 Восстанавливаем выделение для карточки в правой панели');
                         newCatalogCard.classList.add('workspace-selected');
-                        console.log('✅ Класс добавлен в правой панели, проверяем:', newCatalogCard.classList.contains('workspace-selected'));
-                    } else {
-                        console.log('❌ Не удалось найти обновленную карточку в правой панели');
                     }
                 }
-            } else {
-                console.log('⚠️ Карточка в правой панели воркспейса не найдена');
             }
             
             // Переинициализируем drag-and-drop для обновленных элементов
             if (typeof window.reinitializeDragAndDrop === 'function') {
-                console.log('🔄 Переинициализируем drag-and-drop после обновления карточки каталога');
                 setTimeout(() => {
                     window.reinitializeDragAndDrop();
                 }, 100);
             }
-            
-            // Переинициализируем обработчики полей ввода после обновления карточек
-            // Обработчики полей ввода работают через делегирование событий
             
         } catch (error) {
             console.error('❌ Ошибка при обновлении карточки каталога:', error);
@@ -997,13 +873,9 @@
     // Обновление карточки в воркспейсе
     async function refreshWorkspaceCard(sku) {
         try {
-            console.log('💼 Запрашиваем обновленную карточку воркспейса для SKU:', sku);
-            
             // Сохраняем состояние выделения перед обновлением
             const workspaceCard = document.querySelector(`#workspaceProductsList [data-product-sku="${sku}"]`)?.closest('.product-card');
             const wasWorkspaceCardSelected = workspaceCard?.classList.contains('workspace-selected') || false;
-            
-            console.log('💾 Сохраняем состояние выделения воркспейса:', wasWorkspaceCardSelected);
             
             const response = await fetch('/catalog_new/api/cards', {
                 method: 'POST',
@@ -1018,42 +890,31 @@
                 })
             });
             
-            console.log('📡 Статус ответа воркспейса:', response.status, response.statusText);
-            
             if (!response.ok) {
                 throw new Error(`Ошибка при получении обновленной карточки воркспейса: ${response.status} ${response.statusText}`);
             }
             
             const data = await response.json();
-            console.log('📦 Получены данные карточки воркспейса:', data);
             
             // Обновляем карточку в воркспейсе
             if (workspaceCard && data.html) {
-                console.log('🔄 Обновляем карточку в воркспейсе');
                 workspaceCard.outerHTML = data.html;
-                console.log('✅ Карточка в воркспейсе обновлена');
                 
                 // Восстанавливаем выделение если оно было
                 if (wasWorkspaceCardSelected) {
                     const newWorkspaceCard = document.querySelector(`#workspaceProductsList [data-product-sku="${sku}"]`)?.closest('.product-card');
                     if (newWorkspaceCard) {
-                        console.log('🎨 Восстанавливаем выделение для карточки в воркспейсе');
                         newWorkspaceCard.classList.add('workspace-selected');
                     }
                 }
-            } else {
-                console.log('⚠️ Карточка в воркспейсе не найдена или нет HTML данных');
             }
             
             // Переинициализируем drag-and-drop для обновленных элементов
             if (typeof window.reinitializeDragAndDrop === 'function') {
-                console.log('🔄 Переинициализируем drag-and-drop после обновления карточки воркспейса');
                 setTimeout(() => {
                     window.reinitializeDragAndDrop();
                 }, 100);
             }
-            
-            // Обработчики полей ввода работают через делегирование событий
             
         } catch (error) {
             console.error('❌ Ошибка при обновлении карточки воркспейса:', error);

@@ -58,10 +58,10 @@ async def home(
     current_user: Optional[UserModel] = Depends(deps.get_current_user_optional)
 ):
     if not current_user:
-        return RedirectResponse(url="/login?next=/catalog", status_code=302)
+        return RedirectResponse(url="/login?next=/catalog_new", status_code=302)
 
-    # Перенаправляем авторизованных пользователей на каталог
-    return RedirectResponse(url="/catalog", status_code=302)
+    # Перенаправляем авторизованных пользователей на новый каталог
+    return RedirectResponse(url="/catalog_new", status_code=302)
 
 @app.get("/status")
 async def status_page(request: Request):
