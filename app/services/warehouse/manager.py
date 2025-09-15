@@ -1149,6 +1149,7 @@ class InventoryManager:
         qty_col: str = 'Кол-во',
         ean_col: str = 'EAN',
         name_col: str = 'Name',
+        brand_col: str = 'Brand',
         image_col: str = 'Foto',
         header: int = None
     ) -> Tuple[pd.DataFrame, List[Dict]]:
@@ -1184,6 +1185,7 @@ class InventoryManager:
         # Проверяем наличие дополнительных колонок
         has_ean = False
         has_name = False
+        has_brand = False
         has_image = False
         
         try:
@@ -1197,6 +1199,12 @@ class InventoryManager:
             has_name = True
         except ValueError:
             logging.info("Колонка Name не найдена")
+        
+        try:
+            col_indices['brand'] = headers.index(brand_col)
+            has_brand = True
+        except ValueError:
+            logging.info("Колонка Brand не найдена")
         
         try:
             col_indices['image'] = headers.index(image_col)
@@ -1247,6 +1255,7 @@ class InventoryManager:
                 'Количество': '',
                 'EAN': '',
                 'Название': '',
+                'Бренд': '',
                 'Статус': '',
                 'Описание': '',
                 'Тип операции': ''
@@ -1285,6 +1294,7 @@ class InventoryManager:
                 # Извлекаем дополнительные данные
                 ean = ''
                 name = ''
+                brand = ''
                 if has_ean:
                     ean_cell = row[col_indices['ean']].value
                     ean = str(ean_cell).strip() if ean_cell else ''
@@ -1294,6 +1304,11 @@ class InventoryManager:
                     name_cell = row[col_indices['name']].value
                     name = str(name_cell).strip() if name_cell else ''
                     report_row['Название'] = name
+                
+                if has_brand:
+                    brand_cell = row[col_indices['brand']].value
+                    brand = str(brand_cell).strip() if brand_cell else ''
+                    report_row['Бренд'] = brand
                 
                 # Проверяем существование товара в базе
                 with Session(self.engine) as session:
@@ -1378,6 +1393,7 @@ class InventoryManager:
                                 sku=sku,
                                 eans=[ean] if ean else [],
                                 name=name,
+                                brand=brand if brand else None,
                                 image=compressed_image,
                                 original_image=original_image,
                                 image_url=image_url
@@ -1398,6 +1414,7 @@ class InventoryManager:
                                 "quantity": qty,
                                 "ean": ean,
                                 "name": name,
+                                "brand": brand,
                                 "operation": "create_product"
                             })
                             
@@ -1455,9 +1472,10 @@ class InventoryManager:
                 'C': 12,  # Количество
                 'D': 15,  # EAN
                 'E': 30,  # Название
-                'F': 12,  # Статус
-                'G': 50,  # Описание
-                'H': 20   # Тип операции
+                'F': 15,  # Бренд
+                'G': 12,  # Статус
+                'H': 50,  # Описание
+                'I': 20   # Тип операции
             }
             
             for col, width in column_widths.items():
@@ -1478,7 +1496,7 @@ class InventoryManager:
             error_fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
             
             for row in worksheet.iter_rows(min_row=2):
-                status_cell = row[5]  # Колонка F (Статус)
+                status_cell = row[6]  # Колонка G (Статус)
                 if status_cell.value == 'УСПЕШНО':
                     for cell in row:
                         cell.fill = success_fill

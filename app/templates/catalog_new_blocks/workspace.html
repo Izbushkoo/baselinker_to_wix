@@ -980,6 +980,17 @@
         
         const skus = Object.keys(workspaceManager.selectedProducts);
         
+        // Собираем данные товаров с комментариями
+        const productsData = skus.map(sku => {
+            const quantity = getRequestQuantity(sku) || 0;
+            const comment = getRequestComment(sku) || '';
+            return {
+                sku: sku,
+                quantity: quantity,
+                comment: comment
+            };
+        });
+        
         try {
             showNotification(`Создаем заявку поставщику для ${skus.length} товаров...`, 'info');
             
@@ -989,7 +1000,7 @@
                     'Content-Type': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest'
                 },
-                body: JSON.stringify(skus)
+                body: JSON.stringify(productsData)
             });
             
             if (response.ok) {
@@ -998,7 +1009,7 @@
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `supplier_request_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.csv`;
+                a.download = `supplier_request_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);

@@ -118,17 +118,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
-                // Получили файл с ошибками
+                // Получили файл отчета (всегда возвращается теперь)
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = response.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'errors.xlsx';
+                a.download = response.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'import_report.xlsx';
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);
                 a.remove();
-                alert('Импорт завершен с ошибками. Скачан файл с ошибками.');
+                alert('Импорт завершен. Скачан файл отчета об импорте.');
+                incomingForm.reset();
             } else {
                 if (!response.ok) {
                     let errorText = 'Ошибка при импорте прихода';

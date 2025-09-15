@@ -131,4 +131,11 @@ class ProductEditOperation(BaseModel):
     old_values: dict
     new_values: dict
     user_email: str
-    timestamp: str 
+    timestamp: str
+
+
+class SupplierRequestItem(BaseModel):
+    """Схема для элемента заявки поставщику"""
+    sku: str = Field(..., description="SKU товара")
+    quantity: int = Field(default=0, ge=0, description="Количество в заявку")
+    comment: str = Field(default="", description="Комментарий к товару") 

@@ -84,6 +84,7 @@ async def upload_incoming(
     qty_col: str = 'Кол-во',
     ean_col: str = 'EAN',
     name_col: str = 'Name',
+    brand_col: str = 'Brand',
     image_col: str = 'Foto',
     header: int = 0,
     manager: manager.InventoryManager = Depends(manager.get_manager),
@@ -93,7 +94,18 @@ async def upload_incoming(
         raise HTTPException(status_code=400, detail='Неверный формат файла. Ожидается XLS/XLSX.')
     content = await file.read()
     try:
-        processed_products = manager.import_incoming_from_excel(content, warehouse.value, sku_col, qty_col, ean_col, name_col, image_col, header)
+        # Используем новую функцию с поддержкой бренда
+        report_df, processed_products = manager.robust_import_incoming_from_excel(
+            content, 
+            warehouse.value, 
+            sku_col, 
+            qty_col, 
+            ean_col, 
+            name_col, 
+            brand_col, 
+            image_col, 
+            header
+        )
         
         # Создаем запись операции
         operations_service = get_operations_service()
@@ -105,9 +117,24 @@ async def upload_incoming(
             products=processed_products
         )
         
+        # Генерируем отчет об импорте
+        report_buffer = manager.generate_import_report_excel(report_df, file.filename)
+        
+        # Формируем имя файла отчета
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_filename = f"import_report_{timestamp}.xlsx"
+        encoded_filename = quote(report_filename)
+        
+        return StreamingResponse(
+            report_buffer,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename={encoded_filename}"
+            }
+        )
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    return JSONResponse({'status': 'success', 'file': file.filename, 'warehouse': warehouse.value})
 
 @router.post('/transfer/', summary='Импорт перемещения между складами')
 async def upload_transfer(
@@ -201,6 +228,7 @@ async def download_incoming_template():
         'Кол-во',       # Количество для прихода (обязательно)
         'EAN',          # EAN код товара (опционально)
         'Name',         # Название товара (опционально)
+        'Brand',        # Бренд товара (опционально)
         'Foto'          # Ссылка на фото товара (опционально)
     ]
     
@@ -215,6 +243,7 @@ async def download_incoming_template():
         'ОБЯЗАТЕЛЬНО', 
         'ОПЦИОНАЛЬНО', 
         'ОПЦИОНАЛЬНО', 
+        'ОПЦИОНАЛЬНО',
         'ОПЦИОНАЛЬНО - URL или вставить изображение'
     ]
     
@@ -224,9 +253,9 @@ async def download_incoming_template():
     
     # Добавляем пример данных
     sample_data = [
-        ['EXAMPLE-SKU-001', 10, '1234567890123', 'Пример товара 1', ''],
-        ['EXAMPLE-SKU-002', 5, '1234567890124', 'Пример товара 2', ''],
-        ['EXAMPLE-SKU-003', 15, '', 'Пример товара 3', '']
+        ['EXAMPLE-SKU-001', 10, '1234567890123', 'Пример товара 1', 'Примерный бренд', ''],
+        ['EXAMPLE-SKU-002', 5, '1234567890124', 'Пример товара 2', 'Другой бренд', ''],
+        ['EXAMPLE-SKU-003', 15, '', 'Пример товара 3', '', '']
     ]
     
     for row_num, row_data in enumerate(sample_data, 3):  # Начинаем с 3-й строки, т.к. 2-я занята комментариями
@@ -270,7 +299,7 @@ async def download_incoming_template():
         return img_buffer
     
     # Встраиваем изображения в каждую строку с данными
-    for row_idx, (sku, qty, ean, name, _) in enumerate(sample_data, 3):
+    for row_idx, (sku, qty, ean, name, brand, _) in enumerate(sample_data, 3):
         img_buffer = create_sample_image(f"Фото\n{sku}")
         
         from openpyxl.drawing.image import Image as ExcelImage
@@ -278,8 +307,8 @@ async def download_incoming_template():
         excel_img.width = 120   # Размер изображения в Excel
         excel_img.height = 120
         
-        # Вставляем изображение в колонку E
-        worksheet.add_image(excel_img, f'E{row_idx}')
+        # Вставляем изображение в колонку F (Foto)
+        worksheet.add_image(excel_img, f'F{row_idx}')
         
         # Устанавливаем высоту строки под изображение
         worksheet.row_dimensions[row_idx].height = 95  # ~120 пикселей
@@ -290,7 +319,8 @@ async def download_incoming_template():
         'B': 12,  # Кол-во
         'C': 18,  # EAN
         'D': 35,  # Name
-        'E': 18   # Foto - ширина под изображение
+        'E': 20,  # Brand
+        'F': 18   # Foto - ширина под изображение
     }
     
     for column, width in column_widths.items():
@@ -305,7 +335,8 @@ async def download_incoming_template():
         "2. Колонка 'Кол-во' - обязательная, количество для прихода",
         "3. Колонка 'EAN' - опциональная, штрих-код товара",
         "4. Колонка 'Name' - опциональная, название товара",
-        "5. Колонка 'Foto' - опциональная, изображение товара",
+        "5. Колонка 'Brand' - опциональная, бренд товара",
+        "6. Колонка 'Foto' - опциональная, изображение товара",
         "",
         "ДЛЯ ВСТАВКИ ИЗОБРАЖЕНИЙ:",
         "• Можно вставить URL на изображение в ячейку",

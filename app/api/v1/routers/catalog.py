@@ -18,10 +18,12 @@ from app.models.user import User
 from app.services.warehouse.manager import Warehouses
 from app.services.prices_service import prices_service
 import logging
-import base64
-import csv
 import io
+import csv
 from datetime import datetime
+import base64
+import pandas as pd
+from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
@@ -763,20 +765,23 @@ async def create_transfer_request(
 @router.post("/api/workspace/supplier-request")
 async def create_supplier_request(
     request: Request,
-    skus: List[str],
+    products_data: List[dict],
     db: AsyncSession = Depends(deps.get_async_session),
     current_user: User = Depends(deps.get_current_user_optional)
 ):
     """
-    Создать файл заявки поставщику для выбранных товаров
+    Создать Excel файл заявки поставщику для выбранных товаров
     """
     if not current_user:
         raise HTTPException(status_code=401, detail="Требуется авторизация")
     
-    if not skus:
-        raise HTTPException(status_code=400, detail="Список SKU не может быть пустым")
+    if not products_data:
+        raise HTTPException(status_code=400, detail="Список товаров не может быть пустым")
     
     try:
+        # Извлекаем SKU из данных
+        skus = [item['sku'] for item in products_data]
+        
         # Получаем товары с остатками
         products_query = (
             select(
@@ -794,48 +799,99 @@ async def create_supplier_request(
         if not products:
             raise HTTPException(status_code=404, detail="Товары не найдены")
         
-        # Создаем CSV файл заявки поставщику
-        output = io.StringIO()
-        writer = csv.writer(output)
+        # Создаем словарь для быстрого поиска данных товаров
+        products_dict = {item['sku']: item for item in products_data}
         
-        # Заголовки для заявки поставщику
-        writer.writerow([
-            'SKU', 'Название', 'Бренд', 'EAN', 'Текущий остаток',
-            'Минимальный остаток', 'Количество к заказу', 'Цена поставщика', 'Примечание'
-        ])
+        # Создаем DataFrame для удобной работы
+        import pandas as pd
+        from openpyxl.utils import get_column_letter
+        from openpyxl.drawing.image import Image as XLImage
         
-        # Данные товаров
+        data = []
+        images = []
+        
         for product_row in products:
             product = product_row[0]
-            total_stock = product_row[1] or 0
+            product_data = products_dict.get(product.sku, {})
             
-            # Формируем строку данных
-            row_data = [
-                product.sku,
-                product.name or '',
-                product.brand or '',
-                product.eans[0] if product.eans else '',
-                total_stock,
-                '',  # Минимальный остаток (заполняется вручную)
-                '',  # Количество к заказу (заполняется вручную)
-                '',  # Цена поставщика (заполняется вручную)
-                ''   # Примечание (заполняется вручную)
-            ]
+            row_data = {
+                'No': len(data) + 1,
+                'Brand': product.brand or '',
+                'Foto': '',  # Пустое поле для изображения
+                'Name': product.name_eng or product.name or '',
+                'EAN/UPC': product.eans[0] if product.eans else '',
+                'SKU': product.sku,
+                'Количество': product_data.get('quantity', 0),
+                'Комментарий': product_data.get('comment', '')
+            }
+            data.append(row_data)
             
-            writer.writerow(row_data)
+            # Добавляем изображение если есть
+            if product.image:
+                images.append(product.image)
+            else:
+                images.append(None)
         
-        # Подготавливаем файл для скачивания
-        output.seek(0)
-        csv_content = output.getvalue()
-        output.close()
+        df = pd.DataFrame(data)
+        
+        # Создаем Excel файл
+        excel_buffer = BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+            # Пишем данные (картинки пока пустые)
+            df.to_excel(writer, index=False, sheet_name="Заявка поставщику")
+            ws = writer.sheets["Заявка поставщику"]
+            
+            # Находим букву колонки «Foto»
+            foto_col_idx = df.columns.get_loc("Foto") + 1
+            foto_col_letter = get_column_letter(foto_col_idx)
+            
+            # Форматируем заголовки и ширину колонок
+            from openpyxl.styles import Alignment
+            
+            for idx, col in enumerate(df.columns, start=1):
+                cell = ws.cell(row=1, column=idx)
+                cell.font = cell.font.copy(bold=True)
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                
+                if col == "Foto":
+                    ws.column_dimensions[foto_col_letter].width = 22  # ~150px
+                elif col == "Name":
+                    ws.column_dimensions[get_column_letter(idx)].width = 100  # Для длинных названий
+                elif col == "Комментарий":
+                    ws.column_dimensions[get_column_letter(idx)].width = 50  # Для комментариев
+                else:
+                    max_len = max(df[col].astype(str).map(len).max(), len(col))
+                    ws.column_dimensions[get_column_letter(idx)].width = min(max_len + 2, 50)
+            
+            # Центрируем содержимое всех ячеек с данными
+            for row_idx in range(2, len(df) + 2):  # Начинаем с 2-й строки (данные)
+                for col_idx in range(1, len(df.columns) + 1):
+                    cell = ws.cell(row=row_idx, column=col_idx)
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+            
+            # Вставка картинок 150×150 и высота строк
+            for row_idx, img_bytes in enumerate(images, start=2):
+                if not img_bytes:
+                    continue
+                try:
+                    img = XLImage(BytesIO(img_bytes))
+                    img.width = 150
+                    img.height = 150
+                    ws.row_dimensions[row_idx].height = 115  # под ~150px
+                    
+                    ws.add_image(img, f"{foto_col_letter}{row_idx}")
+                except Exception as e:
+                    logger.error(f"Не удалось вставить изображение в строке {row_idx}: {e}")
+        
+        excel_buffer.seek(0)
         
         # Создаем имя файла с датой
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"supplier_request_{timestamp}.csv"
+        filename = f"supplier_request_{timestamp}.xlsx"
         
         return StreamingResponse(
-            io.BytesIO(csv_content.encode('utf-8')),
-            media_type="text/csv",
+            excel_buffer,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
         
