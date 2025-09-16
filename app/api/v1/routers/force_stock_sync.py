@@ -122,6 +122,46 @@ async def cancel_sync_session(session_id: str):
         raise HTTPException(status_code=500, detail=f"Ошибка отмены сессии: {str(e)}")
 
 
+@router.post("/rollback-task/{session_id}/{task_key}")
+async def rollback_task(session_id: str, task_key: str):
+    """Откат стока для отдельной задачи"""
+    try:
+        result = await websocket_manager.rollback_task(session_id, task_key)
+        return result
+    except Exception as e:
+        logging.error(f"Ошибка отката задачи {task_key} в сессии {session_id}: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/rollback-session/{session_id}")
+async def rollback_session(session_id: str):
+    """Откат стока для всей сессии"""
+    try:
+        result = await websocket_manager.rollback_session(session_id)
+        return result
+    except Exception as e:
+        logging.error(f"Ошибка отката сессии {session_id}: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/session/{session_id}")
+async def get_session_data(session_id: str):
+    """Получение данных сессии синхронизации"""
+    try:
+        session = websocket_manager.active_sessions.get(session_id)
+        if not session:
+            return {"success": False, "error": "Сессия не найдена"}
+        
+        # Конвертируем Pydantic модели в словари
+        session_data = session.model_dump()
+        session_data['tasks'] = {k: v.model_dump() for k, v in session.tasks.items()}
+        
+        return {"success": True, "data": session_data}
+    except Exception as e:
+        logging.error(f"Ошибка получения данных сессии {session_id}: {e}")
+        return {"success": False, "error": str(e)}
+
+
 @router.post("/retry/{session_id}/{task_key}")
 async def retry_task(session_id: str, task_key: str):
     """Повторный запуск задачи синхронизации"""

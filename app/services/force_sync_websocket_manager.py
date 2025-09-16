@@ -288,23 +288,28 @@ class ForceSyncWebSocketManager:
             await self.send_task_update(session_id, task_key, task)
             await self.send_session_update(session_id)
             
-    async def _sync_product_stock(self, sku: str, token_id: str) -> dict:
+    async def _sync_product_stock(self, sku: str, token_id: str, custom_stock: Optional[int] = None) -> dict:
         """Синхронизация остатков товара через микросервис"""
         try:
-            self.logger.info(f"Получение товара {sku} из базы")
-            # Получаем текущий остаток товара из базы
-            with SessionLocal() as db:
-                # Получаем товар с остатками в одной сессии
-                product_query = select(Product).where(Product.sku == sku)
-                product = db.exec(product_query).first()
-                
-                if not product:
-                    self.logger.error(f"Товар {sku} не найден в базе")
-                    return {"success": False, "error": f"Товар {sku} не найден в базе"}
-                
-                # Получаем общий остаток по всем складам в той же сессии
-                total_stock = sum(stock.quantity for stock in product.stocks)
-                self.logger.info(f"Товар {sku} найден, общий остаток: {total_stock}")
+            if custom_stock is not None:
+                # Используем кастомное значение стока (для отката)
+                total_stock = custom_stock
+                self.logger.info(f"Использование кастомного стока для {sku}: {total_stock}")
+            else:
+                # Получаем текущий остаток товара из базы
+                self.logger.info(f"Получение товара {sku} из базы")
+                with SessionLocal() as db:
+                    # Получаем товар с остатками в одной сессии
+                    product_query = select(Product).where(Product.sku == sku)
+                    product = db.exec(product_query).first()
+                    
+                    if not product:
+                        self.logger.error(f"Товар {sku} не найден в базе")
+                        return {"success": False, "error": f"Товар {sku} не найден в базе"}
+                    
+                    # Получаем общий остаток по всем складам в той же сессии
+                    total_stock = sum(stock.quantity for stock in product.stocks)
+                    self.logger.info(f"Товар {sku} найден, общий остаток: {total_stock}")
             
             # Вызываем микросервис для обновления остатков
             self.logger.info(f"Вызов микросервиса для обновления остатков {sku}")
@@ -389,6 +394,67 @@ class ForceSyncWebSocketManager:
             
             # Запускаем обработку задачи
             asyncio.create_task(self._process_single_task(session_id, task_key, task))
+            
+    async def rollback_task(self, session_id: str, task_key: str):
+        """Откат стока для отдельной задачи"""
+        session = self.active_sessions.get(session_id)
+        if session and task_key in session.tasks:
+            task = session.tasks[task_key]
+            
+            # Проверяем, что задача была успешной и есть данные для отката
+            if task.status == TaskStatus.SUCCESS and task.old_stock is not None:
+                self.logger.info(f"Откат стока для задачи {task_key}: {task.new_stock} -> {task.old_stock}")
+                
+                # Выполняем откат через микросервис
+                result = await self._sync_product_stock(task.sku, task.account_id, custom_stock=task.old_stock)
+                
+                if result.get("success"):
+                    # Обновляем данные задачи
+                    task.new_stock = task.old_stock
+                    task.old_stock = result.get("old_stock", task.old_stock)
+                    
+                    # Отправляем обновление
+                    await self.send_task_update(session_id, task_key, task)
+                    await self.send_session_update(session_id)
+                    
+                    return {"success": True, "message": f"Сток откачен: {task.new_stock} -> {task.old_stock}"}
+                else:
+                    return {"success": False, "error": "Ошибка отката стока"}
+            else:
+                return {"success": False, "error": "Нет данных для отката"}
+        else:
+            return {"success": False, "error": "Задача не найдена"}
+            
+    async def rollback_session(self, session_id: str):
+        """Откат стока для всей сессии"""
+        session = self.active_sessions.get(session_id)
+        if not session:
+            return {"success": False, "error": "Сессия не найдена"}
+            
+        rollback_results = []
+        successful_rollbacks = 0
+        
+        for task_key, task in session.tasks.items():
+            if task.status == TaskStatus.SUCCESS and task.old_stock is not None:
+                result = await self.rollback_task(session_id, task_key)
+                rollback_results.append({
+                    "task_key": task_key,
+                    "sku": task.sku,
+                    "account_name": task.account_name,
+                    "result": result
+                })
+                
+                if result.get("success"):
+                    successful_rollbacks += 1
+                    
+                # Небольшая задержка между откатами
+                await asyncio.sleep(0.1)
+        
+        return {
+            "success": True,
+            "message": f"Откат завершен: {successful_rollbacks}/{len(rollback_results)} задач",
+            "results": rollback_results
+        }
             
     async def send_session_update(self, session_id: str):
         """Отправка обновления сессии клиенту"""

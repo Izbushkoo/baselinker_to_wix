@@ -427,29 +427,40 @@ class ForceSyncManager {
                 errorMessage = 'Превышено время ожидания ответа';
             } else if (task.error_message.includes('500')) {
                 errorMessage = 'Внутренняя ошибка сервера микросервиса';
-            } else {
+        } else {
                 errorMessage = task.error_message;
             }
         }
         
-        accountElement.innerHTML = `
-            <div class="flex-1">
-                <div class="font-medium text-gray-900">${task.account_name}</div>
-                ${errorMessage ? `<div class="text-sm text-red-600 mt-1">${errorMessage}</div>` : ''}
-                ${task.old_stock !== null && task.new_stock !== null ? 
-                    `<div class="text-sm text-gray-600 mt-1">Остаток: ${task.old_stock} → ${task.new_stock}</div>` : ''}
-            </div>
-            <div class="flex items-center space-x-2">
-                <span class="px-3 py-1 text-xs font-medium rounded-full ${statusClass}">
-                    ${statusText}
-                </span>
-                ${task.status === 'error' ? 
-                    `<button onclick="forceSyncManager.retryTask('${task.sku}_${task.account_name}')" 
-                            class="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
-                        Повторить
-                    </button>` : ''}
-            </div>
-        `;
+            // Определяем, был ли откат (если old_stock больше new_stock)
+            const wasRolledBack = task.old_stock !== null && task.new_stock !== null && task.old_stock > task.new_stock;
+            
+            accountElement.innerHTML = `
+                <div class="flex-1">
+                    <div class="font-medium text-gray-900">${task.account_name}</div>
+                    ${errorMessage ? `<div class="text-sm text-red-600 mt-1">${errorMessage}</div>` : ''}
+                    ${task.old_stock !== null && task.new_stock !== null ? 
+                        `<div class="text-sm ${wasRolledBack ? 'text-orange-600 font-medium' : 'text-gray-600'} mt-1">
+                            Остаток: ${task.old_stock} → ${task.new_stock}
+                            ${wasRolledBack ? ' (откачен)' : ''}
+                        </div>` : ''}
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="px-3 py-1 text-xs font-medium rounded-full ${statusClass}">
+                        ${statusText}
+                    </span>
+                    ${task.status === 'error' ? 
+                        `<button onclick="forceSyncManager.retryTask('${task.sku}_${task.account_name}')" 
+                                class="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
+                            Повторить
+                        </button>` : ''}
+                    ${task.status === 'success' && task.old_stock !== null && !wasRolledBack ? 
+                        `<button onclick="forceSyncManager.rollbackTask('${task.sku}_${task.account_name}')" 
+                                class="px-3 py-1 text-xs bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors">
+                            Откатить
+                        </button>` : ''}
+                </div>
+            `;
     }
 
     createTaskElement(taskKey, task) {
@@ -479,7 +490,7 @@ class ForceSyncManager {
                 errorMessage = 'Превышено время ожидания ответа';
             } else if (task.error_message.includes('500')) {
                 errorMessage = 'Внутренняя ошибка сервера микросервиса';
-            } else {
+        } else {
                 errorMessage = task.error_message;
             }
         }
@@ -506,7 +517,10 @@ class ForceSyncManager {
                             <div class="text-sm text-gray-600">Аккаунт: ${task.account_name}</div>
                             ${errorMessage ? `<div class="text-sm text-red-600 mt-1">Ошибка: ${errorMessage}</div>` : ''}
                             ${task.old_stock !== null && task.new_stock !== null ? 
-                                `<div class="text-sm text-gray-600 mt-1">Остаток: ${task.old_stock} → ${task.new_stock}</div>` : ''}
+                                `<div class="text-sm ${task.old_stock > task.new_stock ? 'text-orange-600 font-medium' : 'text-gray-600'} mt-1">
+                                    Остаток: ${task.old_stock} → ${task.new_stock}
+                                    ${task.old_stock > task.new_stock ? ' (откачен)' : ''}
+                                </div>` : ''}
                         </div>
                     </div>
                 </div>
@@ -518,6 +532,11 @@ class ForceSyncManager {
                         `<button onclick="forceSyncManager.retryTask('${task.sku}_${task.account_name}')" 
                                 class="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
                             Повторить
+                        </button>` : ''}
+                    ${task.status === 'success' && task.old_stock !== null && task.old_stock <= task.new_stock ? 
+                        `<button onclick="forceSyncManager.rollbackTask('${task.sku}_${task.account_name}')" 
+                                class="px-3 py-1 text-xs bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors">
+                            Откатить
                         </button>` : ''}
                 </div>
             </div>
@@ -561,6 +580,90 @@ class ForceSyncManager {
         } catch (error) {
             console.error('Ошибка перезапуска задачи:', error);
             this.showNotification('Ошибка перезапуска задачи', 'error');
+        }
+    }
+
+    async rollbackTask(taskKey) {
+        try {
+            const response = await fetch(`/api/force-stock-sync/rollback-task/${this.sessionId}/${taskKey}`, {
+                method: 'POST'
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                this.showNotification(result.message || 'Сток откачен', 'success');
+                
+                // Обновляем карточку задачи после успешного отката
+                // Получаем обновленные данные задачи из WebSocket или делаем запрос
+                await this.refreshTaskData(taskKey);
+            } else {
+                this.showNotification(result.error || 'Ошибка отката стока', 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка отката задачи:', error);
+            this.showNotification('Ошибка отката стока', 'error');
+        }
+    }
+
+    async refreshTaskData(taskKey) {
+        try {
+            // Получаем обновленные данные сессии
+            const response = await fetch(`/api/force-stock-sync/session/${this.sessionId}`);
+            const sessionData = await response.json();
+            
+            if (sessionData.success && sessionData.data && sessionData.data.tasks) {
+                const task = sessionData.data.tasks[taskKey];
+                if (task) {
+                    // Обновляем карточку задачи с новыми данными
+                    this.renderTaskStatus(taskKey, task);
+                    console.log(`Карточка задачи ${taskKey} обновлена после отката`);
+                }
+            }
+        } catch (error) {
+            console.error('Ошибка обновления данных задачи:', error);
+        }
+    }
+
+    async refreshAllTasksData() {
+        try {
+            // Получаем обновленные данные сессии
+            const response = await fetch(`/api/force-stock-sync/session/${this.sessionId}`);
+            const sessionData = await response.json();
+            
+            if (sessionData.success && sessionData.data && sessionData.data.tasks) {
+                // Обновляем все карточки задач
+                for (const [taskKey, task] of Object.entries(sessionData.data.tasks)) {
+                    this.renderTaskStatus(taskKey, task);
+                }
+                console.log('Все карточки задач обновлены после отката сессии');
+            }
+        } catch (error) {
+            console.error('Ошибка обновления данных всех задач:', error);
+        }
+    }
+
+    async rollbackSession() {
+        if (!confirm('Вы уверены, что хотите откатить сток для всех успешных задач в этой сессии?')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/force-stock-sync/rollback-session/${this.sessionId}`, {
+                method: 'POST'
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                this.showNotification(result.message || 'Откат сессии завершен', 'success');
+                
+                // Обновляем все карточки задач после отката сессии
+                await this.refreshAllTasksData();
+            } else {
+                this.showNotification(result.error || 'Ошибка отката сессии', 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка отката сессии:', error);
+            this.showNotification('Ошибка отката сессии', 'error');
         }
     }
 
@@ -718,6 +821,7 @@ class ForceSyncManager {
         const pauseBtn = document.getElementById('pauseBtn');
         const resumeBtn = document.getElementById('resumeBtn');
         const cancelBtn = document.getElementById('cancelBtn');
+        const rollbackBtn = document.getElementById('rollbackBtn');
         const sessionStatus = document.getElementById('sessionStatus');
         const settingsArea = document.getElementById('syncSettingsArea');
         
@@ -727,6 +831,7 @@ class ForceSyncManager {
             if (pauseBtn) pauseBtn.style.display = 'none';
             if (resumeBtn) resumeBtn.style.display = 'none';
             if (cancelBtn) cancelBtn.style.display = 'none';
+            if (rollbackBtn) rollbackBtn.style.display = 'inline-block';
             
             // Обновляем статус
             if (sessionStatus) {
@@ -745,6 +850,7 @@ class ForceSyncManager {
             if (pauseBtn) pauseBtn.style.display = 'none';
             if (resumeBtn) resumeBtn.style.display = 'inline-block';
             if (cancelBtn) cancelBtn.style.display = 'inline-block';
+            if (rollbackBtn) rollbackBtn.style.display = 'none';
             
             // Обновляем статус
             if (sessionStatus) {
@@ -757,6 +863,7 @@ class ForceSyncManager {
             if (pauseBtn) pauseBtn.style.display = 'inline-block';
             if (resumeBtn) resumeBtn.style.display = 'none';
             if (cancelBtn) cancelBtn.style.display = 'inline-block';
+            if (rollbackBtn) rollbackBtn.style.display = 'none';
             
             // Обновляем статус
             if (sessionStatus) {
@@ -852,6 +959,7 @@ window.startForceSync = () => forceSyncManager.startSynchronization();
 window.pauseForceSync = () => forceSyncManager.pauseSession();
 window.resumeForceSync = () => forceSyncManager.resumeSession();
 window.cancelForceSync = () => forceSyncManager.cancelSession();
+window.rollbackSession = () => forceSyncManager.rollbackSession();
 window.expandAllProducts = () => forceSyncManager.expandAllProducts();
 window.collapseAllProducts = () => forceSyncManager.collapseAllProducts();
 </script>
