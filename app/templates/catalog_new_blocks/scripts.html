@@ -1,3 +1,69 @@
+<style>
+/* Стили для спиннера загрузки каталога */
+.catalog-loading-spinner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7); /* Темный фон для затемнения */
+    display: none; /* По умолчанию скрыт */
+    justify-content: center;
+    align-items: center;
+    z-index: 50; /* Высокий z-index для отображения поверх всего контента */
+    backdrop-filter: blur(3px);
+}
+
+.catalog-loading-spinner:not(.hidden) {
+    display: flex; /* Показываем только когда не скрыт */
+}
+
+.catalog-spinner-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+}
+
+.catalog-spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    animation: catalog-spin 1s linear infinite;
+}
+
+.catalog-spinner-text {
+    color: white;
+    font-size: 18px;
+    font-weight: 500;
+    text-align: center;
+}
+
+.catalog-spinner-subtext {
+    color: #b0b0b0;
+    font-size: 14px;
+    text-align: center;
+    margin-top: 5px;
+}
+
+@keyframes catalog-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Пульсирующая анимация для текста */
+.catalog-pulse-text {
+    animation: catalog-pulse 2s ease-in-out infinite;
+}
+
+@keyframes catalog-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+</style>
+
 <script>
     // Версия скрипта для принудительного обновления кэша
 
@@ -111,6 +177,45 @@
         }
     }
 
+    // Функции управления спиннером загрузки каталога
+    function showCatalogSpinner(message = 'Загрузка каталога', submessage = 'Поиск товаров...') {
+        const spinner = document.getElementById('catalogLoadingSpinner');
+        console.log('showCatalogSpinner вызвана, спиннер найден:', !!spinner);
+        const spinnerText = spinner?.querySelector('.catalog-spinner-text');
+        const spinnerSubtext = spinner?.querySelector('.catalog-spinner-subtext');
+        
+        if (spinner) {
+            if (spinnerText) spinnerText.textContent = message;
+            if (spinnerSubtext) spinnerSubtext.textContent = submessage;
+            spinner.style.display = 'flex';
+            spinner.classList.remove('hidden');
+            console.log('Спиннер каталога показан, display:', spinner.style.display);
+        } else {
+            console.error('Спиннер каталога не найден при показе!');
+        }
+    }
+
+    function hideCatalogSpinner() {
+        const spinner = document.getElementById('catalogLoadingSpinner');
+        console.log('hideCatalogSpinner вызвана, спиннер найден:', !!spinner);
+        if (spinner) {
+            spinner.style.display = 'none';
+            spinner.classList.add('hidden');
+            console.log('Спиннер каталога скрыт, display:', spinner.style.display);
+        } else {
+            console.error('Спиннер каталога не найден!');
+        }
+    }
+
+    function updateCatalogSpinnerMessage(message, submessage = null) {
+        const spinner = document.getElementById('catalogLoadingSpinner');
+        const spinnerText = spinner?.querySelector('.catalog-spinner-text');
+        const spinnerSubtext = spinner?.querySelector('.catalog-spinner-subtext');
+        
+        if (spinnerText) spinnerText.textContent = message;
+        if (submessage && spinnerSubtext) spinnerSubtext.textContent = submessage;
+    }
+
     // Универсальная функция для переключения фильтров
     function toggleUniversalFilters() {
         // Всегда используем основные фильтры (они всплывают на всю страницу)
@@ -169,6 +274,29 @@
     // Функция для обработки изменений фильтров
     async function handleFilterChange() {
         try {
+            // Проверяем состояние воркспейса для правильного показа спиннера
+            const workspaceContainer = document.getElementById('workspaceContainer');
+            const isWorkspaceOpen = workspaceContainer && !workspaceContainer.classList.contains('hidden');
+            
+            console.log('handleFilterChange: workspaceContainer найден:', !!workspaceContainer);
+            console.log('handleFilterChange: isWorkspaceOpen:', isWorkspaceOpen);
+            console.log('handleFilterChange: showCatalogPanelSpinner доступна:', typeof showCatalogPanelSpinner === 'function');
+            
+            // Показываем правильный спиннер в зависимости от состояния воркспейса
+            if (isWorkspaceOpen) {
+                // Если воркспейс открыт, показываем спиннер правой панели
+                if (typeof showCatalogPanelSpinner === 'function') {
+                    console.log('handleFilterChange: показываем спиннер правой панели');
+                    showCatalogPanelSpinner('Загрузка каталога', 'Применение фильтров...');
+                } else {
+                    console.error('handleFilterChange: функция showCatalogPanelSpinner недоступна!');
+                }
+            } else {
+                // Если воркспейс закрыт, показываем основной спиннер каталога
+                console.log('handleFilterChange: показываем основной спиннер каталога');
+                showCatalogSpinner('Загрузка каталога', 'Применение фильтров...');
+            }
+            
             // Получаем значения фильтров
             const search = document.getElementById('searchInput').value.trim();
             const skuSearch = document.getElementById('skuSearchInput').value.trim();
@@ -239,12 +367,9 @@
             const productsList = document.getElementById('productsList');
             const catalogPanel = document.getElementById('catalogPanel');
 
-            // Проверяем, открыт ли воркспейс
-            const workspaceContainer = document.getElementById('workspaceContainer');
-            const isWorkspaceOpen = workspaceContainer && !workspaceContainer.classList.contains('hidden');
-
+            // Используем уже определенные переменные состояния воркспейса
             if (isWorkspaceOpen && catalogPanel) {
-                // Если воркспейс открыт, обновляем только список товаров в правой панели
+                // Обновляем только список товаров в правой панели
                 const productsContainer = catalogPanel.querySelector('#productsList');
                 if (productsContainer) {
                     productsContainer.innerHTML = data.products.map(item => item.html).join('');
@@ -259,6 +384,11 @@
 
                 // Переинициализируем обработчики для правой панели
                 initializeCatalogHandlers();
+                
+                // Скрываем спиннер правой панели после обновления
+                if (typeof hideCatalogPanelSpinner === 'function') {
+                    hideCatalogPanelSpinner();
+                }
             } else if (productsList) {
                 // Если воркспейс закрыт, обновляем основной список
                 productsList.innerHTML = data.products.map(item => item.html).join('');
@@ -302,9 +432,31 @@
                 }
             }, 100);
 
+            // Скрываем правильный спиннер после успешной загрузки
+            if (isWorkspaceOpen) {
+                // Если воркспейс открыт, скрываем спиннер правой панели
+                if (typeof hideCatalogPanelSpinner === 'function') {
+                    hideCatalogPanelSpinner();
+                }
+            } else {
+                // Если воркспейс закрыт, скрываем основной спиннер каталога
+                hideCatalogSpinner();
+            }
+
         } catch (error) {
             console.error('Ошибка при фильтрации:', error);
             showNotification('Произошла ошибка при фильтрации товаров: ' + error.message, 'error');
+            
+            // Скрываем правильный спиннер при ошибке
+            if (isWorkspaceOpen) {
+                // Если воркспейс открыт, скрываем спиннер правой панели
+                if (typeof hideCatalogPanelSpinner === 'function') {
+                    hideCatalogPanelSpinner();
+                }
+            } else {
+                // Если воркспейс закрыт, скрываем основной спиннер каталога
+                hideCatalogSpinner();
+            }
         }
     }
 
@@ -1119,12 +1271,16 @@
                         searchTimeout = setTimeout(() => {
                             saveFiltersToStorage();
                             updateURLParams();
+                            // Автоматически применяем фильтры при вводе
+                            handleFilterChange();
                         }, 500); // Задержка 500мс для текстовых полей
                     });
                 } else {
                     input.addEventListener('change', function() {
                         saveFiltersToStorage();
                         updateURLParams();
+                        // Автоматически применяем фильтры при изменении
+                        handleFilterChange();
                     });
                 }
             }

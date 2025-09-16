@@ -68,6 +68,77 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.7; }
 }
+
+/* Стили для спиннера загрузки каталога в правой панели воркспейса */
+.catalog-panel-loading-spinner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7); /* Темный фон для затемнения */
+    display: none; /* По умолчанию скрыт */
+    justify-content: center;
+    align-items: center;
+    z-index: 100; /* Очень высокий z-index для отображения поверх всего контента */
+    backdrop-filter: blur(3px);
+    pointer-events: auto; /* Обеспечиваем взаимодействие со спиннером */
+}
+
+.catalog-panel-loading-spinner:not(.hidden) {
+    display: flex; /* Показываем только когда не скрыт */
+}
+
+.catalog-panel-spinner-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+}
+
+.catalog-panel-spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    animation: catalog-panel-spin 1s linear infinite;
+}
+
+.catalog-panel-spinner-text {
+    color: white;
+    font-size: 18px;
+    font-weight: 500;
+    text-align: center;
+}
+
+.catalog-panel-spinner-subtext {
+    color: #b0b0b0;
+    font-size: 14px;
+    text-align: center;
+    margin-top: 5px;
+}
+
+@keyframes catalog-panel-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Пульсирующая анимация для текста правой панели */
+.catalog-panel-pulse-text {
+    animation: catalog-panel-pulse 2s ease-in-out infinite;
+}
+
+@keyframes catalog-panel-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* Обеспечиваем, что контент каталога находится под спиннером */
+#catalogPanel > div:not(.catalog-panel-loading-spinner) {
+    position: relative;
+    z-index: 1;
+}
 </style>
 
 <!-- Основной контейнер воркспейса -->
@@ -234,6 +305,14 @@
 
         <!-- Правая панель - Каталог -->
         <div id="catalogPanel" class="w-1/2 bg-gray-50 overflow-y-auto relative">
+            <!-- Спиннер загрузки каталога в правой панели -->
+            <div id="catalogPanelLoadingSpinner" class="catalog-panel-loading-spinner hidden">
+                <div class="catalog-panel-spinner-container">
+                    <div class="catalog-panel-spinner"></div>
+                    <div class="catalog-panel-spinner-text catalog-panel-pulse-text">Загрузка каталога</div>
+                    <div class="catalog-panel-spinner-subtext">Поиск товаров...</div>
+                </div>
+            </div>
             <!-- Контент каталога будет вставлен сюда -->
         </div>
     </div>
@@ -850,6 +929,52 @@
         if (submessage && spinnerSubtext) spinnerSubtext.textContent = submessage;
     }
 
+    // Функции управления спиннером загрузки каталога в правой панели воркспейса
+    function showCatalogPanelSpinner(message = 'Загрузка каталога', submessage = 'Поиск товаров...') {
+        console.log('showCatalogPanelSpinner вызвана с параметрами:', message, submessage);
+        const spinner = document.getElementById('catalogPanelLoadingSpinner');
+        console.log('showCatalogPanelSpinner: спиннер найден:', !!spinner);
+        console.log('showCatalogPanelSpinner: спиннер элемент:', spinner);
+        
+        const spinnerText = spinner?.querySelector('.catalog-panel-spinner-text');
+        const spinnerSubtext = spinner?.querySelector('.catalog-panel-spinner-subtext');
+        
+        console.log('showCatalogPanelSpinner: spinnerText найден:', !!spinnerText);
+        console.log('showCatalogPanelSpinner: spinnerSubtext найден:', !!spinnerSubtext);
+        
+        if (spinner) {
+            if (spinnerText) spinnerText.textContent = message;
+            if (spinnerSubtext) spinnerSubtext.textContent = submessage;
+            spinner.style.display = 'flex';
+            spinner.classList.remove('hidden');
+            console.log('Спиннер правой панели показан, display:', spinner.style.display);
+            console.log('Спиннер правой панели показан, классы:', spinner.className);
+        } else {
+            console.error('Спиннер правой панели не найден при показе!');
+        }
+    }
+
+    function hideCatalogPanelSpinner() {
+        const spinner = document.getElementById('catalogPanelLoadingSpinner');
+        console.log('hideCatalogPanelSpinner вызвана, спиннер найден:', !!spinner);
+        if (spinner) {
+            spinner.style.display = 'none';
+            spinner.classList.add('hidden');
+            console.log('Спиннер правой панели скрыт, display:', spinner.style.display);
+        } else {
+            console.error('Спиннер правой панели не найден!');
+        }
+    }
+
+    function updateCatalogPanelSpinnerMessage(message, submessage = null) {
+        const spinner = document.getElementById('catalogPanelLoadingSpinner');
+        const spinnerText = spinner?.querySelector('.catalog-panel-spinner-text');
+        const spinnerSubtext = spinner?.querySelector('.catalog-panel-spinner-subtext');
+        
+        if (spinnerText) spinnerText.textContent = message;
+        if (submessage && spinnerSubtext) spinnerSubtext.textContent = submessage;
+    }
+
     // Переключение воркспейса (универсальная версия для всех страниц)
     function toggleWorkspace() {
         // Убеждаемся, что воркспейс инициализирован
@@ -884,11 +1009,19 @@
 
             // Копируем контент текущей страницы в правую панель
             if (mainContent) {
-                catalogPanel.innerHTML = `
-                    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-                        ${mainContent.innerHTML}
-                    </div>
-                `;
+                // Создаем контейнер для контента каталога
+                const catalogContentDiv = document.createElement('div');
+                catalogContentDiv.className = 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 relative';
+                
+                // Копируем содержимое mainContent, но исключаем спиннер каталога
+                const mainContentClone = mainContent.cloneNode(true);
+                const catalogSpinner = mainContentClone.querySelector('#catalogLoadingSpinner');
+                if (catalogSpinner) {
+                    catalogSpinner.remove(); // Удаляем спиннер каталога из копии
+                }
+                
+                catalogContentDiv.innerHTML = mainContentClone.innerHTML;
+                catalogPanel.appendChild(catalogContentDiv);
                 
             } else {
                 catalogPanel.innerHTML = `

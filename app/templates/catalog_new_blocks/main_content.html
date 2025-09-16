@@ -1,5 +1,13 @@
 <!-- Основной контент каталога -->
-<div id="mainContent" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+<div id="mainContent" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 relative">
+    <!-- Спиннер загрузки каталога -->
+    <div id="catalogLoadingSpinner" class="catalog-loading-spinner hidden">
+        <div class="catalog-spinner-container">
+            <div class="catalog-spinner"></div>
+            <div class="catalog-spinner-text catalog-pulse-text">Загрузка каталога</div>
+            <div class="catalog-spinner-subtext">Поиск товаров...</div>
+        </div>
+    </div>
     <!-- Заголовок и кнопки действий -->
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
         <div>
