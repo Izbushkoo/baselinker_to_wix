@@ -129,7 +129,7 @@
             <!-- Поиск в воркспейсе -->
             <div class="p-4 border-b">
                 <div class="relative">
-                    <input type="text" id="workspaceSearch" placeholder="Поиск в воркспейсе..."
+                    <input type="text" id="workspaceSearch" placeholder="Поиск по SKU (через запятую для нескольких)..."
                         class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                     <svg class="absolute left-3 top-2.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor"
                         viewBox="0 0 24 24">
@@ -618,17 +618,41 @@
         // Фильтрация товаров в воркспейсе
         filterWorkspaceProducts(searchTerm) {
             const products = document.querySelectorAll('#workspaceProductsList .product-card');
-            const term = searchTerm.toLowerCase();
+            const term = searchTerm.trim().toLowerCase();
+
+            // Если поиск пустой, показываем все товары
+            if (!term) {
+                products.forEach(product => {
+                    product.style.display = '';
+                });
+                return;
+            }
+
+            // Разбиваем поисковый запрос по запятым и пробелам
+            const searchTerms = term.split(/[,\s]+/).filter(t => t.length > 0);
 
             products.forEach(product => {
                 const name = product.querySelector('h3')?.textContent?.toLowerCase() || '';
                 const sku = product.querySelector('[data-sku]')?.dataset.sku?.toLowerCase() || '';
 
-                if (name.includes(term) || sku.includes(term)) {
-                    product.style.display = '';
-                } else {
-                    product.style.display = 'none';
+                let isMatch = false;
+
+                // Проверяем каждый поисковый термин
+                for (const searchTerm of searchTerms) {
+                    // Поиск по SKU (точное совпадение или частичное)
+                    if (sku.includes(searchTerm)) {
+                        isMatch = true;
+                        break;
+                    }
+                    // Поиск по названию (только если поисковый термин не похож на SKU)
+                    // SKU обычно содержат цифры и буквы, названия обычно только буквы
+                    if (!/^\d+/.test(searchTerm) && name.includes(searchTerm)) {
+                        isMatch = true;
+                        break;
+                    }
                 }
+
+                product.style.display = isMatch ? '' : 'none';
             });
         }
 
