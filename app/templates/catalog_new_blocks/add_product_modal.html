@@ -1,0 +1,279 @@
+<!-- Модальное окно добавления товара -->
+<div id="addProductModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
+    <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-2xl shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <!-- Заголовок -->
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-lg font-medium text-gray-900">Добавить новый товар</h3>
+                <button onclick="closeAddProductModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Форма -->
+            <form id="addProductModalForm" class="space-y-4">
+                <!-- Основная информация -->
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                        <label for="addProductName" class="block text-sm font-medium text-gray-700">Название товара</label>
+                        <input type="text" 
+                               name="name" 
+                               id="addProductName" 
+                               required 
+                               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+
+                    <div>
+                        <label for="addProductNameEng" class="block text-sm font-medium text-gray-700">Название товара (англ.)</label>
+                        <input type="text" 
+                               name="name_eng" 
+                               id="addProductNameEng" 
+                               placeholder="Введите английское название товара (необязательно)"
+                               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+
+                    <div>
+                        <label for="addProductBrand" class="block text-sm font-medium text-gray-700">Бренд</label>
+                        <input type="text" 
+                               name="brand" 
+                               id="addProductBrand" 
+                               placeholder="Введите название бренда (необязательно)"
+                               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+
+                    <div>
+                        <label for="addProductSku" class="block text-sm font-medium text-gray-700">SKU</label>
+                        <input type="text" 
+                               name="sku" 
+                               id="addProductSku" 
+                               required 
+                               placeholder="Введите уникальный идентификатор товара"
+                               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+
+                    <div>
+                        <label for="addProductEan" class="block text-sm font-medium text-gray-700">EAN (штрихкод)</label>
+                        <input type="text" 
+                               name="ean" 
+                               id="addProductEan" 
+                               placeholder="Введите один или несколько штрихкодов через запятую"
+                               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+
+                    <div>
+                        <label for="addProductWarehouse" class="block text-sm font-medium text-gray-700">Склад</label>
+                        <select name="warehouse" 
+                                id="addProductWarehouse" 
+                                required 
+                                class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                            <option value="">Выберите склад</option>
+                            <option value="Основной">Склад "Основной"</option>
+                            <option value="Ирина">Склад "Ирина"</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="addProductQuantity" class="block text-sm font-medium text-gray-700">Количество</label>
+                        <input type="number" 
+                               name="quantity" 
+                               id="addProductQuantity" 
+                               required 
+                               min="0" 
+                               value="0"
+                               class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+                </div>
+
+                <!-- Изображение -->
+                <div>
+                    <label for="addProductImage" class="block text-sm font-medium text-gray-700">Изображение товара</label>
+                    <div class="mt-1 flex items-center">
+                        <div id="addProductImagePreview" class="mr-4 w-20 h-20 rounded-lg bg-gray-100 flex items-center justify-center">
+                            <svg class="w-8 h-8 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                        </div>
+                        <label class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
+                            <span class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                                <svg class="w-5 h-5 mr-2 -ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                Выбрать изображение
+                            </span>
+                            <input type="file" 
+                                   name="image" 
+                                   id="addProductImage" 
+                                   accept="image/*"
+                                   class="sr-only">
+                        </label>
+                    </div>
+                    <p class="mt-2 text-sm text-gray-500">PNG, JPG или GIF до 5MB. Оставьте пустым, если изображение не требуется.</p>
+                </div>
+
+                <!-- Кнопки -->
+                <div class="flex justify-end space-x-3 pt-4">
+                    <button type="button" 
+                            onclick="closeAddProductModal()"
+                            class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
+                        Отмена
+                    </button>
+                    <button type="submit" 
+                            id="addProductSubmitBtn"
+                            class="inline-flex justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                        <span id="addProductSubmitText">Добавить товар</span>
+                        <svg id="addProductSubmitSpinner" class="hidden animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+// Функция открытия модального окна добавления товара
+function openAddProductModal(prefillData = {}) {
+    console.log('Открываем модальное окно добавления товара с данными:', prefillData);
+    
+    // Очищаем форму
+    document.getElementById('addProductModalForm').reset();
+    
+    // Предзаполняем поля если есть данные
+    if (prefillData.name) {
+        document.getElementById('addProductName').value = prefillData.name;
+    }
+    if (prefillData.name_eng) {
+        document.getElementById('addProductNameEng').value = prefillData.name_eng;
+    }
+    if (prefillData.brand) {
+        document.getElementById('addProductBrand').value = prefillData.brand;
+    }
+    if (prefillData.sku) {
+        document.getElementById('addProductSku').value = prefillData.sku;
+    }
+    if (prefillData.ean) {
+        document.getElementById('addProductEan').value = prefillData.ean;
+    }
+    if (prefillData.quantity) {
+        document.getElementById('addProductQuantity').value = prefillData.quantity;
+    }
+    
+    // Сбрасываем файл изображения
+    document.getElementById('addProductImage').value = '';
+    document.getElementById('addProductImagePreview').innerHTML = `
+        <svg class="w-8 h-8 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+    `;
+    
+    // Показываем модальное окно
+    document.getElementById('addProductModal').classList.remove('hidden');
+    
+    // Блокируем прокрутку страницы
+    document.body.style.overflow = 'hidden';
+}
+
+// Функция закрытия модального окна
+function closeAddProductModal() {
+    document.getElementById('addProductModal').classList.add('hidden');
+    document.body.style.overflow = '';
+}
+
+// Закрытие модального окна при клике вне его
+document.getElementById('addProductModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeAddProductModal();
+    }
+});
+
+// Закрытие модального окна по клавише ESC
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && !document.getElementById('addProductModal').classList.contains('hidden')) {
+        closeAddProductModal();
+    }
+});
+
+// Предпросмотр нового изображения
+document.getElementById('addProductImage').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('addProductImagePreview').innerHTML = `<img src="${e.target.result}" alt="Preview" class="max-w-full max-h-full object-contain">`;
+        };
+        reader.readAsDataURL(file);
+    }
+});
+
+// Обработка отправки формы
+document.getElementById('addProductModalForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const submitBtn = document.getElementById('addProductSubmitBtn');
+    const submitText = document.getElementById('addProductSubmitText');
+    const submitSpinner = document.getElementById('addProductSubmitSpinner');
+    
+    // Показываем индикатор загрузки
+    submitBtn.disabled = true;
+    submitText.textContent = 'Добавление...';
+    submitSpinner.classList.remove('hidden');
+    
+    try {
+        const formData = new FormData(this);
+        
+        const response = await fetch('/api/products', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Показываем уведомление об успехе
+            if (typeof window.showNotification === 'function') {
+                window.showNotification('Товар успешно добавлен!', 'success');
+            } else {
+                alert('Товар успешно добавлен!');
+            }
+            
+            // Закрываем модальное окно
+            closeAddProductModal();
+            
+            // Обновляем каталог
+            if (typeof window.refreshCatalog === 'function') {
+                window.refreshCatalog();
+            } else {
+                // Fallback - перезагружаем страницу
+                window.location.reload();
+            }
+            
+        } else {
+            throw new Error(result.detail || 'Ошибка при добавлении товара');
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        if (typeof window.showNotification === 'function') {
+            window.showNotification(error.message || 'Произошла ошибка при добавлении товара', 'error');
+        } else {
+            alert(error.message || 'Произошла ошибка при добавлении товара');
+        }
+    } finally {
+        // Скрываем индикатор загрузки
+        submitBtn.disabled = false;
+        submitText.textContent = 'Добавить товар';
+        submitSpinner.classList.add('hidden');
+    }
+});
+
+// Делаем функции глобальными для доступа из других частей кода
+window.openAddProductModal = openAddProductModal;
+window.closeAddProductModal = closeAddProductModal;
+
+}); // Конец DOMContentLoaded
+</script>

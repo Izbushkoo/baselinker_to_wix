@@ -16,6 +16,7 @@
 <div class="product-card flex items-start gap-6 bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 p-4 relative cursor-pointer" 
      data-product-sku="{{ product['sku'] }}"
      data-product-name="{{ product['name'] }}"
+     data-product-name-eng="{{ product.get('name_eng', '') }}"
      data-product-brand="{{ product['brand'] or '' }}"
      data-product-ean="{{ product['ean'] or '' }}"
      data-product-stock="{{ product['total_stock'] }}"
@@ -1590,11 +1591,54 @@ function deleteProduct(button) {
 }
 
 function editProduct(button) {
-    const sku = button.dataset.productSku;
-    const name = button.dataset.productName;
+    // Получаем карточку товара
+    const card = button.closest('.product-card');
     
-    // Перенаправляем на страницу редактирования
-    window.location.href = `/products/${sku}/edit`;
+    // Получаем все данные из карточки (не из кнопки!)
+    const sku = card.dataset.productSku;
+    const name = card.dataset.productName;
+    const nameEng = card.dataset.productNameEng || '';
+    const brand = card.dataset.productBrand || '';
+    const ean = card.dataset.productEan || '';
+    const imageUrl = card.querySelector('img')?.src || '';
+    
+    console.log('Данные из карточки:', {
+        sku: sku,
+        name: name,
+        nameEng: nameEng,
+        brand: brand,
+        ean: ean,
+        imageUrl: imageUrl
+    });
+    
+    console.log('Все data-атрибуты карточки:', {
+        'data-product-sku': card.dataset.productSku,
+        'data-product-name': card.dataset.productName,
+        'data-product-name-eng': card.dataset.productNameEng,
+        'data-product-brand': card.dataset.productBrand,
+        'data-product-ean': card.dataset.productEan
+    });
+    
+    // Подготавливаем данные товара для модального окна
+    const productData = {
+        sku: sku,
+        name: name,
+        name_eng: nameEng,
+        brand: brand,
+        ean: ean,
+        image_url: imageUrl
+    };
+    
+    console.log('Данные товара для редактирования:', productData);
+    
+    // Открываем модальное окно редактирования
+    if (typeof window.openEditProductModal === 'function') {
+        window.openEditProductModal(productData);
+    } else {
+        console.warn('Модальное окно редактирования недоступно, используем fallback');
+        // Fallback - перенаправляем на страницу редактирования
+        window.location.href = `/products/${sku}/edit`;
+    }
 }
 
 // Обработчик кликов по карточке товара для toggle в воркспейсе

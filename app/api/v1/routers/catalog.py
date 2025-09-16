@@ -167,6 +167,7 @@ async def catalog_page(
             "id": product.sku,
             "sku": product.sku,
             "name": product.name,
+            "name_eng": product.name_eng,  # Добавляем английское название
             "brand": product.brand,
             "eans": product.eans,
             "ean": product.eans[0] if product.eans else None,
@@ -371,6 +372,7 @@ async def get_products_api(
             "id": product.sku,
             "sku": product.sku,
             "name": product.name,
+            "name_eng": product.name_eng,  # Добавляем английское название
             "brand": product.brand,
             "eans": product.eans,
             "ean": product.eans[0] if product.eans else None,
