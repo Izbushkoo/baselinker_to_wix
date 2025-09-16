@@ -36,6 +36,7 @@ async def catalog_page(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=1000),
     search: Optional[str] = None,
+    sku_search: Optional[str] = None,
     stock_filter: Optional[int] = None,
     min_stock_filter: Optional[int] = None,
     brand_filter: Optional[str] = None,
@@ -51,7 +52,7 @@ async def catalog_page(
         return RedirectResponse(url=f"/login?next=/catalog_new", status_code=302)
 
     # Логирование параметров запроса
-    logger.info(f"New catalog request: search={search}, stock_filter={stock_filter}, min_stock_filter={min_stock_filter}, brand_filter={brand_filter}")
+    logger.info(f"New catalog request: search={search}, sku_search={sku_search}, stock_filter={stock_filter}, min_stock_filter={min_stock_filter}, brand_filter={brand_filter}")
 
     # Валидация и автоматическая коррекция фильтров
     if (stock_filter is not None and min_stock_filter is not None and 
@@ -78,6 +79,12 @@ async def catalog_page(
                 Product.eans.contains([search])
             )
         )
+
+    # Поиск по списку SKU
+    if sku_search:
+        sku_list = [sku.strip() for sku in sku_search.split(',') if sku.strip()]
+        if sku_list:
+            base_query = base_query.where(Product.sku.in_(sku_list))
 
     # Фильтр по SKU операции (приоритетный фильтр)
     if operation_skus:
@@ -222,6 +229,7 @@ async def get_products_api(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=1000),
     search: Optional[str] = None,
+    sku_search: Optional[str] = None,
     stock_filter: Optional[int] = None,
     min_stock_filter: Optional[int] = None,
     brand_filter: Optional[str] = None,
@@ -237,7 +245,7 @@ async def get_products_api(
         raise HTTPException(status_code=401, detail="Требуется авторизация")
 
     # Логирование параметров запроса
-    logger.info(f"Catalog API request: search={search}, stock_filter={stock_filter}, min_stock_filter={min_stock_filter}, brand_filter={brand_filter}")
+    logger.info(f"Catalog API request: search={search}, sku_search={sku_search}, stock_filter={stock_filter}, min_stock_filter={min_stock_filter}, brand_filter={brand_filter}")
 
     # Валидация и автоматическая коррекция фильтров
     if (stock_filter is not None and min_stock_filter is not None and 
@@ -264,6 +272,12 @@ async def get_products_api(
                 Product.eans.contains([search])
             )
         )
+
+    # Поиск по списку SKU
+    if sku_search:
+        sku_list = [sku.strip() for sku in sku_search.split(',') if sku.strip()]
+        if sku_list:
+            base_query = base_query.where(Product.sku.in_(sku_list))
 
     # Фильтр по SKU операции (приоритетный фильтр)
     if operation_skus:

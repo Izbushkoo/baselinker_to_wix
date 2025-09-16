@@ -4,12 +4,80 @@
     let searchTimeout;
     let currentFilters = {
         search: '{{ filters.search }}',
+        sku_search: '{{ filters.sku_search or "" }}',
         stock_filter: '{{ filters.stock_filter or "null" }}',
         min_stock_filter: '{{ filters.min_stock_filter or "null" }}',
         brand_filter: '{{ filters.brand_filter }}',
         sort_order: '{{ filters.sort_order }}',
         page_size: '{{ filters.page_size }}'
     };
+
+    // Функция для сохранения фильтров в localStorage
+    function saveFiltersToStorage() {
+        try {
+            const filtersToSave = {
+                search: document.getElementById('searchInput')?.value || '',
+                sku_search: document.getElementById('skuSearchInput')?.value || '',
+                stock_filter: document.getElementById('stockFilter')?.value || '',
+                min_stock_filter: document.getElementById('minStockFilter')?.value || '',
+                brand_filter: document.getElementById('brandFilter')?.value || '',
+                sort_order: document.getElementById('sortOrder')?.value || '',
+                page_size: document.getElementById('pageSize')?.value || '50'
+            };
+            localStorage.setItem('catalog_filters', JSON.stringify(filtersToSave));
+            console.log('Фильтры сохранены в localStorage:', filtersToSave);
+        } catch (error) {
+            console.error('Ошибка при сохранении фильтров:', error);
+        }
+    }
+
+    // Функция для восстановления фильтров из localStorage
+    function restoreFiltersFromStorage() {
+        try {
+            const savedFilters = localStorage.getItem('catalog_filters');
+            if (savedFilters) {
+                const filters = JSON.parse(savedFilters);
+                
+                // Восстанавливаем значения полей
+                if (filters.search && document.getElementById('searchInput')) {
+                    document.getElementById('searchInput').value = filters.search;
+                }
+                if (filters.sku_search && document.getElementById('skuSearchInput')) {
+                    document.getElementById('skuSearchInput').value = filters.sku_search;
+                }
+                if (filters.stock_filter && document.getElementById('stockFilter')) {
+                    document.getElementById('stockFilter').value = filters.stock_filter;
+                }
+                if (filters.min_stock_filter && document.getElementById('minStockFilter')) {
+                    document.getElementById('minStockFilter').value = filters.min_stock_filter;
+                }
+                if (filters.brand_filter && document.getElementById('brandFilter')) {
+                    document.getElementById('brandFilter').value = filters.brand_filter;
+                }
+                if (filters.sort_order && document.getElementById('sortOrder')) {
+                    document.getElementById('sortOrder').value = filters.sort_order;
+                }
+                if (filters.page_size && document.getElementById('pageSize')) {
+                    document.getElementById('pageSize').value = filters.page_size;
+                }
+                
+                // Обновляем currentFilters
+                currentFilters = {
+                    search: filters.search || '',
+                    sku_search: filters.sku_search || '',
+                    stock_filter: filters.stock_filter || null,
+                    min_stock_filter: filters.min_stock_filter || null,
+                    brand_filter: filters.brand_filter || '',
+                    sort_order: filters.sort_order || '',
+                    page_size: parseInt(filters.page_size) || 50
+                };
+                
+                console.log('Фильтры восстановлены из localStorage:', filters);
+            }
+        } catch (error) {
+            console.error('Ошибка при восстановлении фильтров:', error);
+        }
+    }
 
     // Универсальная функция для переключения фильтров
     function toggleUniversalFilters() {
@@ -36,6 +104,7 @@
     // Функция для сброса фильтров
     function resetFilters() {
         document.getElementById('searchInput').value = '';
+        document.getElementById('skuSearchInput').value = '';
         document.getElementById('minStockFilter').value = '';
         document.getElementById('stockFilter').value = '';
         document.getElementById('brandFilter').value = '';
@@ -45,12 +114,16 @@
         // Обновляем текущие фильтры
         currentFilters = {
             search: '',
+            sku_search: '',
             stock_filter: null,
             min_stock_filter: null,
             brand_filter: '',
             sort_order: '',
             page_size: 50
         };
+
+        // Очищаем сохраненные фильтры
+        localStorage.removeItem('catalog_filters');
     }
 
     // Функция для применения фильтров
@@ -64,6 +137,7 @@
         try {
             // Получаем значения фильтров
             const search = document.getElementById('searchInput').value.trim();
+            const skuSearch = document.getElementById('skuSearchInput').value.trim();
             const pageSize = document.getElementById('pageSize').value;
             const stockFilterValue = document.getElementById('stockFilter').value.trim();
             const minStockFilterValue = document.getElementById('minStockFilter').value.trim();
@@ -73,6 +147,7 @@
             // Обновляем текущие фильтры
             currentFilters = {
                 search,
+                sku_search: skuSearch,
                 page_size: parseInt(pageSize),
                 stock_filter: stockFilterValue ? parseInt(stockFilterValue) : null,
                 min_stock_filter: minStockFilterValue ? parseInt(minStockFilterValue) : null,
@@ -80,10 +155,17 @@
                 sort_order: sortOrder
             };
 
+            // Сохраняем фильтры в localStorage
+            saveFiltersToStorage();
+
+            // Обновляем URL параметры
+            updateURLParams();
+
             // Формируем параметры запроса
             const params = new URLSearchParams();
 
             if (search) params.append('search', search);
+            if (skuSearch) params.append('sku_search', skuSearch);
             if (pageSize) params.append('page_size', pageSize);
             params.append('page', '1');
 
@@ -177,6 +259,14 @@
             // Обновляем URL без перезагрузки страницы
             const newUrl = `/catalog_new?${queryString}`;
             window.history.pushState({}, '', newUrl);
+
+            // Восстанавливаем выделение товаров в воркспейсе
+            setTimeout(() => {
+                if (typeof window.workspaceManager !== 'undefined' && window.workspaceManager) {
+                    window.workspaceManager.highlightSelectedProducts();
+                    console.log('Выделение товаров в воркспейсе восстановлено после фильтрации');
+                }
+            }, 100);
 
         } catch (error) {
             console.error('Ошибка при фильтрации:', error);
@@ -729,10 +819,26 @@
             window.dragDropInitialized = true; // Предотвращаем повторный вызов
             window.reinitializeDragAndDrop();
         }
+        
+        // Восстанавливаем выделение товаров в воркспейсе
+        setTimeout(() => {
+            if (typeof window.workspaceManager !== 'undefined' && window.workspaceManager) {
+                window.workspaceManager.highlightSelectedProducts();
+                console.log('Выделение товаров в воркспейсе восстановлено в initializeDragAndDrop');
+            }
+        }, 50);
     }
 
     function initializeCatalogHandlers() {
         // Обработчики каталога
+        
+        // Восстанавливаем выделение товаров в воркспейсе
+        setTimeout(() => {
+            if (typeof window.workspaceManager !== 'undefined' && window.workspaceManager) {
+                window.workspaceManager.highlightSelectedProducts();
+                console.log('Выделение товаров в воркспейсе восстановлено в initializeCatalogHandlers');
+            }
+        }, 50);
     }
 
     // Инициализация выделения при загрузке страницы
@@ -923,4 +1029,67 @@
     
     // Делаем функцию глобально доступной
     window.refreshProductCards = refreshProductCards;
+
+    // Функция для обновления URL параметров
+    function updateURLParams() {
+        try {
+            const params = new URLSearchParams();
+            
+            if (currentFilters.search) params.append('search', currentFilters.search);
+            if (currentFilters.sku_search) params.append('sku_search', currentFilters.sku_search);
+            if (currentFilters.stock_filter) params.append('stock_filter', currentFilters.stock_filter);
+            if (currentFilters.min_stock_filter) params.append('min_stock_filter', currentFilters.min_stock_filter);
+            if (currentFilters.brand_filter) params.append('brand_filter', currentFilters.brand_filter);
+            if (currentFilters.sort_order) params.append('sort_order', currentFilters.sort_order);
+            if (currentFilters.page_size && currentFilters.page_size !== 50) params.append('page_size', currentFilters.page_size);
+            
+            const newURL = `${window.location.pathname}${params.toString() ? '?' + params.toString() : ''}`;
+            window.history.replaceState({}, '', newURL);
+        } catch (error) {
+            console.error('Ошибка при обновлении URL:', error);
+        }
+    }
+
+    // Инициализация при загрузке страницы
+    document.addEventListener('DOMContentLoaded', function() {
+        // Восстанавливаем фильтры из localStorage
+        restoreFiltersFromStorage();
+        
+        // Обновляем URL параметры
+        updateURLParams();
+        
+        // Добавляем обработчики событий для автоматического сохранения фильтров
+        const filterInputs = [
+            'searchInput',
+            'skuSearchInput', 
+            'stockFilter',
+            'minStockFilter',
+            'brandFilter',
+            'sortOrder',
+            'pageSize'
+        ];
+        
+        filterInputs.forEach(inputId => {
+            const input = document.getElementById(inputId);
+            if (input) {
+                // Сохраняем фильтры при изменении (с задержкой для текстовых полей)
+                if (inputId === 'searchInput' || inputId === 'skuSearchInput') {
+                    input.addEventListener('input', function() {
+                        clearTimeout(searchTimeout);
+                        searchTimeout = setTimeout(() => {
+                            saveFiltersToStorage();
+                            updateURLParams();
+                        }, 500); // Задержка 500мс для текстовых полей
+                    });
+                } else {
+                    input.addEventListener('change', function() {
+                        saveFiltersToStorage();
+                        updateURLParams();
+                    });
+                }
+            }
+        });
+        
+        console.log('Фильтры инициализированы при загрузке страницы');
+    });
 </script>
