@@ -28,6 +28,8 @@ from app.services.force_sync_websocket_manager import websocket_manager
 # Модели данных
 class StartForceSyncRequest(BaseModel):
     account_names: Optional[List[str]] = None
+    account_ids: Optional[List[str]] = None
+    selected_products: Optional[List[str]] = None  # Просто список SKU
 
 
 class ForceSyncResponse(BaseModel):
@@ -74,8 +76,9 @@ async def start_force_sync(request: StartForceSyncRequest):
         # Сохраняем параметры синхронизации для WebSocket
         websocket_manager.pending_sessions[session_id] = {
             "account_names": request.account_names,
+            "account_ids": request.account_ids,
+            "selected_products": request.selected_products,  # Просто список SKU
             "created_at": time.time()
-            
         }
         
         return ForceSyncResponse(

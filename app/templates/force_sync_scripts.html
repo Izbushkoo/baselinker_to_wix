@@ -41,6 +41,14 @@ class ForceSyncManager {
         
         // Загружаем аккаунты
         await this.loadAvailableAccounts();
+        
+        // Обновляем отображение товаров в зависимости от контекста
+        if (context === 'workspace') {
+            await this.loadSelectedProducts();
+        } else {
+            // Для каталога показываем "все товары"
+            this.updateProductsDisplay([]);
+        }
     }
 
     closeModal() {
@@ -62,11 +70,18 @@ class ForceSyncManager {
             contextElement.value = this.context;
         }
 
-        // Для каталога всегда выбираем "все товары"
+        // Определяем выбор товаров в зависимости от контекста
         if (this.context === 'catalog') {
+            // Для каталога всегда выбираем "все товары"
             const allProductsRadio = document.querySelector('input[name="productSelection"][value="all"]');
             if (allProductsRadio) {
                 allProductsRadio.checked = true;
+            }
+        } else if (this.context === 'workspace') {
+            // Для воркспейса всегда выбираем "выбранные товары"
+            const selectedProductsRadio = document.querySelector('input[name="productSelection"][value="selected"]');
+            if (selectedProductsRadio) {
+                selectedProductsRadio.checked = true;
             }
         }
 
@@ -88,8 +103,8 @@ class ForceSyncManager {
         if (accountSelection === 'selected') {
             accountContainer.classList.remove('hidden');
                 accountContainer.style.display = 'block';
-            } else {
-                accountContainer.classList.add('hidden');
+        } else {
+            accountContainer.classList.add('hidden');
                 accountContainer.style.display = 'none';
             }
         }
@@ -125,6 +140,86 @@ class ForceSyncManager {
         }
     }
 
+    async loadSelectedProducts() {
+        try {
+            // Получаем выбранные товары из воркспейса
+            const selectedProducts = this.getSelectedProductsFromWorkspace();
+            
+            if (selectedProducts.length === 0) {
+                this.showNotification('Не выбрано ни одного товара для синхронизации', 'warning');
+                return;
+            }
+            
+            // Обновляем отображение товаров в модалке
+            this.updateProductsDisplay(selectedProducts);
+            
+            console.log(`Загружено ${selectedProducts.length} выбранных товаров из воркспейса`);
+        } catch (error) {
+            console.error('Ошибка загрузки выбранных товаров:', error);
+            this.showNotification('Ошибка загрузки выбранных товаров', 'error');
+        }
+    }
+
+    getSelectedProductsFromWorkspace() {
+        console.log('getSelectedProductsFromWorkspace вызвана');
+        console.log('workspaceManager:', typeof workspaceManager !== 'undefined' ? workspaceManager : 'не определен');
+        
+        // Получаем выбранные товары из объекта workspaceManager
+        if (typeof workspaceManager === 'undefined' || !workspaceManager.selectedProducts) {
+            console.warn('WorkspaceManager не найден или не инициализирован');
+            return [];
+        }
+        
+        console.log('workspaceManager.selectedProducts:', workspaceManager.selectedProducts);
+        
+        const selectedSkus = [];
+        
+        // Проходим по всем товарам в воркспейсе
+        Object.keys(workspaceManager.selectedProducts).forEach(sku => {
+            selectedSkus.push(sku);
+            console.log(`Добавлен товар: ${sku}`);
+        });
+        
+        console.log(`Найдено ${selectedSkus.length} товаров в воркспейсе`);
+        return selectedSkus;
+    }
+
+    updateProductsDisplay(products) {
+        console.log('updateProductsDisplay вызвана с:', products, 'контекст:', this.context);
+        
+        // Обновляем текст в модалке для показа количества выбранных товаров
+        const productsInfo = document.getElementById('productsInfo');
+        console.log('productsInfo элемент:', productsInfo);
+        
+        if (productsInfo) {
+            let displayText;
+            
+            if (this.context === 'workspace' && products.length > 0) {
+                displayText = `Товары: ${products.length} выбранных товаров из воркспейса`;
+            } else {
+                displayText = `Товары: Все товары (принудительно)`;
+            }
+            
+            console.log('Устанавливаем текст:', displayText);
+            
+            productsInfo.innerHTML = `
+                <div class="flex items-center space-x-2">
+                    <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                    </svg>
+                    <span class="text-sm text-gray-700">
+                        ${displayText}
+                    </span>
+                </div>
+            `;
+        } else {
+            console.error('Элемент productsInfo не найден!');
+        }
+        
+        // Сохраняем выбранные товары для использования при синхронизации
+        this.selectedProducts = products;
+    }
+
     renderAccountsList() {
         const accountsList = document.getElementById('accountsList');
         if (!accountsList) return;
@@ -153,21 +248,33 @@ class ForceSyncManager {
     collectFormData() {
         const accountSelection = document.querySelector('input[name="accountSelection"]:checked')?.value;
         const formData = {};
-        
+
+        // Определяем, какие товары синхронизировать
         if (this.context === 'catalog') {
-            // Не передаем skus - это означает синхронизацию всех товаров
+            // Для каталога синхронизируем все товары - не передаем selected_products
+            console.log('Контекст каталог: синхронизируем все товары');
+        } else if (this.context === 'workspace') {
+            // Для воркспейса синхронизируем только выбранные товары
+            if (this.selectedProducts && this.selectedProducts.length > 0) {
+                formData.selected_products = this.selectedProducts;
+                console.log(`Контекст воркспейс: синхронизируем ${this.selectedProducts.length} товаров:`, this.selectedProducts);
+            } else {
+                throw new Error('Не выбрано ни одного товара для синхронизации');
+            }
         }
-        
+
         if (accountSelection === 'selected') {
             const selectedCheckboxes = document.querySelectorAll('#accountsList input[type="checkbox"]:checked');
             if (selectedCheckboxes.length > 0) {
                 formData.account_names = Array.from(selectedCheckboxes).map(cb => cb.value);
                 formData.account_ids = Array.from(selectedCheckboxes).map(cb => cb.dataset.accountId);
+                console.log('Выбранные аккаунты:', formData.account_names);
             } else {
                 throw new Error('Не выбрано ни одного аккаунта');
             }
         }
-        
+
+        console.log('Данные для отправки:', formData);
         return formData;
     }
 
@@ -189,8 +296,8 @@ class ForceSyncManager {
             if (result.success) {
             this.sessionId = result.session_id;
                 this.showNotification(result.message || 'Синхронизация запущена', 'success');
-
-            // Показываем область мониторинга
+        
+        // Показываем область мониторинга
                 this.showMonitoringArea();
             
             // Подключаемся к WebSocket
@@ -215,7 +322,7 @@ class ForceSyncManager {
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws/force-sync/${this.sessionId}`;
-        
+
         try {
             this.websocket = new WebSocket(wsUrl);
             
@@ -439,6 +546,10 @@ class ForceSyncManager {
                 <div class="flex-1">
                     <div class="font-medium text-gray-900">${task.account_name}</div>
                     ${errorMessage ? `<div class="text-sm text-red-600 mt-1">${errorMessage}</div>` : ''}
+                    ${task.workspace_quantity ? 
+                        `<div class="text-sm text-blue-600 mt-1">
+                            Количество из воркспейса: ${task.workspace_quantity}
+                        </div>` : ''}
                     ${task.old_stock !== null && task.new_stock !== null ? 
                         `<div class="text-sm ${wasRolledBack ? 'text-orange-600 font-medium' : 'text-gray-600'} mt-1">
                             Остаток: ${task.old_stock} → ${task.new_stock}
@@ -510,18 +621,22 @@ class ForceSyncManager {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
                         </svg>
                     </div>
-                            </div>
-                        </div>
+                    </div>
+                </div>
                         <div class="flex-1">
                             <div class="font-medium text-gray-900">${task.sku}</div>
                             <div class="text-sm text-gray-600">Аккаунт: ${task.account_name}</div>
                             ${errorMessage ? `<div class="text-sm text-red-600 mt-1">Ошибка: ${errorMessage}</div>` : ''}
+                            ${task.workspace_quantity ? 
+                                `<div class="text-sm text-blue-600 mt-1">
+                                    Количество из воркспейса: ${task.workspace_quantity}
+                                </div>` : ''}
                             ${task.old_stock !== null && task.new_stock !== null ? 
                                 `<div class="text-sm ${task.old_stock > task.new_stock ? 'text-orange-600 font-medium' : 'text-gray-600'} mt-1">
                                     Остаток: ${task.old_stock} → ${task.new_stock}
                                     ${task.old_stock > task.new_stock ? ' (откачен)' : ''}
                                 </div>` : ''}
-                        </div>
+                    </div>
                     </div>
                 </div>
                 <div class="flex items-center space-x-2">
@@ -538,7 +653,7 @@ class ForceSyncManager {
                                 class="px-3 py-1 text-xs bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors">
                             Откатить
                         </button>` : ''}
-                </div>
+            </div>
             </div>
         `;
     }
@@ -574,7 +689,7 @@ class ForceSyncManager {
             const result = await response.json();
             if (result.success) {
                 this.showNotification('Задача перезапущена', 'success');
-            } else {
+        } else {
                 this.showNotification('Ошибка перезапуска задачи', 'error');
             }
         } catch (error) {

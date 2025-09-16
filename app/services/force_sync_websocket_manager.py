@@ -96,7 +96,8 @@ class ForceSyncWebSocketManager:
             self.logger.info(f"Запуск синхронизации для ожидающей сессии {session_id}")
             await self.start_force_sync(
                 session_id=session_id,
-                account_names=pending_data["account_names"]
+                account_names=pending_data["account_names"],
+                selected_products=pending_data.get("selected_products")
             )
         
     async def disconnect(self, session_id: str):
@@ -117,8 +118,8 @@ class ForceSyncWebSocketManager:
         else:
             self.logger.warning(f"Нет активного соединения для сессии {session_id}")
                 
-    async def start_force_sync(self, session_id: str, account_names: List[str] = None) -> dict:
-        """Запуск принудительной синхронизации всех товаров"""
+    async def start_force_sync(self, session_id: str, account_names: List[str] = None, selected_products: List[str] = None) -> dict:
+        """Запуск принудительной синхронизации товаров"""
         try:
             self.logger.info(f"Запуск принудительной синхронизации для сессии {session_id}")
             
@@ -129,11 +130,18 @@ class ForceSyncWebSocketManager:
             )
             self.active_sessions[session_id] = session
             
-            # Получаем все товары из базы
-            with SessionLocal() as db:
-                products_query = select(Product)
-                products = db.exec(products_query).all()
-                self.logger.info(f"Найдено товаров в базе: {len(products)}")
+            # Определяем товары для синхронизации
+            if selected_products:
+                # Используем выбранные товары из воркспейса (просто список SKU)
+                products_data = [{"sku": sku} for sku in selected_products]
+                self.logger.info(f"Используем выбранные товары: {len(products_data)} SKU")
+            else:
+                # Получаем все товары из базы
+                with SessionLocal() as db:
+                    products_query = select(Product)
+                    products = db.exec(products_query).all()
+                    products_data = [{"sku": p.sku} for p in products]
+                    self.logger.info(f"Найдено товаров в базе: {len(products_data)}")
                 
             # Получаем токены из микросервиса
             tokens_response = self.token_client.get_tokens(active_only=True)
@@ -147,11 +155,11 @@ class ForceSyncWebSocketManager:
             
             # Создаем задачи синхронизации
             tasks = []
-            for product in products:
+            for product_data in products_data:
                 for token in tokens:
-                    task_key = f"{product.sku}_{token['account_name']}"
+                    task_key = f"{product_data['sku']}_{token['account_name']}"
                     task = SyncTask(
-                        sku=product.sku,
+                        sku=product_data['sku'],
                         account_name=token['account_name'],
                         account_id=token['id']
                     )
