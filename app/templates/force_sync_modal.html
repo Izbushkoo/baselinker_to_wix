@@ -1,0 +1,165 @@
+<!--
+ * @file: force_sync_modal.html
+ * @description: Модальное окно принудительной синхронизации остатков с WebSocket поддержкой
+ * @dependencies: force_sync_scripts.html
+ * @created: 2025-01-19
+ * @updated: 2025-01-19 - Переработана логика для каталога
+-->
+
+<!-- Модальное окно принудительной синхронизации остатков -->
+<div id="forceSyncModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+    <div class="flex items-center justify-center min-h-screen p-4" onclick="closeForceSyncModal()">
+        <div class="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
+            <!-- Заголовок модального окна -->
+            <div class="flex items-center justify-between p-6 border-b border-gray-200">
+                <h2 class="text-xl font-semibold text-gray-900">Принудительная синхронизация остатков</h2>
+                <button onclick="closeForceSyncModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Основной контент -->
+            <div class="p-6">
+                <!-- Форма настроек синхронизации -->
+                <div id="syncSettingsArea" class="space-y-6">
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h3 class="text-lg font-medium text-blue-900 mb-2">Настройки синхронизации</h3>
+                        <p class="text-blue-700 text-sm mb-4">Принудительная синхронизация всех товаров (игнорирует настройки синхронизации)</p>
+                        
+                        <!-- Информация о товарах -->
+                        <div class="bg-white rounded-lg p-3 mb-4">
+                            <div class="flex items-center space-x-2">
+                                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                                </svg>
+                                <span class="text-sm font-medium text-gray-700">Товары:</span>
+                                <span class="text-sm text-gray-600">Все товары (принудительно)</span>
+                            </div>
+                        </div>
+
+                        <!-- Выбор аккаунтов -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Аккаунты для синхронизации</label>
+                            <div class="space-y-2">
+                                <label class="flex items-center">
+                                    <input type="radio" name="accountSelection" value="all" id="accountAll" checked class="mr-2">
+                                    <span class="text-sm">Все активные аккаунты</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="radio" name="accountSelection" value="selected" id="accountSpecific" class="mr-2">
+                                    <span class="text-sm">Выбранные аккаунты</span>
+                                </label>
+                            </div>
+                            <div id="accountSelectionContainer" class="mt-2 hidden">
+                                <div class="max-h-40 overflow-y-auto border border-gray-300 rounded-md p-2">
+                                    <div id="accountsList" class="space-y-1">
+                                        <!-- Аккаунты будут загружены динамически -->
+                                    </div>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1">Выберите аккаунты для синхронизации</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Кнопки управления -->
+                    <div class="flex justify-end space-x-3">
+                        <button 
+                            onclick="closeForceSyncModal()" 
+                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                        >
+                            Отмена
+                        </button>
+                        <button 
+                            id="startSyncBtn"
+                            onclick="startForceSync()" 
+                            class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Запустить синхронизацию
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Область мониторинга синхронизации -->
+                <div id="syncMonitoringArea" class="hidden mt-6">
+                    <!-- Общий прогресс -->
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-medium text-gray-900">Прогресс синхронизации</h3>
+                            <div class="flex items-center space-x-2">
+                                <span id="sessionStatus" class="px-3 py-1 text-sm font-medium bg-blue-100 text-blue-800 rounded-full">Запущена</span>
+                                <button id="startBtn" onclick="startForceSync()" class="px-3 py-1 text-sm bg-blue-100 text-blue-800 rounded hover:bg-blue-200" style="display: none;">
+                                    Запустить
+                                </button>
+                                <div id="sessionControls" class="flex space-x-2">
+                                    <button id="pauseBtn" onclick="pauseForceSync()" class="px-3 py-1 text-sm bg-yellow-100 text-yellow-800 rounded hover:bg-yellow-200">
+                                        Приостановить
+                                    </button>
+                                    <button id="resumeBtn" onclick="resumeForceSync()" class="px-3 py-1 text-sm bg-green-100 text-green-800 rounded hover:bg-green-200 hidden">
+                                        Возобновить
+                                    </button>
+                                    <button id="cancelBtn" onclick="cancelForceSync()" class="px-3 py-1 text-sm bg-red-100 text-red-800 rounded hover:bg-red-200">
+                                        Отменить
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Прогресс-бар -->
+                        <div class="mb-4">
+                            <div class="flex justify-between text-sm text-gray-600 mb-2">
+                                <span>Общий прогресс</span>
+                                <span id="progressPercentage">0%</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-3">
+                                <div id="progressBar" class="bg-blue-600 h-3 rounded-full transition-all duration-500" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Статистика -->
+                        <div class="grid grid-cols-4 gap-4 text-sm">
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-blue-600" id="totalTasks">0</div>
+                                <div class="text-gray-600">Всего задач</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-green-600" id="completedTasks">0</div>
+                                <div class="text-gray-600">Завершено</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-red-600" id="failedTasks">0</div>
+                                <div class="text-gray-600">Ошибок</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-gray-600" id="processingTasks">0</div>
+                                <div class="text-gray-600">В процессе</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Список товаров с прогрессом -->
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-lg font-medium text-gray-900">Детальный прогресс по товарам</h3>
+                            <div class="flex items-center space-x-2">
+                                <select id="statusFilter" class="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="all">Все статусы</option>
+                                    <option value="success">Только успешные</option>
+                                    <option value="error">Только ошибки</option>
+                                    <option value="processing">В процессе</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="forceSyncProductsList" class="space-y-3 max-h-96 overflow-y-auto">
+                            <!-- Здесь будут динамически добавляться карточки товаров -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Подключение скриптов -->
+{% include 'force_sync_scripts.html' %}

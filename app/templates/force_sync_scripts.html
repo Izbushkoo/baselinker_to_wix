@@ -1,0 +1,857 @@
+<!--
+ * @file: force_sync_scripts.html
+ * @description: JavaScript скрипты для принудительной синхронизации остатков
+ * @dependencies: WebSocket API, DOM manipulation
+ * @created: 2025-01-16
+-->
+
+<script>
+/**
+ * JavaScript менеджер для работы с WebSocket принудительной синхронизации
+ */
+class ForceSyncManager {
+    constructor() {
+        this.sessionId = null;
+        this.websocket = null;
+        this.context = null;
+        this.accounts = [];
+        this.isConnected = false;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 5;
+        this.reconnectDelay = 1000;
+        this.sessionStatus = null;
+        this.tasks = new Map();
+        this.modal = null;
+    }
+
+    async openModal(context = 'catalog') {
+            this.context = context;
+        this.modal = document.getElementById('forceSyncModal');
+        
+        if (!this.modal) {
+            console.error('Модалка принудительной синхронизации не найдена');
+            return;
+        }
+
+        // Показываем модалку
+        this.modal.style.display = 'block';
+        
+        // Инициализируем форму
+        await this.initializeForm();
+        
+        // Загружаем аккаунты
+        await this.loadAvailableAccounts();
+    }
+
+    closeModal() {
+        if (this.modal) {
+            this.modal.style.display = 'none';
+        }
+        
+        // Отключаем WebSocket
+        this.disconnectWebSocket();
+        
+        // Сбрасываем состояние
+        this.resetState();
+    }
+
+    async initializeForm() {
+        // Устанавливаем контекст
+        const contextElement = document.getElementById('syncContext');
+        if (contextElement) {
+            contextElement.value = this.context;
+        }
+
+        // Для каталога всегда выбираем "все товары"
+        if (this.context === 'catalog') {
+            const allProductsRadio = document.querySelector('input[name="productSelection"][value="all"]');
+            if (allProductsRadio) {
+                allProductsRadio.checked = true;
+            }
+        }
+
+        // Обновляем видимость полей аккаунтов
+        this.updateAccountFieldsVisibility();
+        
+        // Добавляем обработчики событий для радио-кнопок аккаунтов
+        this.addAccountSelectionListeners();
+        
+        // Инициализируем фильтр по статусам
+        this.initializeStatusFilter();
+    }
+
+    updateAccountFieldsVisibility() {
+        const accountSelection = document.querySelector('input[name="accountSelection"]:checked')?.value;
+        const accountContainer = document.getElementById('accountSelectionContainer');
+        
+        if (accountContainer) {
+        if (accountSelection === 'selected') {
+            accountContainer.classList.remove('hidden');
+                accountContainer.style.display = 'block';
+            } else {
+                accountContainer.classList.add('hidden');
+                accountContainer.style.display = 'none';
+            }
+        }
+    }
+
+    addAccountSelectionListeners() {
+        const accountRadios = document.querySelectorAll('input[name="accountSelection"]');
+        accountRadios.forEach(radio => {
+            radio.addEventListener('change', () => {
+                this.updateAccountFieldsVisibility();
+            });
+        });
+    }
+
+    async loadAvailableAccounts() {
+        try {
+            this.showLoadingIndicator();
+            const response = await fetch('/api/force-stock-sync/accounts');
+            
+            if (response.ok) {
+                const data = await response.json();
+                this.accounts = data.accounts || [];
+                this.renderAccountsList();
+            } else {
+                console.error('Ошибка загрузки аккаунтов:', response.status);
+                this.showNotification('Ошибка загрузки списка аккаунтов', 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка загрузки аккаунтов:', error);
+            this.showNotification('Ошибка загрузки списка аккаунтов', 'error');
+        } finally {
+            this.hideLoadingIndicator();
+        }
+    }
+
+    renderAccountsList() {
+        const accountsList = document.getElementById('accountsList');
+        if (!accountsList) return;
+
+        accountsList.innerHTML = '';
+        
+        this.accounts.forEach(account => {
+            const accountItem = document.createElement('div');
+            accountItem.className = 'flex items-center space-x-2 p-2 hover:bg-gray-50 rounded';
+            
+            accountItem.innerHTML = `
+                <input type="checkbox" 
+                       id="account_${account.id}" 
+                       value="${account.name}" 
+                       data-account-id="${account.id}"
+                       class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                <label for="account_${account.id}" class="text-sm text-gray-700">
+                    ${account.name} (${account.status})
+                </label>
+            `;
+            
+            accountsList.appendChild(accountItem);
+        });
+    }
+
+    collectFormData() {
+        const accountSelection = document.querySelector('input[name="accountSelection"]:checked')?.value;
+        const formData = {};
+        
+        if (this.context === 'catalog') {
+            // Не передаем skus - это означает синхронизацию всех товаров
+        }
+        
+        if (accountSelection === 'selected') {
+            const selectedCheckboxes = document.querySelectorAll('#accountsList input[type="checkbox"]:checked');
+            if (selectedCheckboxes.length > 0) {
+                formData.account_names = Array.from(selectedCheckboxes).map(cb => cb.value);
+                formData.account_ids = Array.from(selectedCheckboxes).map(cb => cb.dataset.accountId);
+            } else {
+                throw new Error('Не выбрано ни одного аккаунта');
+            }
+        }
+        
+        return formData;
+    }
+
+    async startSynchronization() {
+        try {
+            const formData = this.collectFormData();
+            
+            // Запускаем синхронизацию
+            const response = await fetch('/api/force-stock-sync/start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData)
+            });
+
+            const result = await response.json();
+            
+            if (result.success) {
+            this.sessionId = result.session_id;
+                this.showNotification(result.message || 'Синхронизация запущена', 'success');
+
+            // Показываем область мониторинга
+                this.showMonitoringArea();
+            
+            // Подключаемся к WebSocket
+                await this.connectWebSocket();
+                
+                // Переключаемся на вкладку мониторинга
+                this.switchToMonitoringTab();
+            } else {
+                this.showNotification(result.error || 'Ошибка запуска синхронизации', 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка запуска синхронизации:', error);
+            this.showNotification('Ошибка запуска синхронизации: ' + error.message, 'error');
+        }
+    }
+
+    async connectWebSocket() {
+        if (!this.sessionId) {
+            console.error('Session ID не установлен');
+            return;
+        }
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/force-sync/${this.sessionId}`;
+        
+        try {
+            this.websocket = new WebSocket(wsUrl);
+            
+            this.websocket.onopen = () => {
+            console.log('WebSocket подключен');
+            this.isConnected = true;
+            this.reconnectAttempts = 0;
+                this.showNotification('WebSocket подключен', 'success');
+            };
+            
+            this.websocket.onmessage = (event) => {
+                this.handleWebSocketMessage(JSON.parse(event.data));
+            };
+            
+            this.websocket.onclose = (event) => {
+            console.log('WebSocket отключен:', event.code);
+            this.isConnected = false;
+                this.handleWebSocketDisconnect();
+        };
+
+            this.websocket.onerror = (error) => {
+            console.error('Ошибка WebSocket:', error);
+                this.showNotification('Ошибка WebSocket соединения', 'error');
+        };
+            
+        } catch (error) {
+            console.error('Ошибка подключения к WebSocket:', error);
+            this.showNotification('Ошибка подключения к WebSocket', 'error');
+        }
+    }
+
+    handleWebSocketMessage(message) {
+        console.log('Получено сообщение WebSocket:', message);
+        
+        switch (message.type) {
+            case 'session_update':
+                console.log('Обновление сессии:', message.data);
+                this.updateSessionStatus(message.data);
+                break;
+            case 'task_update':
+                console.log('Обновление задачи:', message.data);
+                console.log('Вызов updateTaskStatus для задачи:', message.data.task_key);
+                this.updateTaskStatus(message.data);
+                break;
+            case 'status_response':
+                console.log('Ответ статуса:', message.data);
+                this.updateSessionStatus(message.data);
+                break;
+            default:
+                console.log('Неизвестный тип сообщения:', message.type);
+        }
+    }
+
+    updateSessionStatus(data) {
+        console.log('Обновление статуса сессии:', data);
+        this.sessionStatus = data;
+        
+        // Обновляем общий прогресс
+        this.updateOverallProgress(data);
+        
+        // Обновляем статистику
+        this.updateStatistics(data);
+        
+        // Управляем кнопками в зависимости от статуса сессии
+        this.updateControlButtons(data.status);
+        
+        // Скроллим к области мониторинга при обновлениях
+        this.scrollToMonitoringArea();
+    }
+
+    updateOverallProgress(data) {
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressPercentage');
+        
+        console.log('Обновление прогресса:', data.progress_percent, 'Элементы найдены:', !!progressBar, !!progressText);
+        
+        if (progressBar && progressText) {
+            const progress = data.progress_percent || 0;
+            progressBar.style.width = `${progress}%`;
+            progressText.textContent = `${Math.round(progress)}%`;
+            console.log('Прогресс обновлен:', progress + '%');
+        }
+    }
+
+    updateStatistics(data) {
+        const totalTasks = document.getElementById('totalTasks');
+        const completedTasks = document.getElementById('completedTasks');
+        const errorTasks = document.getElementById('failedTasks');  // Исправлено: failedTasks вместо errorTasks
+        const processingTasks = document.getElementById('processingTasks');
+        
+        console.log('Обновление статистики:', data);
+        console.log('Элементы найдены:', !!totalTasks, !!completedTasks, !!errorTasks, !!processingTasks);
+        
+        if (totalTasks) {
+            totalTasks.textContent = data.total_tasks || 0;
+            console.log('totalTasks обновлен:', totalTasks.textContent);
+        }
+        if (completedTasks) {
+            completedTasks.textContent = data.completed_tasks || 0;
+            console.log('completedTasks обновлен:', completedTasks.textContent);
+        }
+        if (errorTasks) {
+            errorTasks.textContent = data.error_tasks || 0;
+            console.log('errorTasks обновлен:', errorTasks.textContent);
+        }
+        if (processingTasks) {
+            processingTasks.textContent = data.processing_tasks || 0;
+            console.log('processingTasks обновлен:', processingTasks.textContent);
+        }
+    }
+
+    updateTaskStatus(data) {
+        const taskKey = data.task_key;
+        const task = data.task;
+        
+        this.tasks.set(taskKey, task);
+        
+        // Обновляем отображение задачи
+        this.renderTaskStatus(taskKey, task);
+        
+        // Скроллим к области мониторинга при обновлениях
+        this.scrollToMonitoringArea();
+    }
+
+    renderTaskStatus(taskKey, task) {
+        console.log('Отрисовка задачи:', taskKey, task);
+        
+        // Группируем задачи по SKU
+        const sku = task.sku;
+        let productElement = document.getElementById(`product_${sku}`);
+        
+        if (!productElement) {
+            console.log('Создание нового элемента товара:', sku);
+            productElement = this.createProductElement(sku, task);
+            const tasksContainer = document.getElementById('forceSyncProductsList');
+            if (tasksContainer) {
+                tasksContainer.appendChild(productElement);
+                console.log('Элемент товара добавлен в контейнер');
+            } else {
+                console.error('Контейнер forceSyncProductsList не найден');
+            }
+        }
+        
+        // Обновляем информацию об аккаунте внутри товара
+        this.updateProductAccountInfo(productElement, task);
+    }
+
+    createProductElement(sku, firstTask) {
+        const productElement = document.createElement('div');
+        productElement.id = `product_${sku}`;
+        productElement.className = 'bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow';
+        
+        const imageUrl = `/api/products/${sku}/image/original`;
+        
+        productElement.innerHTML = `
+            <div class="flex items-start space-x-4">
+                <div class="flex-shrink-0">
+                    <div class="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
+                        <img src="${imageUrl}" 
+                             alt="${sku}" 
+                             class="w-full h-full object-cover"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <div class="w-full h-full bg-blue-100 flex items-center justify-center" style="display: none;">
+                            <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex-1">
+                    <div class="font-medium text-lg text-gray-900 mb-3">${sku}</div>
+                    <div id="accounts_${sku}" class="space-y-2">
+                        <!-- Здесь будут добавляться аккаунты -->
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        return productElement;
+    }
+
+    updateProductAccountInfo(productElement, task) {
+        const accountsContainer = productElement.querySelector(`#accounts_${task.sku}`);
+        if (!accountsContainer) return;
+        
+        const accountElementId = `account_${task.sku}_${task.account_name}`;
+        let accountElement = document.getElementById(accountElementId);
+        
+        if (!accountElement) {
+            accountElement = document.createElement('div');
+            accountElement.id = accountElementId;
+            accountElement.className = 'flex items-center justify-between py-2 px-3 bg-gray-50 rounded border';
+            accountsContainer.appendChild(accountElement);
+        }
+        
+        const statusClass = this.getStatusClass(task.status);
+        const statusText = this.getStatusText(task.status);
+        
+        // Улучшенное сообщение об ошибке
+        let errorMessage = '';
+        if (task.error_message) {
+            if (task.error_message.includes('404 Client Error') && task.error_message.includes('offers/update-stock-single')) {
+                errorMessage = 'Товар не найден в аккаунте Allegro';
+            } else if (task.error_message.includes('404 Client Error')) {
+                errorMessage = 'Микросервис недоступен - проверьте подключение';
+            } else if (task.error_message.includes('Connection')) {
+                errorMessage = 'Ошибка подключения к микросервису';
+            } else if (task.error_message.includes('timeout')) {
+                errorMessage = 'Превышено время ожидания ответа';
+            } else if (task.error_message.includes('500')) {
+                errorMessage = 'Внутренняя ошибка сервера микросервиса';
+            } else {
+                errorMessage = task.error_message;
+            }
+        }
+        
+        accountElement.innerHTML = `
+            <div class="flex-1">
+                <div class="font-medium text-gray-900">${task.account_name}</div>
+                ${errorMessage ? `<div class="text-sm text-red-600 mt-1">${errorMessage}</div>` : ''}
+                ${task.old_stock !== null && task.new_stock !== null ? 
+                    `<div class="text-sm text-gray-600 mt-1">Остаток: ${task.old_stock} → ${task.new_stock}</div>` : ''}
+            </div>
+            <div class="flex items-center space-x-2">
+                <span class="px-3 py-1 text-xs font-medium rounded-full ${statusClass}">
+                    ${statusText}
+                </span>
+                ${task.status === 'error' ? 
+                    `<button onclick="forceSyncManager.retryTask('${task.sku}_${task.account_name}')" 
+                            class="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
+                        Повторить
+                    </button>` : ''}
+            </div>
+        `;
+    }
+
+    createTaskElement(taskKey, task) {
+        const taskElement = document.createElement('div');
+        taskElement.id = `task_${taskKey}`;
+        taskElement.className = 'bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow';
+        
+        this.updateTaskElement(taskElement, task);
+        return taskElement;
+    }
+
+    updateTaskElement(element, task) {
+        const statusClass = this.getStatusClass(task.status);
+        const statusText = this.getStatusText(task.status);
+        const imageUrl = `/api/products/${task.sku}/image/original`;
+        
+        // Улучшенное сообщение об ошибке
+        let errorMessage = '';
+        if (task.error_message) {
+            if (task.error_message.includes('404 Client Error') && task.error_message.includes('offers/update-stock-single')) {
+                errorMessage = 'Товар не найден в аккаунте Allegro';
+            } else if (task.error_message.includes('404 Client Error')) {
+                errorMessage = 'Микросервис недоступен - проверьте подключение';
+            } else if (task.error_message.includes('Connection')) {
+                errorMessage = 'Ошибка подключения к микросервису';
+            } else if (task.error_message.includes('timeout')) {
+                errorMessage = 'Превышено время ожидания ответа';
+            } else if (task.error_message.includes('500')) {
+                errorMessage = 'Внутренняя ошибка сервера микросервиса';
+            } else {
+                errorMessage = task.error_message;
+            }
+        }
+        
+        element.innerHTML = `
+            <div class="flex items-center justify-between">
+                <div class="flex-1">
+                <div class="flex items-center space-x-3">
+                        <div class="flex-shrink-0">
+                            <div class="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
+                                <img src="${imageUrl}" 
+                                     alt="${task.sku}" 
+                                     class="w-full h-full object-cover"
+                                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                <div class="w-full h-full bg-blue-100 flex items-center justify-center" style="display: none;">
+                                    <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                        </svg>
+                    </div>
+                            </div>
+                        </div>
+                        <div class="flex-1">
+                            <div class="font-medium text-gray-900">${task.sku}</div>
+                            <div class="text-sm text-gray-600">Аккаунт: ${task.account_name}</div>
+                            ${errorMessage ? `<div class="text-sm text-red-600 mt-1">Ошибка: ${errorMessage}</div>` : ''}
+                            ${task.old_stock !== null && task.new_stock !== null ? 
+                                `<div class="text-sm text-gray-600 mt-1">Остаток: ${task.old_stock} → ${task.new_stock}</div>` : ''}
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="px-3 py-1 text-xs font-medium rounded-full ${statusClass}">
+                        ${statusText}
+                        </span>
+                    ${task.status === 'error' ? 
+                        `<button onclick="forceSyncManager.retryTask('${task.sku}_${task.account_name}')" 
+                                class="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
+                            Повторить
+                        </button>` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    getStatusClass(status) {
+        switch (status) {
+            case 'pending': return 'bg-gray-100 text-gray-800';
+            case 'processing': return 'bg-blue-100 text-blue-800';
+            case 'success': return 'bg-green-100 text-green-800';
+            case 'error': return 'bg-red-100 text-red-800';
+            case 'cancelled': return 'bg-gray-100 text-gray-800';
+            default: return 'bg-gray-100 text-gray-800';
+        }
+    }
+
+    getStatusText(status) {
+        switch (status) {
+            case 'pending': return 'Ожидает';
+            case 'processing': return 'Обрабатывается';
+            case 'success': return 'Успешно';
+            case 'error': return 'Ошибка';
+            case 'cancelled': return 'Отменено';
+            default: return 'Неизвестно';
+        }
+    }
+
+    async retryTask(taskKey) {
+        try {
+            const response = await fetch(`/api/force-stock-sync/retry/${this.sessionId}/${taskKey}`, {
+                method: 'POST'
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                this.showNotification('Задача перезапущена', 'success');
+            } else {
+                this.showNotification('Ошибка перезапуска задачи', 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка перезапуска задачи:', error);
+            this.showNotification('Ошибка перезапуска задачи', 'error');
+        }
+    }
+
+    async pauseSession() {
+        try {
+            const response = await fetch(`/api/force-stock-sync/pause/${this.sessionId}`, {
+                method: 'POST'
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                this.showNotification('Сессия приостановлена', 'success');
+            }
+        } catch (error) {
+            console.error('Ошибка приостановки сессии:', error);
+        }
+    }
+
+    async resumeSession() {
+        try {
+            const response = await fetch(`/api/force-stock-sync/resume/${this.sessionId}`, {
+                method: 'POST'
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                this.showNotification('Сессия возобновлена', 'success');
+            }
+        } catch (error) {
+            console.error('Ошибка возобновления сессии:', error);
+        }
+    }
+
+    async cancelSession() {
+        try {
+            const response = await fetch(`/api/force-stock-sync/cancel/${this.sessionId}`, {
+                method: 'POST'
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                this.showNotification('Сессия отменена', 'success');
+                this.closeModal();
+            }
+        } catch (error) {
+            console.error('Ошибка отмены сессии:', error);
+        }
+    }
+
+    handleWebSocketDisconnect() {
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            this.reconnectAttempts++;
+            this.reconnectDelay *= 2;
+            
+            console.log(`Попытка переподключения ${this.reconnectAttempts}/${this.maxReconnectAttempts} через ${this.reconnectDelay}ms`);
+            
+            setTimeout(() => {
+                this.connectWebSocket();
+            }, this.reconnectDelay);
+        } else {
+            this.showNotification('WebSocket соединение потеряно', 'error');
+        }
+    }
+
+    disconnectWebSocket() {
+        if (this.websocket) {
+            this.websocket.close();
+            this.websocket = null;
+        }
+        this.isConnected = false;
+    }
+
+    switchToMonitoringTab() {
+        // Переключаемся на вкладку мониторинга
+        const monitoringTab = document.getElementById('monitoringTab');
+        if (monitoringTab) {
+            monitoringTab.click();
+        }
+    }
+
+    showLoadingIndicator() {
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        if (loadingIndicator) {
+            loadingIndicator.style.display = 'block';
+        }
+    }
+
+    hideLoadingIndicator() {
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        if (loadingIndicator) {
+            loadingIndicator.style.display = 'none';
+        }
+    }
+
+    showNotification(message, type = 'info') {
+        // Создаем уведомление
+        const notification = document.createElement('div');
+        notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 ${
+            type === 'success' ? 'bg-green-500 text-white' :
+            type === 'error' ? 'bg-red-500 text-white' :
+            type === 'warning' ? 'bg-yellow-500 text-black' :
+            'bg-blue-500 text-white'
+        }`;
+        notification.textContent = message;
+        
+        document.body.appendChild(notification);
+        
+        // Удаляем уведомление через 3 секунды
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 3000);
+    }
+
+    showMonitoringArea() {
+        // Скрываем область настроек
+        const settingsArea = document.getElementById('syncSettingsArea');
+        if (settingsArea) {
+            settingsArea.classList.add('hidden');
+            settingsArea.style.display = 'none';
+            console.log('Область настроек скрыта');
+        }
+        
+        // Показываем область мониторинга
+        const monitoringArea = document.getElementById('syncMonitoringArea');
+        if (monitoringArea) {
+            monitoringArea.classList.remove('hidden');
+            monitoringArea.style.display = 'block';
+            console.log('Область мониторинга показана');
+            console.log('Область мониторинга:', monitoringArea);
+            console.log('Классы области мониторинга:', monitoringArea.classList);
+            console.log('Стили области мониторинга:', monitoringArea.style.display);
+            
+            // Скроллим к области мониторинга
+            setTimeout(() => {
+                monitoringArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+        } else {
+            console.error('Элемент syncMonitoringArea не найден');
+        }
+    }
+
+    scrollToMonitoringArea() {
+        const monitoringArea = document.getElementById('syncMonitoringArea');
+        if (monitoringArea && !monitoringArea.classList.contains('hidden')) {
+            setTimeout(() => {
+                monitoringArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 50);
+        }
+    }
+
+    updateControlButtons(status) {
+        const startBtn = document.getElementById('startBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const resumeBtn = document.getElementById('resumeBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const sessionStatus = document.getElementById('sessionStatus');
+        const settingsArea = document.getElementById('syncSettingsArea');
+        
+        if (status === 'completed' || status === 'cancelled') {
+            // Скрываем кнопки управления
+            if (startBtn) startBtn.style.display = 'inline-block';
+            if (pauseBtn) pauseBtn.style.display = 'none';
+            if (resumeBtn) resumeBtn.style.display = 'none';
+            if (cancelBtn) cancelBtn.style.display = 'none';
+            
+            // Обновляем статус
+            if (sessionStatus) {
+                sessionStatus.textContent = status === 'completed' ? 'Завершена' : 'Отменена';
+                sessionStatus.className = 'px-3 py-1 text-sm font-medium bg-gray-100 text-gray-800 rounded-full';
+            }
+            
+            // Показываем область настроек
+            if (settingsArea) {
+                settingsArea.classList.remove('hidden');
+                settingsArea.style.display = 'block';
+            }
+        } else if (status === 'paused') {
+            // Показываем кнопку возобновления
+            if (startBtn) startBtn.style.display = 'none';
+            if (pauseBtn) pauseBtn.style.display = 'none';
+            if (resumeBtn) resumeBtn.style.display = 'inline-block';
+            if (cancelBtn) cancelBtn.style.display = 'inline-block';
+            
+            // Обновляем статус
+            if (sessionStatus) {
+                sessionStatus.textContent = 'Приостановлена';
+                sessionStatus.className = 'px-3 py-1 text-sm font-medium bg-yellow-100 text-yellow-800 rounded-full';
+            }
+        } else if (status === 'active') {
+            // Показываем кнопки управления
+            if (startBtn) startBtn.style.display = 'none';
+            if (pauseBtn) pauseBtn.style.display = 'inline-block';
+            if (resumeBtn) resumeBtn.style.display = 'none';
+            if (cancelBtn) cancelBtn.style.display = 'inline-block';
+            
+            // Обновляем статус
+            if (sessionStatus) {
+                sessionStatus.textContent = 'Запущена';
+                sessionStatus.className = 'px-3 py-1 text-sm font-medium bg-blue-100 text-blue-800 rounded-full';
+            }
+            
+            // Скрываем область настроек
+            if (settingsArea) {
+                settingsArea.classList.add('hidden');
+                settingsArea.style.display = 'none';
+            }
+        }
+    }
+
+    initializeStatusFilter() {
+        const statusFilter = document.getElementById('statusFilter');
+        if (statusFilter) {
+            statusFilter.addEventListener('change', (e) => {
+                this.filterProductsByStatus(e.target.value);
+            });
+        }
+    }
+
+    filterProductsByStatus(status) {
+        const productsList = document.getElementById('forceSyncProductsList');
+        if (!productsList) return;
+        
+        const productElements = productsList.querySelectorAll('[id^="product_"]');
+        
+        productElements.forEach(productElement => {
+            const accountsContainer = productElement.querySelector('[id^="accounts_"]');
+            if (!accountsContainer) return;
+            
+            const accountElements = accountsContainer.querySelectorAll('[id^="account_"]');
+            let hasVisibleAccounts = false;
+            
+            accountElements.forEach(accountElement => {
+                const statusSpan = accountElement.querySelector('span[class*="bg-"]');
+                if (!statusSpan) return;
+                
+                let shouldShow = false;
+                
+                if (status === 'all') {
+                    shouldShow = true;
+                } else if (status === 'success') {
+                    shouldShow = statusSpan.classList.contains('bg-green-100');
+                } else if (status === 'error') {
+                    shouldShow = statusSpan.classList.contains('bg-red-100');
+                } else if (status === 'processing') {
+                    shouldShow = statusSpan.classList.contains('bg-blue-100');
+                }
+                
+                accountElement.style.display = shouldShow ? 'flex' : 'none';
+                if (shouldShow) hasVisibleAccounts = true;
+            });
+            
+            // Показываем/скрываем весь товар в зависимости от наличия видимых аккаунтов
+            productElement.style.display = hasVisibleAccounts ? 'block' : 'none';
+        });
+    }
+
+    resetState() {
+        this.sessionId = null;
+        this.sessionStatus = null;
+        this.tasks.clear();
+        this.reconnectAttempts = 0;
+        this.reconnectDelay = 1000;
+    }
+
+    expandAllProducts() {
+        const taskElements = document.querySelectorAll('.task-item');
+        taskElements.forEach(element => {
+            element.classList.remove('collapsed');
+        });
+    }
+
+    collapseAllProducts() {
+        const taskElements = document.querySelectorAll('.task-item');
+        taskElements.forEach(element => {
+            element.classList.add('collapsed');
+        });
+    }
+}
+
+// Глобальный экземпляр менеджера
+const forceSyncManager = new ForceSyncManager();
+
+// Экспортируем функции для глобального доступа
+window.openForceSyncModal = (context) => forceSyncManager.openModal(context);
+window.closeForceSyncModal = () => forceSyncManager.closeModal();
+window.startForceSync = () => forceSyncManager.startSynchronization();
+window.pauseForceSync = () => forceSyncManager.pauseSession();
+window.resumeForceSync = () => forceSyncManager.resumeSession();
+window.cancelForceSync = () => forceSyncManager.cancelSession();
+window.expandAllProducts = () => forceSyncManager.expandAllProducts();
+window.collapseAllProducts = () => forceSyncManager.collapseAllProducts();
+</script>

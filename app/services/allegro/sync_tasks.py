@@ -449,6 +449,61 @@ def sync_allegro_stock_single_product_account(sku: str, account_name: str):
     logger.info(f"[AllegroSync] Синхронизация товара {sku} для аккаунта {account_name} запущена. Время: {time.time() - start:.2f} сек")
     return {"success": True, "sku": sku, "account_name": account_name, "token_id": token_id, "task_id": result.id}
 
+
+@celery.task
+def force_sync_allegro_stock_single_product_account(sku: str, account_name: str, session_id: str = None):
+    """
+    Celery-задача: ПРИНУДИТЕЛЬНАЯ синхронизация остатков конкретного товара с конкретным аккаунтом Allegro через микросервис.
+    Игнорирует настройки синхронизации и всегда выполняет синхронизацию.
+    """
+    logger = logging.getLogger("allegro.sync")
+    start = time.time()
+    logger.info(f"[ForceSync] ПРИНУДИТЕЛЬНАЯ синхронизация товара {sku} для аккаунта {account_name}")
+    
+    # Получаем информацию о токене из микросервиса
+    tokens = get_active_tokens_from_microservice()
+    token_info = None
+    for token in tokens:
+        if token['account_name'] == account_name:
+            token_info = token
+            break
+    
+    if not token_info:
+        logger.error(f"[ForceSync] Токен для аккаунта {account_name} не найден в микросервисе")
+        # Обновляем прогресс через WebSocket
+        if session_id:
+            from app.api.v1.routers.force_stock_sync import update_sync_progress
+            import asyncio
+            asyncio.create_task(update_sync_progress(session_id, sku, account_name, "error", "Токен не найден"))
+        return {"success": False, "error": "Токен не найден", "account_name": account_name, "sku": sku}
+    
+    token_id = token_info['id']
+    
+    try:
+        # ПРИНУДИТЕЛЬНАЯ синхронизация - запускаем без проверки настроек
+        result = sync_allegro_offers_batch.apply_async(args=[token_id, [sku], True])  # force_mode=True
+        
+        logger.info(f"[ForceSync] ПРИНУДИТЕЛЬНАЯ синхронизация товара {sku} для аккаунта {account_name} запущена. Время: {time.time() - start:.2f} сек")
+        
+        # Обновляем прогресс через WebSocket
+        if session_id:
+            from app.api.v1.routers.force_stock_sync import update_sync_progress
+            import asyncio
+            asyncio.create_task(update_sync_progress(session_id, sku, account_name, "success"))
+        
+        return {"success": True, "sku": sku, "account_name": account_name, "token_id": token_id, "task_id": result.id}
+        
+    except Exception as e:
+        logger.error(f"[ForceSync] Ошибка принудительной синхронизации товара {sku} для аккаунта {account_name}: {e}")
+        
+        # Обновляем прогресс через WebSocket
+        if session_id:
+            from app.api.v1.routers.force_stock_sync import update_sync_progress
+            import asyncio
+            asyncio.create_task(update_sync_progress(session_id, sku, account_name, "error", str(e)))
+        
+        return {"success": False, "error": str(e), "sku": sku, "account_name": account_name}
+
 @celery.task
 def sync_allegro_price_single_product_account(sku: str, account_name: str):
     """
