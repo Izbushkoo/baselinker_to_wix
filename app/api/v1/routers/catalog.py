@@ -110,7 +110,17 @@ async def catalog_page(
 
     # Фильтр по бренду
     if brand_filter:
-        base_query = base_query.where(Product.brand == brand_filter)
+        if brand_filter == "__no_brand__":
+            # Фильтр по товарам без бренда (NULL или пустая строка)
+            base_query = base_query.where(
+                or_(
+                    Product.brand.is_(None),
+                    Product.brand == "",
+                    Product.brand == " "
+                )
+            )
+        else:
+            base_query = base_query.where(Product.brand == brand_filter)
 
     # Создаем подзапрос для корректного подсчета общего количества
     subquery = base_query.subquery()
@@ -304,7 +314,17 @@ async def get_products_api(
 
     # Фильтр по бренду
     if brand_filter:
-        base_query = base_query.where(Product.brand == brand_filter)
+        if brand_filter == "__no_brand__":
+            # Фильтр по товарам без бренда (NULL или пустая строка)
+            base_query = base_query.where(
+                or_(
+                    Product.brand.is_(None),
+                    Product.brand == "",
+                    Product.brand == " "
+                )
+            )
+        else:
+            base_query = base_query.where(Product.brand == brand_filter)
 
     # Создаем подзапрос для корректного подсчета общего количества
     subquery = base_query.subquery()

@@ -12,9 +12,24 @@
         page_size: '{{ filters.page_size }}'
     };
 
-    // Функция для сохранения фильтров в localStorage
+    // Функция для получения email пользователя (дублируем из workspace.html)
+    function getUserEmail() {
+        const userDataEl = document.getElementById('user-data');
+        if (userDataEl) {
+            const email = userDataEl.dataset.userEmail;
+            if (email && email.trim() !== '') {
+                return email.replace(/[@.]/g, '_');
+            }
+        }
+        return 'anonymous';
+    }
+
+    // Функция для сохранения фильтров в localStorage (персонально для пользователя)
     function saveFiltersToStorage() {
         try {
+            const userEmail = getUserEmail();
+            const storageKey = `catalog_filters_${userEmail}`;
+            
             const filtersToSave = {
                 search: document.getElementById('searchInput')?.value || '',
                 sku_search: document.getElementById('skuSearchInput')?.value || '',
@@ -24,17 +39,34 @@
                 sort_order: document.getElementById('sortOrder')?.value || '',
                 page_size: document.getElementById('pageSize')?.value || '50'
             };
-            localStorage.setItem('catalog_filters', JSON.stringify(filtersToSave));
-            console.log('Фильтры сохранены в localStorage:', filtersToSave);
+            localStorage.setItem(storageKey, JSON.stringify(filtersToSave));
+            console.log(`Фильтры сохранены в localStorage для пользователя ${userEmail}:`, filtersToSave);
         } catch (error) {
             console.error('Ошибка при сохранении фильтров:', error);
         }
     }
 
-    // Функция для восстановления фильтров из localStorage
+    // Функция для восстановления фильтров из localStorage (персонально для пользователя)
     function restoreFiltersFromStorage() {
         try {
-            const savedFilters = localStorage.getItem('catalog_filters');
+            const userEmail = getUserEmail();
+            const storageKey = `catalog_filters_${userEmail}`;
+            
+            // Сначала пробуем загрузить с новым ключом (персональным)
+            let savedFilters = localStorage.getItem(storageKey);
+            
+            // Если данных нет, пробуем загрузить со старого ключа (общего) для миграции
+            if (!savedFilters && userEmail !== 'anonymous') {
+                const oldData = localStorage.getItem('catalog_filters');
+                if (oldData) {
+                    console.log(`Миграция фильтров для пользователя ${userEmail}`);
+                    savedFilters = oldData;
+                    // Сохраняем в новый ключ и удаляем старый
+                    localStorage.setItem(storageKey, savedFilters);
+                    localStorage.removeItem('catalog_filters');
+                }
+            }
+            
             if (savedFilters) {
                 const filters = JSON.parse(savedFilters);
                 
@@ -72,7 +104,7 @@
                     page_size: parseInt(filters.page_size) || 50
                 };
                 
-                console.log('Фильтры восстановлены из localStorage:', filters);
+                console.log(`Фильтры восстановлены из localStorage для пользователя ${userEmail}:`, filters);
             }
         } catch (error) {
             console.error('Ошибка при восстановлении фильтров:', error);
@@ -122,8 +154,10 @@
             page_size: 50
         };
 
-        // Очищаем сохраненные фильтры
-        localStorage.removeItem('catalog_filters');
+        // Очищаем сохраненные фильтры (персонально для пользователя)
+        const userEmail = getUserEmail();
+        const storageKey = `catalog_filters_${userEmail}`;
+        localStorage.removeItem(storageKey);
     }
 
     // Функция для применения фильтров
@@ -633,6 +667,12 @@
                     option.textContent = 'Все бренды';
                     brandSelect.appendChild(option);
                 }
+
+                // Добавляем опцию "Без бренда"
+                const noBrandOption = document.createElement('option');
+                noBrandOption.value = '__no_brand__';
+                noBrandOption.textContent = 'Без бренда';
+                brandSelect.appendChild(noBrandOption);
 
                 // Добавляем бренды
                 brands.forEach(brand => {
