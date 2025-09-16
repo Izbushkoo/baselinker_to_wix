@@ -4,11 +4,85 @@
  * @created: 2024-01-19
 -->
 
+<style>
+/* Стили для спиннера загрузки воркспейса */
+.workspace-loading-spinner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7); /* Темный фон для затемнения */
+    display: none; /* По умолчанию скрыт */
+    justify-content: center;
+    align-items: center;
+    z-index: 50; /* Высокий z-index для отображения поверх всего контента */
+    backdrop-filter: blur(3px);
+}
+
+.workspace-loading-spinner:not(.hidden) {
+    display: flex; /* Показываем только когда не скрыт */
+}
+
+.spinner-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+}
+
+.spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.spinner-text {
+    color: white;
+    font-size: 18px;
+    font-weight: 500;
+    text-align: center;
+}
+
+.spinner-subtext {
+    color: #b0b0b0;
+    font-size: 14px;
+    text-align: center;
+    margin-top: 5px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Пульсирующая анимация для текста */
+.pulse-text {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+</style>
+
 <!-- Основной контейнер воркспейса -->
 <div id="workspaceContainer" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden">
     <div class="flex h-full pt-16">
         <!-- Левая панель - Воркспейс -->
-        <div id="workspacePanel" class="w-1/2 bg-white shadow-2xl flex flex-col">
+        <div id="workspacePanel" class="w-1/2 bg-white shadow-2xl flex flex-col relative">
+            <!-- Спиннер загрузки воркспейса -->
+            <div id="workspaceLoadingSpinner" class="workspace-loading-spinner hidden">
+                <div class="spinner-container">
+                    <div class="spinner"></div>
+                    <div class="spinner-text pulse-text">Загрузка воркспейса</div>
+                    <div class="spinner-subtext">Подготовка данных...</div>
+                </div>
+            </div>
             <!-- Заголовок воркспейса -->
             <div class="bg-gray-800 text-white p-4 flex items-center justify-between">
                 <div class="flex items-center gap-3">
@@ -164,6 +238,7 @@
         </div>
     </div>
 </div>
+
 
 <script>
     // Простой класс для управления воркспейсом
@@ -423,6 +498,10 @@
 
             if (emptyState) emptyState.classList.add('hidden');
 
+            // Показываем спиннер загрузки
+            console.log('renderWorkspaceProducts: показываем спиннер');
+            showWorkspaceSpinner('Загрузка товаров', 'Рендеринг карточек...');
+
             // Загружаем все карточки одним запросом
             try {
                 const response = await fetch('/catalog_new/api/workspace-cards', {
@@ -438,6 +517,10 @@
                 if (response.ok) {
                     const data = await response.json();
                     container.innerHTML = data.html;
+                    
+                    // Скрываем спиннер сразу после загрузки карточек
+                    console.log('renderWorkspaceProducts: скрываем спиннер после успешной загрузки');
+                    hideWorkspaceSpinner();
                     
                     // Переинициализируем drag-and-drop для новых карточек в воркспейсе
                     if (typeof window.reinitializeDragAndDrop === 'function') {
@@ -459,6 +542,10 @@
                     // Fallback: показываем простые карточки
                     container.innerHTML = skus.map(sku => this.generateFallbackCard(this.selectedProducts[sku])).join('');
                     
+                    // Скрываем спиннер сразу после загрузки fallback карточек
+                    console.log('renderWorkspaceProducts: скрываем спиннер после fallback загрузки');
+                    hideWorkspaceSpinner();
+                    
                     // Восстанавливаем значения количества в заявку и комментарии для fallback карточек
                     setTimeout(() => {
                         if (typeof window.restoreRequestQuantities === 'function') {
@@ -473,6 +560,10 @@
             } catch (error) {
                 console.error('Ошибка при загрузке карточек воркспейса:', error);
                 container.innerHTML = skus.map(sku => this.generateFallbackCard(this.selectedProducts[sku])).join('');
+                
+                // Скрываем спиннер сразу после загрузки fallback карточек
+                console.log('renderWorkspaceProducts: скрываем спиннер после ошибки');
+                hideWorkspaceSpinner();
                 
                 // Переинициализируем drag-and-drop даже для fallback карточек
                 if (typeof window.reinitializeDragAndDrop === 'function') {
@@ -720,6 +811,45 @@
         // на самих карточках товаров
     });
 
+    // Функции управления спиннером загрузки воркспейса
+    function showWorkspaceSpinner(message = 'Загрузка воркспейса', submessage = 'Подготовка данных...') {
+        const spinner = document.getElementById('workspaceLoadingSpinner');
+        console.log('showWorkspaceSpinner вызвана, спиннер найден:', !!spinner);
+        const spinnerText = spinner?.querySelector('.spinner-text');
+        const spinnerSubtext = spinner?.querySelector('.spinner-subtext');
+        
+        if (spinner) {
+            if (spinnerText) spinnerText.textContent = message;
+            if (spinnerSubtext) spinnerSubtext.textContent = submessage;
+            spinner.style.display = 'flex';
+            spinner.classList.remove('hidden');
+            console.log('Спиннер показан, display:', spinner.style.display);
+        } else {
+            console.error('Спиннер не найден при показе!');
+        }
+    }
+
+    function hideWorkspaceSpinner() {
+        const spinner = document.getElementById('workspaceLoadingSpinner');
+        console.log('hideWorkspaceSpinner вызвана, спиннер найден:', !!spinner);
+        if (spinner) {
+            spinner.style.display = 'none';
+            spinner.classList.add('hidden');
+            console.log('Спиннер скрыт, display:', spinner.style.display);
+        } else {
+            console.error('Спиннер не найден!');
+        }
+    }
+
+    function updateSpinnerMessage(message, submessage = null) {
+        const spinner = document.getElementById('workspaceLoadingSpinner');
+        const spinnerText = spinner?.querySelector('.spinner-text');
+        const spinnerSubtext = spinner?.querySelector('.spinner-subtext');
+        
+        if (spinnerText) spinnerText.textContent = message;
+        if (submessage && spinnerSubtext) spinnerSubtext.textContent = submessage;
+    }
+
     // Переключение воркспейса (универсальная версия для всех страниц)
     function toggleWorkspace() {
         // Убеждаемся, что воркспейс инициализирован
@@ -775,11 +905,9 @@
             if (workspaceManager) {
                 workspaceManager.isOpen = true;
                 // Принудительно обновляем UI воркспейса
-                setTimeout(() => {
-                    workspaceManager.renderWorkspaceProducts();
-                    workspaceManager.highlightSelectedProducts();
-                    workspaceManager.updateWorkspaceCount();
-                }, 100);
+                workspaceManager.renderWorkspaceProducts();
+                workspaceManager.highlightSelectedProducts();
+                workspaceManager.updateWorkspaceCount();
             }
         }
     }
