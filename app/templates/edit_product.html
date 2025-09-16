@@ -99,7 +99,7 @@
 
                 <!-- Кнопки -->
                 <div class="flex justify-end space-x-3">
-                    <a href="/catalog" 
+                    <a href="/catalog_new" 
                        class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
                         Отмена
                     </a>
@@ -159,8 +159,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (result.success) {
                 // Показываем сообщение об успехе
                 alert('Товар успешно обновлен!');
-                // Перенаправляем на каталог
-                window.location.href = '/catalog';
+                // Перенаправляем на новый каталог
+                window.location.href = '/catalog_new';
             }
         } catch (error) {
             console.error('Ошибка:', error);
