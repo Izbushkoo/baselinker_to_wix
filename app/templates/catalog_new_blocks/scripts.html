@@ -171,6 +171,16 @@
                 };
                 
                 console.log(`Фильтры восстановлены из localStorage для пользователя ${userEmail}:`, filters);
+                
+                // Автоматически выполняем поиск после восстановления фильтров
+                setTimeout(() => {
+                    if (typeof handleFilterChange === 'function') {
+                        console.log('Автоматически применяем восстановленные фильтры...');
+                        handleFilterChange();
+                    } else {
+                        console.error('Функция handleFilterChange недоступна для автоматического поиска');
+                    }
+                }, 100); // Небольшая задержка для завершения инициализации
             }
         } catch (error) {
             console.error('Ошибка при восстановлении фильтров:', error);
