@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .tooltip-text {
+        position: absolute;
+        z-index: 10;
+        background-color: #1f2937;
+        color: white;
+        padding: 0.5rem;
+        border-radius: 0.375rem;
+        font-size: 0.75rem;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+    
+    .group:hover .tooltip-text {
+        opacity: 1;
+    }
+</style>
+
+<div class="min-h-screen py-6 bg-gray-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <!-- Шапка страницы -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-6">
+            <div class="flex justify-between items-center">
+                <div class="flex items-center space-x-4">
+                    <a href="/synchronization" class="text-gray-400 hover:text-white transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                        </svg>
+                    </a>
+                    <h1 class="text-2xl font-bold text-white">Заказы {{ account_name }}</h1>
+                </div>
+            </div>
+        </div>
+
+        <!-- Поиск -->
+        <div class="bg-white rounded-lg p-4 mb-6 shadow-sm">
+            <div class="relative">
+                <input type="text" 
+                       id="search-input" 
+                       placeholder="Поиск по ID заказа..." 
+                       class="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                       onkeyup="doOrderSearch()">
+                <svg class="absolute right-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+            </div>
+        </div>
+
+        <div id="orders-container" class="space-y-4">
+            <!-- Здесь будут отображаться заказы -->
+        </div>
+
+        <!-- Пагинация -->
+        <div class="bg-white rounded-lg p-4 shadow-sm">
+            <div id="pagination" class="flex justify-between items-center">
+                <div class="flex space-x-4 text-sm text-gray-600">
+                    <span>Всего заказов: <span id="total-orders" class="font-medium">0</span></span>
+                    <span>Страница <span id="current-page" class="font-medium">1</span> из <span id="total-pages" class="font-medium">1</span></span>
+                </div>
+                <div class="flex space-x-2">
+                    <button id="prev-page" onclick="changePage(-1)" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                        Назад
+                    </button>
+                    <button id="next-page" onclick="changePage(1)" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                        Вперед
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let allOrders = []; // Храним все заказы для фильтрации
+let currentPage = 1;
+let totalOrders = 0;
+let itemsPerPage = 50;
+
+async function fetchOrders(page = 1) {
+    try {
+        const offset = (page - 1) * itemsPerPage;
+        const response = await fetch(`/api/allegro_sync/orders/{{ token_id }}?limit=${itemsPerPage}&offset=${offset}`);
+        if (!response.ok) {
+            throw new Error('Ошибка при загрузке заказов');
+        }
+        const data = await response.json();
+        console.log('API Response:', data);
+        console.log('Orders array:', data.orders);
+        console.log('Total orders:', data.total);
+        
+        allOrders = data.orders || [];
+        totalOrders = data.total || 0;
+        
+        console.log('Set allOrders:', allOrders);
+        console.log('Set totalOrders:', totalOrders);
+        
+        updatePagination();
+        displayOrders(allOrders);
+    } catch (error) {
+        console.error('Fetch error:', error);
+        showNotification(error.message, 'error');
+    }
+}
+
+function updatePagination() {
+    const totalPages = Math.ceil(totalOrders / itemsPerPage);
+    document.getElementById('total-orders').textContent = totalOrders;
+    document.getElementById('current-page').textContent = currentPage;
+    document.getElementById('total-pages').textContent = totalPages;
+    
+    document.getElementById('prev-page').disabled = currentPage === 1;
+    document.getElementById('next-page').disabled = currentPage === totalPages;
+}
+
+async function changePage(delta) {
+    const newPage = currentPage + delta;
+    const totalPages = Math.ceil(totalOrders / itemsPerPage);
+    
+    if (newPage >= 1 && newPage <= totalPages) {
+        currentPage = newPage;
+        await fetchOrders(currentPage);
+    }
+}
+
+function doOrderSearch() {
+    const searchInput = document.getElementById('search-input');
+    const searchTerm = searchInput.value.trim();
+    if (searchTerm.length > 3) {
+        // Поиск по API по order_id
+        fetch(`/api/allegro_sync/orders/search/{{ token_id }}/${searchTerm}`)
+            .then(response => response.json())
+            .then(data => {
+                console.log(data)
+                displayOrders(data.orders);
+                updatePaginationForSingle(data.orders.length);
+            })
+            .catch(() => {
+                displayOrders([]);
+                updatePaginationForSingle(0);
+            });
+    } else {
+        const lower = searchTerm.toLowerCase();
+        const filteredOrders = allOrders.filter(order => 
+            order.id.toLowerCase().includes(lower)
+        );
+        displayOrders(filteredOrders);
+        updatePaginationForSingle(filteredOrders.length);
+    }
+}
+
+function updatePaginationForSingle(count) {
+    document.getElementById('total-orders').textContent = count;
+    document.getElementById('current-page').textContent = 1;
+    document.getElementById('total-pages').textContent = 1;
+    document.getElementById('prev-page').disabled = true;
+    document.getElementById('next-page').disabled = true;
+}
+
+// Функция получения статуса заказа с приоритетом как в scripts.html
+function getOrderStatus(order) {
+    if (!order) {
+        return '<span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">Неизвестно</span>';
+    }
+    console.log(order)
+
+    // Приоритет 1: Отмена продавцом (fulfillment.status === 'CANCELLED')
+    if (order.fulfillment && order.fulfillment.status === 'CANCELLED') {
+        return '<span class="px-2 py-1 rounded text-xs bg-red-100 text-red-800">Отменен продавцом</span>';
+    }
+
+    // Приоритет 2: Основные статусы жизненного цикла
+    // Если заказ отправлен, показываем статус fulfillment
+    if (order.fulfillment && order.fulfillment.status === 'SENT') {
+        return '<span class="px-2 py-1 rounded text-xs bg-green-100 text-green-800">Отправлен</span>';
+    }
+
+    // Основные статусы заказа
+    const statusMap = {
+        'BOUGHT': '<span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">Куплен</span>',
+        'FILLED_IN': '<span class="px-2 py-1 rounded text-xs bg-yellow-100 text-yellow-800">Заполнен</span>',
+        'READY_FOR_PROCESSING': '<span class="px-2 py-1 rounded text-xs bg-blue-100 text-blue-800">Готов к отправке</span>'
+    };
+
+    if (order.status && statusMap[order.status]) {
+        return statusMap[order.status];
+    }
+
+    // Приоритет 3: Отмена покупателем (основной статус === 'CANCELLED')
+    if (order.status === 'CANCELLED') {
+        return '<span class="px-2 py-1 rounded text-xs bg-red-100 text-red-800">Отменен покупателем</span>';
+    }
+
+    // Если статус не распознан, возвращаем как есть
+    return `<span class="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">${order.status || 'Неизвестно'}</span>`;
+}
+
+function displayOrders(orders) {
+    console.log('displayOrders called with:', orders);
+    console.log('Orders length:', orders.length);
+    
+    const container = document.getElementById('orders-container');
+    if (!container) {
+        console.error('orders-container not found!');
+        return;
+    }
+    
+    console.log('Container found:', container);
+    container.innerHTML = '';
+
+    if (!orders || orders.length === 0) {
+        console.log('No orders to display');
+        container.innerHTML = '<div class="text-center py-8 text-gray-400">Заказы не найдены</div>';
+        return;
+    }
+
+    orders.forEach((order, index) => {
+        console.log(`Processing order ${index}:`, order);
+        const orderElement = document.createElement('div');
+        orderElement.className = 'bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow overflow-hidden relative border border-gray-200 cursor-pointer';
+        
+        // Получаем статус заказа
+        const orderStatus = getOrderStatus(order);
+        
+        // Кнопка "Пометить списанным" - только если заказ еще не списан
+        let writeOffButton = '';
+        if (!order.is_stock_updated) {
+            writeOffButton = `<button onclick="event.stopPropagation(); markOrderStockUpdated('${order.id}')"
+                class="px-3 py-1 bg-amber-50 text-amber-700 text-sm rounded-md hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-200 border border-amber-200 transition-all duration-200">Пометить списанным</button>`;
+        }
+        
+        // Статус списания - показываем только "Списано", если заказ списан
+        let stockStatus = '';
+        if (order.status !== 'CANCELLED' && order.is_stock_updated) {
+            stockStatus = `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">Списано</span>`;
+        }
+        
+        // Первая строка: дата/время (слева), ID заказа (по центру), кнопка "Детали заказа" (справа)
+        const firstRow = `
+            <div class="flex items-center justify-between p-4 border-b border-gray-100">
+                <div class="text-sm text-gray-600">
+                    ${new Date(order.updated_at).toLocaleString('ru-RU')}
+                </div>
+                <div class="flex-1 flex justify-center">
+                    <button onclick="event.stopPropagation(); copyToClipboard('${order.id}', this)" class="font-mono text-base text-blue-600 hover:text-blue-800 focus:outline-none bg-transparent relative group">
+                        ID: ${order.id}
+                        <span class="tooltip-text hidden group-hover:block absolute left-1/2 -translate-x-1/2 top-full mt-1 px-2 py-1 rounded bg-gray-800 text-xs text-white z-10 whitespace-nowrap">Скопировать ID</span>
+                    </button>
+                </div>
+                <div>
+                    <button onclick="event.stopPropagation(); goToOrderDetails('${order.id}')" class="px-3 py-1 bg-purple-50 text-purple-700 text-sm rounded-md hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-purple-200 border border-purple-200 transition-all duration-200">
+                        Детали
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // Вторая строка: статус заказа (слева), кнопка "Пометить списанным" и статус списания (справа)
+        const secondRow = `
+            <div class="flex items-center justify-between p-4">
+                <div class="flex items-center gap-2">
+                    ${orderStatus}
+                </div>
+                <div class="flex items-center gap-2">
+                    ${writeOffButton}
+                    ${stockStatus}
+                </div>
+            </div>
+        `;
+
+        orderElement.innerHTML = firstRow + secondRow;
+        
+        // Добавляем обработчик клика по всей карточке для перехода к деталям
+        orderElement.addEventListener('click', () => {
+            goToOrderDetails(order.id);
+        });
+        
+        container.appendChild(orderElement);
+    });
+}
+
+function goToOrderDetails(orderId) {
+    // Переходим на страницу деталей операции по order_id
+    window.location.href = `/stock-sync/monitor/operation-by-order/${orderId}`;
+}
+
+function showNotification(message, type = 'info') {
+    const colors = {
+        success: 'bg-green-600',
+        error: 'bg-red-600',
+        info: 'bg-blue-600'
+    };
+
+    const notification = document.createElement('div');
+    notification.className = `fixed left-1/2 top-4 transform -translate-x-1/2 z-50 ${colors[type]} text-white px-6 py-4 rounded-lg shadow-lg`;
+    notification.textContent = message;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.remove();
+    }, 3000);
+}
+
+// Функция пометки заказа как списанного
+async function markOrderStockUpdated(orderId) {
+    try {
+        const response = await fetch(`/api/allegro_sync/orders/{{ token_id }}/${orderId}/mark_stock_updated`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        if (response.ok) {
+            showNotification('Заказ помечен как списанный', 'success');
+            // Обновить заказы (можно перерисовать текущий список)
+            fetchOrders(currentPage);
+        } else {
+            showNotification('Ошибка при пометке заказа', 'error');
+        }
+    } catch (e) {
+        showNotification('Ошибка при пометке заказа: ' + e.message, 'error');
+    }
+}
+
+function copyToClipboard(text, button) {
+    navigator.clipboard.writeText(text).then(() => {
+        // Показываем уведомление об успешном копировании
+        const originalText = button.innerHTML;
+        button.innerHTML = 'Скопировано!';
+        button.classList.add('text-green-600');
+        
+        // Возвращаем исходный текст через 2 секунды
+        setTimeout(() => {
+            button.innerHTML = originalText;
+            button.classList.remove('text-green-600');
+        }, 2000);
+    }).catch(err => {
+        console.error('Ошибка при копировании:', err);
+        showNotification('Ошибка при копировании ID', 'error');
+    });
+}
+
+// Загружаем заказы при загрузке страницы
+document.addEventListener('DOMContentLoaded', () => {
+    // Проверяем, есть ли параметр search в URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const searchParam = urlParams.get('search');
+    
+    if (searchParam) {
+        // Если есть параметр поиска, устанавливаем его в поле поиска и выполняем поиск
+        const searchInput = document.getElementById('search-input');
+        searchInput.value = searchParam;
+        doOrderSearch();
+    } else {
+        // Если нет параметра поиска, загружаем обычный список заказов
+        fetchOrders(1);
+    }
+});
+
+// Навешиваем обработчики
+const searchInput = document.getElementById('search-input');
+searchInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        doOrderSearch();
+    }
+});
+const searchIcon = document.querySelector('#search-input + svg');
+if (searchIcon) {
+    searchIcon.style.cursor = 'pointer';
+    searchIcon.addEventListener('click', doOrderSearch);
+}
+</script>
+{% endblock %} 
