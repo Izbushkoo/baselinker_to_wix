@@ -864,9 +864,9 @@ async def create_supplier_request(
             }
             data.append(row_data)
             
-            # Добавляем изображение если есть
-            if product.image:
-                images.append(product.image)
+            # Добавляем оригинальное изображение если есть
+            if product.original_image:
+                images.append(product.original_image)
             else:
                 images.append(None)
         
@@ -912,7 +912,31 @@ async def create_supplier_request(
                 if not img_bytes:
                     continue
                 try:
-                    img = XLImage(BytesIO(img_bytes))
+                    # Конвертируем оригинальное изображение в JPEG для совместимости с Excel
+                    from PIL import Image
+                    import io
+                    
+                    # Открываем оригинальное изображение из байтов
+                    pil_img = Image.open(io.BytesIO(img_bytes))
+                    
+                    # Конвертируем в RGB если нужно
+                    if pil_img.mode in ('RGBA', 'LA'):
+                        background = Image.new('RGB', pil_img.size, (255, 255, 255))
+                        background.paste(pil_img, mask=pil_img.split()[-1])
+                        pil_img = background
+                    elif pil_img.mode != 'RGB':
+                        pil_img = pil_img.convert('RGB')
+                    
+                    # Изменяем размер до 150x150
+                    pil_img = pil_img.resize((150, 150), Image.Resampling.LANCZOS)
+                    
+                    # Сохраняем в JPEG формат
+                    jpeg_buffer = io.BytesIO()
+                    pil_img.save(jpeg_buffer, format='JPEG', quality=85)
+                    jpeg_buffer.seek(0)
+                    
+                    # Создаем XLImage из JPEG данных
+                    img = XLImage(jpeg_buffer)
                     img.width = 150
                     img.height = 150
                     ws.row_dimensions[row_idx].height = 115  # под ~150px
