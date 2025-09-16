@@ -7,8 +7,8 @@
 
 <!-- Модальное окно редактирования товара -->
 <div id="editProductModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
-    <div class="flex items-center justify-center min-h-screen p-4">
-        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen p-4" onclick="closeEditProductModal()">
+        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
             <!-- Заголовок модального окна -->
             <div class="flex items-center justify-between p-6 border-b border-gray-200">
                 <h2 class="text-xl font-semibold text-gray-900">Редактировать товар</h2>
@@ -58,7 +58,6 @@
                                required 
                                placeholder="Введите уникальный идентификатор товара"
                                class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                        <p class="mt-1 text-sm text-gray-500">Текущий SKU: <span id="editProductCurrentSku" class="font-mono"></span></p>
                     </div>
 
                     <div>
@@ -186,12 +185,7 @@ function closeEditProductModal() {
     currentEditProduct = null;
 }
 
-// Закрытие модального окна при клике вне его
-document.getElementById('editProductModal').addEventListener('click', function(e) {
-    if (e.target === this) {
-        closeEditProductModal();
-    }
-});
+// Закрытие модального окна при клике вне его теперь обрабатывается через onclick атрибуты
 
 // Закрытие модального окна по клавише ESC
 document.addEventListener('keydown', function(e) {
