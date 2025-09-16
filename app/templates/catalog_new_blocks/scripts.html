@@ -263,6 +263,9 @@
         const userEmail = getUserEmail();
         const storageKey = `catalog_filters_${userEmail}`;
         localStorage.removeItem(storageKey);
+
+        // Применяем сброшенные фильтры сразу
+        handleFilterChange();
     }
 
     // Функция для применения фильтров
@@ -867,7 +870,7 @@
         }
 
         // Добавляем обработчик для клавиши Enter в полях фильтров
-        const filterInputs = ['searchInput', 'stockFilter', 'minStockFilter'];
+        const filterInputs = ['searchInput', 'skuSearchInput', 'stockFilter', 'minStockFilter'];
         filterInputs.forEach(inputId => {
             const input = document.getElementById(inputId);
             if (input) {
@@ -1250,7 +1253,7 @@
         // Обновляем URL параметры
         updateURLParams();
         
-        // Добавляем обработчики событий для автоматического сохранения фильтров
+        // Добавляем обработчики событий для фильтров
         const filterInputs = [
             'searchInput',
             'skuSearchInput', 
@@ -1264,23 +1267,33 @@
         filterInputs.forEach(inputId => {
             const input = document.getElementById(inputId);
             if (input) {
-                // Сохраняем фильтры при изменении (с задержкой для текстовых полей)
-                if (inputId === 'searchInput' || inputId === 'skuSearchInput') {
+                // Для полей ввода (поиск, SKU, остатки) - только сохраняем в localStorage
+                if (inputId === 'searchInput' || inputId === 'skuSearchInput' || 
+                    inputId === 'stockFilter' || inputId === 'minStockFilter') {
                     input.addEventListener('input', function() {
                         clearTimeout(searchTimeout);
                         searchTimeout = setTimeout(() => {
                             saveFiltersToStorage();
                             updateURLParams();
-                            // Автоматически применяем фильтры при вводе
-                            handleFilterChange();
+                            // НЕ применяем фильтры автоматически - только сохраняем
                         }, 500); // Задержка 500мс для текстовых полей
                     });
-                } else {
+                } 
+                // Для сортировки и фильтра бренда - применяем сразу
+                else if (inputId === 'sortOrder' || inputId === 'brandFilter') {
                     input.addEventListener('change', function() {
                         saveFiltersToStorage();
                         updateURLParams();
                         // Автоматически применяем фильтры при изменении
                         handleFilterChange();
+                    });
+                }
+                // Для размера страницы - только сохраняем
+                else if (inputId === 'pageSize') {
+                    input.addEventListener('change', function() {
+                        saveFiltersToStorage();
+                        updateURLParams();
+                        // НЕ применяем фильтры автоматически - только сохраняем
                     });
                 }
             }
