@@ -34,6 +34,13 @@
     </script>
 </head>
 <body class="h-full">
+    <!-- Скрытый элемент с данными пользователя для JavaScript -->
+    <div id="user-data" 
+         data-is-admin="{{ 'true' if current_user and current_user.is_admin else 'false' }}"
+         data-user-email="{{ current_user.email if current_user else '' }}"
+         style="display: none;">
+    </div>
+    
     <!-- Навигация -->
     <nav class="fixed top-0 left-0 right-0 bg-gray-900 z-50">
             <div class="mx-auto max-w-7xl px-2 sm:px-4 lg:px-8">

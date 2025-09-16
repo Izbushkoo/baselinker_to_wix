@@ -5,12 +5,6 @@
  * @created: 2024-01-15
 -->
 
-<!-- Скрытый элемент с данными пользователя для JavaScript -->
-<div id="user-data" 
-     data-is-admin="{{ 'true' if current_user and current_user.is_admin else 'false' }}"
-     data-user-email="{{ current_user.email if current_user else '' }}"
-     style="display: none;">
-</div>
 
 <!-- Обновлено: единая цветовая схема, версия 1.2.4 -->
 <div class="product-card flex items-start gap-6 bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 p-4 relative cursor-pointer" 
