@@ -129,7 +129,7 @@
             <!-- Поиск в воркспейсе -->
             <div class="p-4 border-b">
                 <div class="relative">
-                    <input type="text" id="workspaceSearch" placeholder="Поиск по SKU (через запятую для нескольких)..."
+                    <input type="text" id="workspaceSearch" placeholder="Поиск по SKU (через пробел или запятую)..."
                         class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                     <svg class="absolute left-3 top-2.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor"
                         viewBox="0 0 24 24">
@@ -628,7 +628,7 @@
                 return;
             }
 
-            // Разбиваем поисковый запрос по запятым и пробелам
+            // Разбиваем поисковый запрос по запятым и пробелам (поддержка обоих разделителей)
             const searchTerms = term.split(/[,\s]+/).filter(t => t.length > 0);
 
             products.forEach(product => {

@@ -80,9 +80,10 @@ async def catalog_page(
             )
         )
 
-    # Поиск по списку SKU
+    # Поиск по списку SKU (поддержка запятых и пробелов)
     if sku_search:
-        sku_list = [sku.strip() for sku in sku_search.split(',') if sku.strip()]
+        # Разделяем по запятым и пробелам, убираем пустые элементы
+        sku_list = [sku.strip() for sku in sku_search.replace(',', ' ').split() if sku.strip()]
         if sku_list:
             base_query = base_query.where(Product.sku.in_(sku_list))
 
@@ -273,9 +274,10 @@ async def get_products_api(
             )
         )
 
-    # Поиск по списку SKU
+    # Поиск по списку SKU (поддержка запятых и пробелов)
     if sku_search:
-        sku_list = [sku.strip() for sku in sku_search.split(',') if sku.strip()]
+        # Разделяем по запятым и пробелам, убираем пустые элементы
+        sku_list = [sku.strip() for sku in sku_search.replace(',', ' ').split() if sku.strip()]
         if sku_list:
             base_query = base_query.where(Product.sku.in_(sku_list))
 
