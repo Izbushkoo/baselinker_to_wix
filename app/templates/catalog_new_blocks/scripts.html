@@ -69,13 +69,13 @@
 
     let searchTimeout;
     let currentFilters = {
-        search: '{{ filters.search }}',
-        sku_search: '{{ filters.sku_search or "" }}',
-        stock_filter: '{{ filters.stock_filter or "null" }}',
-        min_stock_filter: '{{ filters.min_stock_filter or "null" }}',
-        brand_filter: '{{ filters.brand_filter }}',
-        sort_order: '{{ filters.sort_order }}',
-        page_size: '{{ filters.page_size }}'
+        search: '',
+        sku_search: '',
+        stock_filter: null,
+        min_stock_filter: null,
+        brand_filter: '',
+        sort_order: '',
+        page_size: 50
     };
 
     // Функция для получения email пользователя (дублируем из workspace.html)
@@ -269,10 +269,7 @@
             page_size: 50
         };
 
-        // Очищаем сохраненные фильтры (персонально для пользователя)
-        const userEmail = getUserEmail();
-        const storageKey = `catalog_filters_${userEmail}`;
-        localStorage.removeItem(storageKey);
+        // Фильтры не сохраняются в localStorage - нечего очищать
 
         // Применяем сброшенные фильтры сразу
         handleFilterChange();
@@ -330,8 +327,8 @@
                 sort_order: sortOrder
             };
 
-            // Сохраняем фильтры в localStorage
-            saveFiltersToStorage();
+            // Фильтры не сохраняются - сбрасываются при перезагрузке страницы
+            // saveFiltersToStorage();
 
             // Обновляем URL параметры
             updateURLParams();
@@ -1255,12 +1252,61 @@
         }
     }
 
+    // Проверяем URL параметры ДО загрузки DOM и перенаправляем если нужно
+    if (window.location.search) {
+        console.log('Обнаружены параметры фильтров в URL, перенаправляем на чистую страницу');
+        window.location.href = window.location.pathname;
+    }
+
     // Инициализация при загрузке страницы
     document.addEventListener('DOMContentLoaded', function() {
-        // Восстанавливаем фильтры из localStorage
-        restoreFiltersFromStorage();
+        // Фильтры сбрасываются при перезагрузке страницы - очищаем localStorage
+        try {
+            const userEmail = getUserEmail();
+            const storageKey = `catalog_filters_${userEmail}`;
+            localStorage.removeItem(storageKey);
+            // Также удаляем старый ключ для совместимости
+            localStorage.removeItem('catalog_filters');
+        } catch (error) {
+            console.error('Ошибка при очистке localStorage:', error);
+        }
         
-        // Обновляем URL параметры
+        // Сбрасываем все фильтры к значениям по умолчанию
+        currentFilters = {
+            search: '',
+            sku_search: '',
+            stock_filter: null,
+            min_stock_filter: null,
+            brand_filter: '',
+            sort_order: '',
+            page_size: 50
+        };
+        
+        // Очищаем поля фильтров
+        const filterFields = [
+            'searchInput',
+            'skuSearchInput', 
+            'stockFilter',
+            'minStockFilter',
+            'brandFilter',
+            'sortOrder'
+        ];
+        
+        filterFields.forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                field.value = '';
+            }
+        });
+        
+        // Устанавливаем размер страницы по умолчанию
+        const pageSizeField = document.getElementById('pageSize');
+        if (pageSizeField) {
+            pageSizeField.value = '50';
+        }
+        
+        // URL уже чистый (если были параметры, произошло перенаправление)
+        // Обновляем URL параметры (они будут пустыми)
         updateURLParams();
         
         // Добавляем обработчики событий для фильтров
@@ -1283,16 +1329,16 @@
                     input.addEventListener('input', function() {
                         clearTimeout(searchTimeout);
                         searchTimeout = setTimeout(() => {
-                            saveFiltersToStorage();
+                            // Фильтры не сохраняются - сбрасываются при перезагрузке страницы
                             updateURLParams();
-                            // НЕ применяем фильтры автоматически - только сохраняем
+                            // НЕ применяем фильтры автоматически - только обновляем URL
                         }, 500); // Задержка 500мс для текстовых полей
                     });
                 } 
                 // Для сортировки и фильтра бренда - применяем сразу
                 else if (inputId === 'sortOrder' || inputId === 'brandFilter') {
                     input.addEventListener('change', function() {
-                        saveFiltersToStorage();
+                        // Фильтры не сохраняются - сбрасываются при перезагрузке страницы
                         updateURLParams();
                         // Автоматически применяем фильтры при изменении
                         handleFilterChange();
@@ -1301,9 +1347,9 @@
                 // Для размера страницы - только сохраняем
                 else if (inputId === 'pageSize') {
                     input.addEventListener('change', function() {
-                        saveFiltersToStorage();
+                        // Фильтры не сохраняются - сбрасываются при перезагрузке страницы
                         updateURLParams();
-                        // НЕ применяем фильтры автоматически - только сохраняем
+                        // НЕ применяем фильтры автоматически - только обновляем URL
                     });
                 }
             }

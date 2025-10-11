@@ -901,6 +901,41 @@ function openTransferModal(fromData, toData) {
         return;
     }
     
+    // Если передан только один параметр (кнопка), обрабатываем как кнопку
+    if (arguments.length === 1 && fromData && fromData.dataset) {
+        const button = fromData;
+        const sku = button.dataset.productSku;
+        const name = button.dataset.productName;
+        
+        if (!sku) {
+            console.error('Ошибка: не найден data-product-sku в кнопке', button);
+            showErrorModal('Ошибка: не найден SKU товара');
+            return;
+        }
+        
+        // Создаем модальное окно для кнопки
+        createTransferModalIfNeeded();
+        
+        if (!transferModalWrapper) {
+            console.error('❌ Transfer modal wrapper not initialized after creation');
+            showErrorModal('Ошибка: модальное окно не инициализировано');
+            return;
+        }
+        
+        // Заполняем модальное окно данными из кнопки
+        const productNameEl = document.getElementById('transferProductName');
+        const skuInputEl = document.getElementById('transferSku');
+        
+        if (productNameEl) productNameEl.textContent = name || 'Неизвестный товар';
+        if (skuInputEl) skuInputEl.value = sku;
+        
+        // Показываем модальное окно
+        transferModalWrapper.classList.remove('hidden');
+        document.body.classList.add('overflow-hidden');
+        
+        return;
+    }
+    
     // Создаем модальное окно динамически на уровне document.body
     createTransferModalIfNeeded();
     
